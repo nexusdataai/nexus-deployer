@@ -1,9 +1,10 @@
 deploy/.env.local
 
 # Packaged images (shipped separately, not committed — too large for git)
-# ai-job-engine.tar.gz ~78MB, starhub-ui.tar.gz ~71MB, bssmagic ~1GB
+kube-operator/images/nexus/*.tar.gz
 kube-operator/images/callsense/*.tar.gz
 kube-operator/images/bssmagic/*.tar.gz
+kube-operator/images/operator/*.tar.gz
 
 # Python
 __pycache__/

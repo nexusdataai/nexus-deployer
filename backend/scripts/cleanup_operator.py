@@ -67,7 +67,7 @@ logging.basicConfig(
 logger = logging.getLogger("cleanup-operator")
 
 # Constants
-OPERATOR_NAMESPACE = "totogi-system"
+OPERATOR_NAMESPACE = "nexus-system"
 OPERATOR_DEPLOYMENT = "totogi-operator"
 OPERATOR_SERVICE_ACCOUNT = "totogi-operator"
 OPERATOR_CLUSTER_ROLE = "totogi-operator"
@@ -532,14 +532,14 @@ class OperatorCleanup:
             logger.warning(f"Could not delete CRD: {e}")
         
         # 7. Delete namespace (this will delete ServiceAccount too)
-        logger.info("[7/7] Deleting totogi-system namespace...")
+        logger.info("[7/7] Deleting nexus-system namespace...")
         try:
             self._k8s_core_api.delete_namespace(
                 name=OPERATOR_NAMESPACE,
                 body=k8s_client.V1DeleteOptions(propagation_policy='Foreground')
             )
             logger.info("✓ Namespace deleted (ServiceAccount will be deleted with it)")
-            self.deleted_items.append("Namespace (totogi-system)")
+            self.deleted_items.append("Namespace (nexus-system)")
         except ApiException as e:
             if e.status == 404:
                 logger.info("✓ Namespace not found (already deleted)")
@@ -657,7 +657,7 @@ class OperatorCleanup:
             logger.warning(f"Could not delete CRD: {e}")
         
         # 7. Delete namespace (this will delete ServiceAccount too)
-        logger.info("[7/7] Deleting totogi-system namespace...")
+        logger.info("[7/7] Deleting nexus-system namespace...")
         try:
             result = subprocess.run(
                 ["kubectl", "delete", "namespace", OPERATOR_NAMESPACE, "--wait=false"],
@@ -667,7 +667,7 @@ class OperatorCleanup:
             )
             if result.returncode == 0 or "NotFound" in result.stderr:
                 logger.info("✓ Namespace deleted (ServiceAccount will be deleted with it)")
-                self.deleted_items.append("Namespace (totogi-system)")
+                self.deleted_items.append("Namespace (nexus-system)")
             else:
                 logger.warning(f"Could not delete namespace: {result.stderr}")
         except Exception as e:
@@ -1141,7 +1141,7 @@ Examples:
 
 What gets deleted:
   - Operator deployment and service
-  - totogi-system namespace
+  - nexus-system namespace
   - TotogiCapability CRD
   - RBAC (ClusterRole, ClusterRoleBinding)
   - IAM role (unless --keep-iam)

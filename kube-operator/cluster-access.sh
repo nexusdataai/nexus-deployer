@@ -8,7 +8,7 @@
 #   ./cluster-access.sh check                          # Diagnose cluster access (read-only)
 #   ./cluster-access.sh fix                            # Fix access: create access entry + verify OIDC
 #   ./cluster-access.sh grant-github                   # Grant GitHub Actions roles access (both repos, env from .env.local)
-#   ./cluster-access.sh grant-github --repo backend    # Grant only starhub-backend role
+#   ./cluster-access.sh grant-github --repo backend    # Grant only nexus-backend role
 #   ./cluster-access.sh grant-github --env prod        # Grant roles for prod environment
 #   ./cluster-access.sh --help                         # Show help
 #
@@ -23,9 +23,9 @@ if [ -f "$_ENVLOCAL" ]; then
     _ENV_LOCAL_ENV=$(grep '^ENV=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-)
 fi
 
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test1}}"
-REGION="${REGION:-ap-southeast-1}"
-AWS_PROFILE="${AWS_PROFILE:-external-access}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
+REGION="${REGION:-us-east-1}"
+AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
 ACCESS_POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
 GREEN='\033[0;32m'
@@ -56,14 +56,14 @@ grant-github options:
 
 Examples:
   ./cluster-access.sh grant-github                    # Both repos, env from .env.local
-  ./cluster-access.sh grant-github --repo backend     # Only starhub-backend
+  ./cluster-access.sh grant-github --repo backend     # Only nexus-backend
   ./cluster-access.sh grant-github --env prod         # Both repos, prod environment
   ./cluster-access.sh grant-github --repo ui --env stage
 
 Environment variables (or set in .env.local):
-  CLUSTER_NAME    EKS cluster name   (default: from .env.local or starhub-test1)
-  REGION          AWS region         (default: ap-southeast-1)
-  AWS_PROFILE     AWS CLI profile    (default: external-access)
+  CLUSTER_NAME    EKS cluster name   (default: from .env.local or nexus-dev)
+  REGION          AWS region         (default: us-east-1)
+  AWS_PROFILE     AWS CLI profile    (default: ptr-tech)
 
 EOF
 }
@@ -85,7 +85,14 @@ get_role_arn_from_caller() {
         account_id=$(echo "$caller_arn" | grep -o '[0-9]\{12\}')
         local role_name
         role_name=$(echo "$caller_arn" | awk -F'/' '{print $2}')
-        echo "arn:aws:iam::${account_id}:role/${role_name}"
+        local full_arn
+        full_arn=$(aws iam get-role --role-name "$role_name" --profile "$AWS_PROFILE" \
+            --query 'Role.Arn' --output text 2>/dev/null || echo "")
+        if [ -n "$full_arn" ] && [ "$full_arn" != "None" ]; then
+            echo "$full_arn"
+        else
+            echo "arn:aws:iam::${account_id}:role/${role_name}"
+        fi
     else
         echo "$caller_arn"
     fi
@@ -103,7 +110,7 @@ check_aws_credentials() {
     if [ -z "$CALLER_ARN" ] || [[ "$CALLER_ARN" == *"ExpiredToken"* ]] || [[ "$CALLER_ARN" == *"error"* ]]; then
         log_fail "AWS credentials expired or invalid (profile: $AWS_PROFILE)"
         echo -e "      Run your AWS login script to refresh, e.g.:"
-        echo -e "        ${BOLD}cd ~/trilogy/starhub-backend && bash aws-login.sh${NC}"
+        echo -e "        ${BOLD}cd nexus-deployer/deploy && bash aws-login.sh${NC}"
         CREDS_OK=false
         return 1
     fi
@@ -662,9 +669,9 @@ do_grant_github() {
 
     local REPOS=()
     case "$GH_REPO" in
-        backend)  REPOS=("starhub-backend") ;;
-        ui)       REPOS=("starhub-ui") ;;
-        both|all) REPOS=("starhub-backend" "starhub-ui") ;;
+        backend)  REPOS=("nexus-backend") ;;
+        ui)       REPOS=("nexus-ui") ;;
+        both|all) REPOS=("nexus-backend" "nexus-ui") ;;
         *)        REPOS=("$GH_REPO") ;;
     esac
 

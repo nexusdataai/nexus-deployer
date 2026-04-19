@@ -1,27 +1,27 @@
 #!/bin/bash
 #
-# Package CallSense + BSS Magic + Operator Images
+# Package Nexus + BSS Magic + Operator Images
 # Builds frontend, backend, BSS Magic, and operator Docker images locally from source
 # and saves them as compressed tar files for offline delivery.
 # Reads defaults from .env.local (ENV, Branch, Cluster). CLI args override.
 #
-# CallSense images:   No AWS credentials required (public base images).
-# BSS Magic image:    Requires access to CloudSense base image ECR
-#                     (008731404932.dkr.ecr.us-east-1.amazonaws.com).
+# Nexus images:      No AWS credentials required (public base images).
+# BSS Magic image:   Requires access to CloudSense base image ECR
+#                    (654654554404.dkr.ecr.us-east-1.amazonaws.com).
 #
 # Usage:
 #   ./package-images.sh
 #   ./package-images.sh --backend-dir /path/to/backend --frontend-dir /path/to/frontend
-#   ./package-images.sh --skip-bssmagic        # Only package CallSense + operator images
+#   ./package-images.sh --skip-bssmagic        # Only package Nexus + operator images
 #   ./package-images.sh --only-bssmagic        # Only package BSS Magic image
 #   ./package-images.sh --only-operator        # Only package operator image
 #   ./package-images.sh --skip-operator        # Skip operator image
 #
 # Output:
-#   images/callsense/ai-job-engine.tar.gz
-#   images/callsense/starhub-ui.tar.gz
-#   images/callsense/checksums.sha256
-#   images/bssmagic/bssmagic-starhub-k8s.tar.gz
+#   images/nexus/ai-job-engine.tar.gz
+#   images/nexus/nexus-ui.tar.gz
+#   images/nexus/checksums.sha256
+#   images/bssmagic/bssmagic-nexus-k8s.tar.gz
 #   images/bssmagic/checksums.sha256
 #   images/operator/totogi-operator.tar.gz
 #   images/operator/checksums.sha256
@@ -43,13 +43,13 @@ DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
 
-CALLSENSE_OUTPUT="${SCRIPT_DIR}/images/callsense"
+NEXUS_OUTPUT="${SCRIPT_DIR}/images/nexus"
 BSSMAGIC_OUTPUT="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_OUTPUT="${SCRIPT_DIR}/images/operator"
 
 BACKEND_IMAGE="ai-job-engine:latest"
-FRONTEND_IMAGE="starhub-ui:latest"
-BSSMAGIC_IMAGE="bssmagic-starhub-k8s:latest"
+FRONTEND_IMAGE="nexus-ui:latest"
+BSSMAGIC_IMAGE="bssmagic-nexus-k8s:latest"
 OPERATOR_IMAGE="totogi-operator:latest"
 
 SKIP_BSSMAGIC=false
@@ -73,17 +73,17 @@ while [[ $# -gt 0 ]]; do
             echo "Builds all images locally and saves as tar.gz for offline delivery."
             echo ""
             echo "Options:"
-            echo "  --backend-dir DIR    Path to starhub-backend source (default: ../../starhub-backend)"
-            echo "  --frontend-dir DIR   Path to starhub-ui source (default: ../../starhub-ui)"
+            echo "  --backend-dir DIR    Path to nexus-backend source (default: ../../nexus-backend)"
+            echo "  --frontend-dir DIR   Path to nexus-ui source (default: ../../nexus-ui)"
             echo "  --bssmagic-dir DIR   Path to bssmagic-image build context (default: ../bssmagic-image)"
-            echo "  --skip-bssmagic      Skip BSS Magic image (only package CallSense)"
-            echo "  --only-bssmagic      Only package BSS Magic image (skip CallSense)"
+            echo "  --skip-bssmagic      Skip BSS Magic image (only package Nexus)"
+            echo "  --only-bssmagic      Only package BSS Magic image (skip Nexus)"
             echo "  --skip-operator      Skip operator image"
             echo "  --only-operator      Only package operator image"
             echo "  --help               Show this help"
             echo ""
             echo "Notes:"
-            echo "  CallSense images require starhub-backend + starhub-ui source repos."
+            echo "  Nexus images require nexus-backend + nexus-ui source repos."
             echo "  BSS Magic image requires access to CloudSense base image ECR."
             echo "  Operator image is built from kube-operator/Dockerfile."
             exit 0
@@ -94,11 +94,11 @@ done
 
 # ──────────────────────────────────────────────────────────────
 # Resolve source directories (deferred until after arg parsing
-# so --only-bssmagic doesn't fail when starhub-backend/ui missing)
+# so --only-bssmagic doesn't fail when nexus-backend/ui missing)
 # ──────────────────────────────────────────────────────────────
 if [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
-    BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../starhub-backend" 2>/dev/null && pwd || echo "")}"
-    FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../starhub-ui" 2>/dev/null && pwd || echo "")}"
+    BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-backend" 2>/dev/null && pwd || echo "")}"
+    FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ui" 2>/dev/null && pwd || echo "")}"
 fi
 BSSMAGIC_DIR="${BSSMAGIC_DIR:-$(cd "$SCRIPT_DIR/../bssmagic-image" 2>/dev/null && pwd || echo "")}"
 
@@ -108,14 +108,14 @@ BSSMAGIC_DIR="${BSSMAGIC_DIR:-$(cd "$SCRIPT_DIR/../bssmagic-image" 2>/dev/null &
 if [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     if [ ! -f "${BACKEND_DIR}/Dockerfile" ]; then
         echo "ERROR: Backend Dockerfile not found at ${BACKEND_DIR}/Dockerfile"
-        echo "  Use --backend-dir to specify the starhub-backend directory"
-        echo "  Or use --only-bssmagic to skip CallSense images"
+        echo "  Use --backend-dir to specify the nexus-backend directory"
+        echo "  Or use --only-bssmagic to skip Nexus images"
         exit 1
     fi
     if [ ! -f "${FRONTEND_DIR}/Dockerfile" ]; then
         echo "ERROR: Frontend Dockerfile not found at ${FRONTEND_DIR}/Dockerfile"
-        echo "  Use --frontend-dir to specify the starhub-ui directory"
-        echo "  Or use --only-bssmagic to skip CallSense images"
+        echo "  Use --frontend-dir to specify the nexus-ui directory"
+        echo "  Or use --only-bssmagic to skip Nexus images"
         exit 1
     fi
 fi
@@ -131,7 +131,7 @@ fi
 
 # Calculate total steps
 TOTAL_STEPS=0
-PACKAGE_CALLSENSE=false
+PACKAGE_NEXUS=false
 PACKAGE_BSSMAGIC=false
 PACKAGE_OPERATOR=false
 
@@ -140,12 +140,12 @@ if [ "$ONLY_BSSMAGIC" = true ]; then
 elif [ "$ONLY_OPERATOR" = true ]; then
     PACKAGE_OPERATOR=true
 else
-    PACKAGE_CALLSENSE=true
+    PACKAGE_NEXUS=true
     [ "$SKIP_BSSMAGIC" = false ] && PACKAGE_BSSMAGIC=true
     [ "$SKIP_OPERATOR" = false ] && PACKAGE_OPERATOR=true
 fi
 
-[ "$PACKAGE_CALLSENSE" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 4))
+[ "$PACKAGE_NEXUS" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 4))
 [ "$PACKAGE_BSSMAGIC" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 3))
 [ "$PACKAGE_OPERATOR" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 3))
 CURRENT_STEP=0
@@ -154,10 +154,10 @@ echo "=============================================="
 echo "  Package Images"
 echo "=============================================="
 echo ""
-if [ "$PACKAGE_CALLSENSE" = true ]; then
+if [ "$PACKAGE_NEXUS" = true ]; then
     echo "  Backend source:   ${BACKEND_DIR}"
     echo "  Frontend source:  ${FRONTEND_DIR}"
-    echo "  CallSense output: ${CALLSENSE_OUTPUT}"
+    echo "  Nexus output:     ${NEXUS_OUTPUT}"
 fi
 if [ "$PACKAGE_BSSMAGIC" = true ]; then
     echo "  BSS Magic source: ${BSSMAGIC_DIR}"
@@ -170,10 +170,10 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────────────────────
-# CallSense Images (frontend + backend)
+# Nexus Images (frontend + backend)
 # ──────────────────────────────────────────────────────────────
-if [ "$PACKAGE_CALLSENSE" = true ]; then
-    mkdir -p "${CALLSENSE_OUTPUT}"
+if [ "$PACKAGE_NEXUS" = true ]; then
+    mkdir -p "${NEXUS_OUTPUT}"
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building backend image: ${BACKEND_IMAGE} ==="
@@ -188,18 +188,18 @@ if [ "$PACKAGE_CALLSENSE" = true ]; then
     echo ""
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving CallSense images as tar.gz ==="
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving Nexus images as tar.gz ==="
     echo "  Saving ${BACKEND_IMAGE}..."
-    docker save "${BACKEND_IMAGE}" | gzip > "${CALLSENSE_OUTPUT}/ai-job-engine.tar.gz"
+    docker save "${BACKEND_IMAGE}" | gzip > "${NEXUS_OUTPUT}/ai-job-engine.tar.gz"
     echo "  Saving ${FRONTEND_IMAGE}..."
-    docker save "${FRONTEND_IMAGE}" | gzip > "${CALLSENSE_OUTPUT}/starhub-ui.tar.gz"
+    docker save "${FRONTEND_IMAGE}" | gzip > "${NEXUS_OUTPUT}/nexus-ui.tar.gz"
     echo "  Done."
     echo ""
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Generating CallSense checksums ==="
-    cd "${CALLSENSE_OUTPUT}"
-    sha256sum ai-job-engine.tar.gz starhub-ui.tar.gz > checksums.sha256
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Generating Nexus checksums ==="
+    cd "${NEXUS_OUTPUT}"
+    sha256sum ai-job-engine.tar.gz nexus-ui.tar.gz > checksums.sha256
     cd "${SCRIPT_DIR}"
     echo "  Done."
     echo ""
@@ -213,10 +213,30 @@ if [ "$PACKAGE_BSSMAGIC" = true ]; then
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building BSS Magic image: ${BSSMAGIC_IMAGE} ==="
-    echo ""
-    echo "  NOTE: This requires access to CloudSense base image ECR."
-    echo "  If the build fails with 'pull access denied', log in first:"
-    echo "    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 008731404932.dkr.ecr.us-east-1.amazonaws.com"
+
+    BASE_IMAGE="654654554404.dkr.ecr.us-east-1.amazonaws.com/nexus/bssmagic-runtime:latest"
+    if ! docker image inspect "$BASE_IMAGE" &>/dev/null; then
+        echo "  Base image not found locally. Logging in to ECR and pulling..."
+        aws ecr get-login-password --region us-east-1 --profile ptr-tech 2>/dev/null \
+            | docker login --username AWS --password-stdin 654654554404.dkr.ecr.us-east-1.amazonaws.com 2>/dev/null || true
+        if ! docker pull "$BASE_IMAGE" 2>/dev/null; then
+            echo ""
+            echo "  ❌ Base image not available: $BASE_IMAGE"
+            echo ""
+            echo "  The bssmagic-runtime base image must be pushed to your ECR first."
+            echo "  On a machine that has the image locally, run:"
+            echo ""
+            echo "    aws ecr get-login-password --region us-east-1 --profile ptr-tech | \\"
+            echo "      docker login --username AWS --password-stdin 654654554404.dkr.ecr.us-east-1.amazonaws.com"
+            echo "    docker tag <local-bssmagic-runtime-image>:latest $BASE_IMAGE"
+            echo "    docker push $BASE_IMAGE"
+            echo ""
+            echo "  Then re-run this script."
+            exit 1
+        fi
+    else
+        echo "  Base image found locally."
+    fi
     echo ""
     docker build -t "${BSSMAGIC_IMAGE}" "${BSSMAGIC_DIR}"
     echo "  Done."
@@ -225,14 +245,14 @@ if [ "$PACKAGE_BSSMAGIC" = true ]; then
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving BSS Magic image as tar.gz ==="
     echo "  Saving ${BSSMAGIC_IMAGE}..."
-    docker save "${BSSMAGIC_IMAGE}" | gzip > "${BSSMAGIC_OUTPUT}/bssmagic-starhub-k8s.tar.gz"
+    docker save "${BSSMAGIC_IMAGE}" | gzip > "${BSSMAGIC_OUTPUT}/bssmagic-nexus-k8s.tar.gz"
     echo "  Done."
     echo ""
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Generating BSS Magic checksums ==="
     cd "${BSSMAGIC_OUTPUT}"
-    sha256sum bssmagic-starhub-k8s.tar.gz > checksums.sha256
+    sha256sum bssmagic-nexus-k8s.tar.gz > checksums.sha256
     cd "${SCRIPT_DIR}"
     echo "  Done."
     echo ""
@@ -274,8 +294,8 @@ echo "  Package Complete"
 echo "=============================================="
 echo ""
 echo "  Files:"
-if [ "$PACKAGE_CALLSENSE" = true ] && [ -d "${CALLSENSE_OUTPUT}" ]; then
-    ls -lh "${CALLSENSE_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
+if [ "$PACKAGE_NEXUS" = true ] && [ -d "${NEXUS_OUTPUT}" ]; then
+    ls -lh "${NEXUS_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
 fi
 if [ "$PACKAGE_BSSMAGIC" = true ] && [ -d "${BSSMAGIC_OUTPUT}" ]; then
     ls -lh "${BSSMAGIC_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'

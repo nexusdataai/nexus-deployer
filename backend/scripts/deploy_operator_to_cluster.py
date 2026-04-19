@@ -902,7 +902,7 @@ class OperatorDeployer:
                 if not self._init_k8s_client():
                     logger.warning("Failed to initialize Kubernetes client, skipping detailed verification")
                     logger.info("You can manually check pod status:")
-                    logger.info("  kubectl -n totogi-system get pods")
+                    logger.info("  kubectl -n nexus-system get pods")
                     return True
             
             # Check deployment exists
@@ -910,7 +910,7 @@ class OperatorDeployer:
             try:
                 deployment = self._k8s_apps_api.read_namespaced_deployment(
                     name="totogi-operator",
-                    namespace="totogi-system"
+                    namespace="nexus-system"
                 )
                 
                 desired = deployment.spec.replicas or 1
@@ -932,7 +932,7 @@ class OperatorDeployer:
             logger.info("[2/3] Checking pod status...")
             try:
                 pods = self._k8s_core_api.list_namespaced_pod(
-                    namespace="totogi-system",
+                    namespace="nexus-system",
                     label_selector="app.kubernetes.io/name=totogi-operator"
                 )
                 
@@ -995,7 +995,7 @@ class OperatorDeployer:
                                             logger.warning("This is often a transient issue during first pull.")
                                             logger.warning("")
                                             logger.warning("The pod will retry automatically. Monitor:")
-                                            logger.warning("  kubectl -n totogi-system get pods -w")
+                                            logger.warning("  kubectl -n nexus-system get pods -w")
                                             logger.warning("")
                                             # Don't mark as hard error - it may resolve
                                         elif message and ("denied" in message.lower() or "unauthorized" in message.lower()):
@@ -1038,10 +1038,10 @@ class OperatorDeployer:
                     logger.error("✗ Operator pods have errors - deployment FAILED")
                     logger.error("")
                     logger.error("Check pod details:")
-                    logger.error("  kubectl -n totogi-system describe pod -l app.kubernetes.io/name=totogi-operator")
+                    logger.error("  kubectl -n nexus-system describe pod -l app.kubernetes.io/name=totogi-operator")
                     logger.error("")
                     logger.error("View events:")
-                    logger.error("  kubectl -n totogi-system get events --sort-by='.lastTimestamp'")
+                    logger.error("  kubectl -n nexus-system get events --sort-by='.lastTimestamp'")
                     logger.error("")
                     return False
                 
@@ -1062,8 +1062,8 @@ class OperatorDeployer:
                         logger.info("Pods should become ready in a few moments.")
                         logger.info("")
                         logger.info("Monitor progress:")
-                        logger.info("  kubectl -n totogi-system get pods -w")
-                        logger.info("  kubectl -n totogi-system logs -f deployment/totogi-operator")
+                        logger.info("  kubectl -n nexus-system get pods -w")
+                        logger.info("  kubectl -n nexus-system logs -f deployment/totogi-operator")
                         logger.info("")
                         # Return True for initial pull scenario
                         return True
@@ -1071,8 +1071,8 @@ class OperatorDeployer:
                         logger.warning("⚠ No healthy pods yet - still starting up")
                         logger.info("")
                         logger.info("Wait and check again:")
-                        logger.info("  kubectl -n totogi-system get pods -l app.kubernetes.io/name=totogi-operator")
-                        logger.info("  kubectl -n totogi-system logs -f deployment/totogi-operator")
+                        logger.info("  kubectl -n nexus-system get pods -l app.kubernetes.io/name=totogi-operator")
+                        logger.info("  kubectl -n nexus-system logs -f deployment/totogi-operator")
                         logger.info("")
                         return False
                     
@@ -1085,7 +1085,7 @@ class OperatorDeployer:
             try:
                 service = self._k8s_core_api.read_namespaced_service(
                     name="totogi-operator",
-                    namespace="totogi-system"
+                    namespace="nexus-system"
                 )
                 logger.info(f"  ✓ Service exists: {service.spec.cluster_ip}")
             except ApiException as e:

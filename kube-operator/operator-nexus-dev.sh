@@ -4,20 +4,20 @@
 # Reads defaults from .env.local (ENV, Branch, Cluster). Env vars override.
 # 
 # Usage:
-#   ./operator-starhub-test.sh scan                    # Scan cluster readiness
-#   ./operator-starhub-test.sh fix-irsa                # Fix IRSA (OIDC provider)
-#   ./operator-starhub-test.sh install-alb-controller  # Install AWS Load Balancer Controller
-#   ./operator-starhub-test.sh delete-alb-controller   # Delete AWS Load Balancer Controller
-#   ./operator-starhub-test.sh delete-ebs-csi          # Delete EBS CSI Driver + IAM role
-#   ./operator-starhub-test.sh deploy                  # Deploy operator (auto-fixes IRSA + ALB)
-#   ./operator-starhub-test.sh delete                  # Delete operator (keeps access)
-#   ./operator-starhub-test.sh delete --full           # Delete everything including IAM/ECR/ALB Controller
-#   ./operator-starhub-test.sh update                  # Update operator (force redeploy)
-#   ./operator-starhub-test.sh status                  # Check operator status
-#   ./operator-starhub-test.sh monitor                 # Monitor capability deployment progress
-#   ./operator-starhub-test.sh verify-capability       # Verify via operator IRSA Job (default)
-#   ./operator-starhub-test.sh verify-capability --local  # Verify using local AWS profile + kubectl
-#   ./operator-starhub-test.sh --help                  # Show help
+#   ./operator-nexus-dev.sh scan                    # Scan cluster readiness
+#   ./operator-nexus-dev.sh fix-irsa                # Fix IRSA (OIDC provider)
+#   ./operator-nexus-dev.sh install-alb-controller  # Install AWS Load Balancer Controller
+#   ./operator-nexus-dev.sh delete-alb-controller   # Delete AWS Load Balancer Controller
+#   ./operator-nexus-dev.sh delete-ebs-csi          # Delete EBS CSI Driver + IAM role
+#   ./operator-nexus-dev.sh deploy                  # Deploy operator (auto-fixes IRSA + ALB)
+#   ./operator-nexus-dev.sh delete                  # Delete operator (keeps access)
+#   ./operator-nexus-dev.sh delete --full           # Delete everything including IAM/ECR/ALB Controller
+#   ./operator-nexus-dev.sh update                  # Update operator (force redeploy)
+#   ./operator-nexus-dev.sh status                  # Check operator status
+#   ./operator-nexus-dev.sh monitor                 # Monitor capability deployment progress
+#   ./operator-nexus-dev.sh verify-capability       # Verify via operator IRSA Job (default)
+#   ./operator-nexus-dev.sh verify-capability --local  # Verify using local AWS profile + kubectl
+#   ./operator-nexus-dev.sh --help                  # Show help
 #
 
 set -e
@@ -32,11 +32,11 @@ if [ -f "$_ENVLOCAL" ]; then
     _ENV_LOCAL_CLUSTER=$(grep '^Cluster=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-)
 fi
 
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
 REGION="${REGION:-ap-southeast-1}"
-AWS_PROFILE="${AWS_PROFILE:-external-access}"
+AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
 BACKEND_DIR="${SCRIPT_DIR}/../backend"
 
 # Colors for output
@@ -47,10 +47,10 @@ NC='\033[0m' # No Color
 
 show_help() {
     cat << EOF
-Totogi Operator Management Script for starhub-test
+Totogi Operator Management Script for nexus-dev
 
 Usage:
-  ./operator-starhub-test.sh <command> [options]
+  ./operator-nexus-dev.sh <command> [options]
 
 Commands:
   scan                    Comprehensive cluster readiness scan (includes IRSA checks)
@@ -69,7 +69,7 @@ Commands:
   help                    Show this help message
 
 Options:
-  --profile PROFILE       AWS profile to use (default: external-access)
+  --profile PROFILE       AWS profile to use (default: ptr-tech)
   --keep-iam              Keep IAM role when deleting
   --keep-ecr              Keep ECR repository when deleting
   --delete-alb            Delete AWS Load Balancer Controller (included in --full)
@@ -79,52 +79,52 @@ Options:
   --skip-irsa-fix         Skip automatic IRSA fix during deploy
 
 Environment Variables:
-  AWS_PROFILE         Default AWS profile (default: external-access)
+  AWS_PROFILE         Default AWS profile (default: ptr-tech)
 
 Examples:
   # Scan cluster before deployment (recommended first step)
-  ./operator-starhub-test.sh scan
+  ./operator-nexus-dev.sh scan
 
   # Fix IRSA (create OIDC provider if missing)
-  ./operator-starhub-test.sh fix-irsa
+  ./operator-nexus-dev.sh fix-irsa
 
   # Deploy operator (automatically fixes IRSA if needed)
-  ./operator-starhub-test.sh deploy
+  ./operator-nexus-dev.sh deploy
 
   # Deploy without IRSA auto-fix
-  ./operator-starhub-test.sh deploy --skip-irsa-fix
+  ./operator-nexus-dev.sh deploy --skip-irsa-fix
 
   # Update operator
-  ./operator-starhub-test.sh update
+  ./operator-nexus-dev.sh update
 
   # Check status
-  ./operator-starhub-test.sh status
+  ./operator-nexus-dev.sh status
 
   # Delete operator (safe - keeps IAM, ECR, and access)
-  ./operator-starhub-test.sh delete
+  ./operator-nexus-dev.sh delete
 
   # Complete cleanup (removes IAM, ECR, and aws-auth - restores original state)
-  ./operator-starhub-test.sh delete --full
+  ./operator-nexus-dev.sh delete --full
 
   # Delete with specific options
-  ./operator-starhub-test.sh delete --keep-iam
+  ./operator-nexus-dev.sh delete --keep-iam
 
   # Restore cluster to original state (removes aws-auth entry)
-  ./operator-starhub-test.sh delete --remove-aws-auth
+  ./operator-nexus-dev.sh delete --remove-aws-auth
 
 Workflow:
-  1. ./operator-starhub-test.sh scan     # Check cluster readiness & IRSA
-  2. ./operator-starhub-test.sh fix-irsa # Fix IRSA if needed (or let deploy do it)
+  1. ./operator-nexus-dev.sh scan     # Check cluster readiness & IRSA
+  2. ./operator-nexus-dev.sh fix-irsa # Fix IRSA if needed (or let deploy do it)
   3. ./build-and-push.sh                 # Build operator image
-  4. ./operator-starhub-test.sh deploy   # Deploy operator (auto-fixes IRSA + ALB Controller)
-  5. ./operator-starhub-test.sh status   # Verify health
+  4. ./operator-nexus-dev.sh deploy   # Deploy operator (auto-fixes IRSA + ALB Controller)
+  5. ./operator-nexus-dev.sh status   # Verify health
 
 ALB Ingress Support:
   The deploy command automatically installs AWS Load Balancer Controller if not present.
   This enables ALB Ingress for TotogiCapability resources.
   
   To install ALB Controller separately:
-    ./operator-starhub-test.sh install-alb-controller
+    ./operator-nexus-dev.sh install-alb-controller
 
 IRSA (IAM Roles for Service Accounts):
   IRSA allows Kubernetes pods to securely assume IAM roles without credentials.
@@ -142,7 +142,7 @@ show_header() {
     local action=$1
     echo ""
     echo "=============================================="
-    echo "  $action Operator - starhub-test Cluster"
+    echo "  $action Operator - nexus-dev Cluster"
     echo "=============================================="
     echo ""
     echo "Cluster:     ${CLUSTER_NAME}"
@@ -263,8 +263,8 @@ deploy_operator() {
         
         echo ""
         echo "Verify deployment:"
-        echo "  kubectl -n totogi-system get pods"
-        echo "  kubectl -n totogi-system logs -f deployment/totogi-operator"
+        echo "  kubectl -n nexus-system get pods"
+        echo "  kubectl -n nexus-system logs -f deployment/totogi-operator"
         echo ""
         echo -e "${GREEN}=============================================="
         echo "  Next Steps"
@@ -275,10 +275,10 @@ deploy_operator() {
         echo "   kubectl apply -f examples/call-processing-complete.yaml"
         echo ""
         echo "2. Monitor deployment progress:"
-        echo "   ./operator-starhub-test.sh monitor"
+        echo "   ./operator-nexus-dev.sh monitor"
         echo ""
         echo "3. Verify all resources:"
-        echo "   ./operator-starhub-test.sh verify-capability"
+        echo "   ./operator-nexus-dev.sh verify-capability"
         echo ""
         echo "4. Get the application URL (after ALB is active):"
         echo "   kubectl get ingress -n call-processing-prod -o wide"
@@ -331,7 +331,7 @@ except ImportError:
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
 REGION = os.getenv('REGION', 'ap-southeast-1')
-AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
+AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 def get_oidc_thumbprint(oidc_issuer):
     """Get the SHA-1 thumbprint of the OIDC provider's root CA certificate."""
@@ -418,7 +418,7 @@ def main():
                 Tags=[
                     {'Key': 'eks:cluster-name', 'Value': CLUSTER_NAME},
                     {'Key': 'managed-by', 'Value': 'totogi-operator'},
-                    {'Key': 'created-by', 'Value': 'operator-starhub-test.sh'},
+                    {'Key': 'created-by', 'Value': 'operator-nexus-dev.sh'},
                 ]
             )
             created_arn = response['OpenIDConnectProviderArn']
@@ -498,7 +498,7 @@ except ImportError:
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
 REGION = os.getenv('REGION', 'ap-southeast-1')
-AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
+AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 ALB_CONTROLLER_NAMESPACE = "kube-system"
 ALB_CONTROLLER_NAME = "aws-load-balancer-controller"
@@ -903,7 +903,7 @@ def main():
             oidc_issuer = cluster_info.get('identity', {}).get('oidc', {}).get('issuer')
             if not oidc_issuer:
                 print(f"    [✗] No OIDC issuer - IRSA not available")
-                print(f"        ALB Controller requires IRSA. Run: ./operator-starhub-test.sh fix-irsa")
+                print(f"        ALB Controller requires IRSA. Run: ./operator-nexus-dev.sh fix-irsa")
                 return 1
             
             oidc_provider_id = oidc_issuer.replace('https://', '')
@@ -984,7 +984,7 @@ except ImportError:
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
 REGION = os.getenv('REGION', 'ap-southeast-1')
-AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
+AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 ALB_CONTROLLER_NAMESPACE = "kube-system"
 ALB_CONTROLLER_NAME = "aws-load-balancer-controller"
@@ -1228,7 +1228,7 @@ delete_alb_controller() {
         echo -e "===============================================${NC}"
         echo ""
         echo "To reinstall:"
-        echo "  ./operator-starhub-test.sh install-alb-controller"
+        echo "  ./operator-nexus-dev.sh install-alb-controller"
         echo ""
     else
         echo -e "${RED}=============================================="
@@ -1293,7 +1293,7 @@ fix_irsa() {
         echo ""
         echo "Next steps:"
         echo "  1. Build operator image: ./build-and-push.sh"
-        echo "  2. Deploy operator:      ./operator-starhub-test.sh deploy"
+        echo "  2. Deploy operator:      ./operator-nexus-dev.sh deploy"
         echo ""
     else
         echo -e "${RED}=============================================="
@@ -1567,7 +1567,7 @@ for item in data.get('items', []):
         echo "Your cluster access is preserved."
         echo ""
         echo "To redeploy:"
-        echo "  ./operator-starhub-test.sh deploy"
+        echo "  ./operator-nexus-dev.sh deploy"
         echo ""
     else
         echo ""
@@ -1619,7 +1619,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger()
 
 # Set AWS profile
-os.environ['AWS_PROFILE'] = os.getenv('AWS_PROFILE', 'external-access')
+os.environ['AWS_PROFILE'] = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 # Add backend to path
 sys.path.insert(0, os.getenv('BACKEND_DIR', '.'))
@@ -1639,7 +1639,7 @@ except ImportError as e:
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
 REGION = os.getenv('REGION', 'ap-southeast-1')
-AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
+AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 # Minimum supported EKS version
 MIN_EKS_VERSION = "1.23"
@@ -2197,7 +2197,7 @@ async def scan_cluster():
                 if e.status == 404:
                     print(f"    [—] ALB Controller not installed")
                     print(f"        Required for Kubernetes Ingress -> AWS ALB")
-                    print(f"        To install: ./operator-starhub-test.sh install-alb-controller")
+                    print(f"        To install: ./operator-nexus-dev.sh install-alb-controller")
                 else:
                     print(f"    [⚠] Could not check ALB Controller: {e.status}")
             except Exception as e:
@@ -2255,7 +2255,7 @@ async def scan_cluster():
             print()
             print("Next steps:")
             print("  1. Deploy the operator:")
-            print("     ./operator-starhub-test.sh deploy")
+            print("     ./operator-nexus-dev.sh deploy")
             print()
             print("  2. Or build fresh and deploy:")
             print("     ./build-and-deploy.sh")
@@ -2263,7 +2263,7 @@ async def scan_cluster():
             
             if not alb_controller_ready:
                 print("  Optional - Install ALB Controller for Ingress support:")
-                print("     ./operator-starhub-test.sh install-alb-controller")
+                print("     ./operator-nexus-dev.sh install-alb-controller")
                 print()
             
             return 0
@@ -2290,7 +2290,7 @@ async def scan_cluster():
             if not readiness_checks['api_access']:
                 print("Issue: No API access")
                 print("Fix:   Deploy script will automatically grant access via EKS Access Entry")
-                print("       Just run: ./operator-starhub-test.sh deploy")
+                print("       Just run: ./operator-nexus-dev.sh deploy")
                 print()
             
             if not readiness_checks['version_ok']:
@@ -2551,7 +2551,7 @@ def main():
         time.sleep(2)
     
     if phase == "Running":
-        print("Tip: Run './operator-starhub-test.sh verify-capability' to verify resources")
+        print("Tip: Run './operator-nexus-dev.sh verify-capability' to verify resources")
 
 if __name__ == "__main__":
     main()
@@ -2597,7 +2597,7 @@ verify_capability() {
         return 0
     fi
     
-    local OP_NS="totogi-system"
+    local OP_NS="nexus-system"
     local JOB_NAME="verify-capability-run"
     local CM_NAME="verify-capability-script"
     local VERIFY_PY="${SCRIPT_DIR}/verify-capability.py"
@@ -2811,9 +2811,9 @@ check_status() {
     echo ""
     
     # Check if operator namespace exists
-    if ! kubectl get namespace totogi-system >/dev/null 2>&1; then
+    if ! kubectl get namespace nexus-system >/dev/null 2>&1; then
         echo -e "${YELLOW}✗ Operator not deployed${NC}"
-        echo "  Namespace 'totogi-system' not found"
+        echo "  Namespace 'nexus-system' not found"
         echo ""
         echo "To deploy:"
         echo "  ./build-and-deploy.sh"
@@ -2821,13 +2821,13 @@ check_status() {
         return 1
     fi
     
-    echo "✓ Namespace: totogi-system exists"
+    echo "✓ Namespace: nexus-system exists"
     echo ""
     
     # Check deployment
     echo "Deployment Status:"
-    if kubectl get deployment totogi-operator -n totogi-system >/dev/null 2>&1; then
-        kubectl get deployment totogi-operator -n totogi-system
+    if kubectl get deployment totogi-operator -n nexus-system >/dev/null 2>&1; then
+        kubectl get deployment totogi-operator -n nexus-system
     else
         echo "  ✗ Deployment not found"
         return 1
@@ -2836,12 +2836,12 @@ check_status() {
     
     # Check pods
     echo "Pod Status:"
-    if kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator >/dev/null 2>&1; then
-        kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator
+    if kubectl get pods -n nexus-system -l app.kubernetes.io/name=totogi-operator >/dev/null 2>&1; then
+        kubectl get pods -n nexus-system -l app.kubernetes.io/name=totogi-operator
         
         # Check if pods are healthy
-        READY_PODS=$(kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null | grep -c "true" || echo "0")
-        TOTAL_PODS=$(kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator --no-headers 2>/dev/null | wc -l)
+        READY_PODS=$(kubectl get pods -n nexus-system -l app.kubernetes.io/name=totogi-operator -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null | grep -c "true" || echo "0")
+        TOTAL_PODS=$(kubectl get pods -n nexus-system -l app.kubernetes.io/name=totogi-operator --no-headers 2>/dev/null | wc -l)
         
         if [ "$READY_PODS" -eq "$TOTAL_PODS" ] && [ "$TOTAL_PODS" -gt 0 ]; then
             echo ""
@@ -2869,7 +2869,7 @@ check_status() {
     echo ""
     
     echo "To view logs:"
-    echo "  kubectl -n totogi-system logs -f deployment/totogi-operator"
+    echo "  kubectl -n nexus-system logs -f deployment/totogi-operator"
     echo ""
     
     return 0
@@ -2928,7 +2928,7 @@ main() {
 
             # Ensure operator ServiceAccount has RBAC for the new CRD
             echo "Ensuring operator RBAC for TotogiNetworkConfig..."
-            SA_NAME=$(kubectl get deployment totogi-operator -n totogi-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
+            SA_NAME=$(kubectl get deployment totogi-operator -n nexus-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
             kubectl apply -f - <<RBAC_EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2946,7 +2946,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: ${SA_NAME}
-    namespace: totogi-system
+    namespace: nexus-system
 roleRef:
   kind: ClusterRole
   name: totogi-operator-network-config
@@ -2962,7 +2962,7 @@ RBAC_EOF
 
             # Restart operator to pick up the new CRD if it was watching before RBAC was ready
             echo "Restarting operator to pick up new CRD..."
-            kubectl rollout restart deployment totogi-operator -n totogi-system 2>/dev/null || true
+            kubectl rollout restart deployment totogi-operator -n nexus-system 2>/dev/null || true
             sleep 10
             echo ""
 
@@ -2992,7 +2992,7 @@ RBAC_EOF
                 echo "  Phase: ${PHASE} (${HEALTHY}/${TOTAL})... (${i}/30)"
                 sleep 10
             done
-            echo -e "${YELLOW}Timeout waiting for endpoints. Check: kubectl logs -n totogi-system deployment/totogi-operator${NC}"
+            echo -e "${YELLOW}Timeout waiting for endpoints. Check: kubectl logs -n nexus-system deployment/totogi-operator${NC}"
             ;;
         check-endpoints|endpoints-status)
             echo ""
@@ -3015,7 +3015,7 @@ RBAC_EOF
                 echo "  No TotogiNetworkConfig found."
                 echo ""
                 echo "  To set up VPC endpoints, run:"
-                echo "    ./operator-starhub-test.sh setup-endpoints"
+                echo "    ./operator-nexus-dev.sh setup-endpoints"
             fi
             echo ""
             ;;
@@ -3219,7 +3219,7 @@ APPJOB_EOF
         check-operator-permissions|check-operator)
             show_header "Check Operator Permissions & VPC Endpoints"
 
-            local OP_NS="totogi-system"
+            local OP_NS="nexus-system"
             local JOB_NAME="check-operator-permissions"
             local CM_NAME="operator-perm-check"
 

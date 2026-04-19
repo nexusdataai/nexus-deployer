@@ -13,7 +13,7 @@
 #   Uses pod service account credentials (no --profile). Detected when KUBERNETES_SERVICE_HOST is set.
 #   Requires aws CLI + kubectl in the container (see kube-operator Dockerfile).
 #
-#   kubectl exec -n totogi-system deploy/totogi-operator -- \
+#   kubectl exec -n nexus-system deploy/totogi-operator -- \
 #     env DEPLOY_ENV=stage AWS_REGION=ap-southeast-1 /bin/bash /app/inspect-capability.sh
 #
 #   In-cluster AWS calls use the pod service account (IRSA). DynamoDB checks use boto3 (same as the

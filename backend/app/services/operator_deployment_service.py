@@ -27,7 +27,7 @@ from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 logger = logging.getLogger(__name__)
 
 # Operator configuration
-OPERATOR_NAMESPACE = "totogi-system"
+OPERATOR_NAMESPACE = "nexus-system"
 OPERATOR_DEPLOYMENT_NAME = "totogi-operator"
 OPERATOR_SERVICE_ACCOUNT = "totogi-operator"
 OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "totogi-operator")
@@ -412,7 +412,7 @@ class OperatorDeploymentService:
         Deploy the Totogi Operator to an EKS cluster.
         
         Steps:
-        1. Create totogi-system namespace
+        1. Create nexus-system namespace
         2. Create IAM role with IRSA trust policy
         3. Create ServiceAccount with IAM role annotation
         4. Apply CRD
@@ -470,7 +470,7 @@ class OperatorDeploymentService:
             }
     
     async def _create_namespace(self, core_v1):
-        """Create the totogi-system namespace if it doesn't exist."""
+        """Create the nexus-system namespace if it doesn't exist."""
         from kubernetes.client import V1Namespace, V1ObjectMeta
         from kubernetes.client.rest import ApiException
         

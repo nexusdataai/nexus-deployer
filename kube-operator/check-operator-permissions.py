@@ -3,11 +3,11 @@
 Check operator role permissions by testing actual AWS API calls.
 
 Designed to run INSIDE the operator pod via:
-    kubectl exec -n totogi-system deployment/totogi-operator -- python3 /app/check-operator-permissions.py
+    kubectl exec -n nexus-system deployment/totogi-operator -- python3 /app/check-operator-permissions.py
 
 Or copy into the pod first:
-    kubectl cp check-operator-permissions.py totogi-system/<pod-name>:/tmp/check.py
-    kubectl exec -n totogi-system <pod-name> -- python3 /tmp/check.py
+    kubectl cp check-operator-permissions.py nexus-system/<pod-name>:/tmp/check.py
+    kubectl exec -n nexus-system <pod-name> -- python3 /tmp/check.py
 
 Tests every permission from operator-policy.json by making safe read-only
 API calls. Reports OK / ACCESS_DENIED / NO_ENDPOINT for each service.

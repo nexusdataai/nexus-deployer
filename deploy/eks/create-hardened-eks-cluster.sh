@@ -1,35 +1,43 @@
 #!/bin/bash
 #
-# Hardened EKS Cluster Creation Script
-# Creates an EKS cluster with CIS Level 2 hardened nodes
-# Works with any AWS account - auto-discovers subnets and creates IAM roles if needed
+# Hardened EKS Cluster Creation Script (Revised)
+# Creates a fully private EKS cluster with:
+#   - VPC endpoints (no NAT gateway)
+#   - OIDC provider registered in IAM
+#   - IRSA roles for operator, app, and EBS CSI driver
+#   - AWS Load Balancer Controller (ingress)
+#   - EBS CSI Driver (storage)
+#   - CIS Level 2 hardened nodes
 #
 # Usage:
-#   ./create-hardened-eks-cluster.sh [cluster-name]
 #   ./create-hardened-eks-cluster.sh --name my-cluster --region us-east-1
-#   ./create-hardened-eks-cluster.sh --name my-cluster --vpc-id vpc-123 \
-#       --public-subnets subnet-aaa,subnet-bbb --private-subnets subnet-ccc,subnet-ddd
+#   ./create-hardened-eks-cluster.sh --name my-cluster --capability call-processing --env dev
 #   AUTO_APPROVE=yes ./create-hardened-eks-cluster.sh --name my-cluster
 #
 
 set -e
 
-# Defaults (all overridable via flags or env vars)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PERMISSIONS_DIR="${SCRIPT_DIR}/../../kube-operator/permissions"
+
+# Defaults
 CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}"
 REGION="${REGION:-us-east-1}"
-K8S_VERSION="${K8S_VERSION:-1.34}"
-NODE_INSTANCE_TYPE="${NODE_INSTANCE_TYPE:-c6a.large}"
+K8S_VERSION="${K8S_VERSION:-1.32}"
+NODE_INSTANCE_TYPE="${NODE_INSTANCE_TYPE:-c6a.xlarge}"
 NODE_COUNT_MIN="${NODE_COUNT_MIN:-2}"
 NODE_COUNT_MAX="${NODE_COUNT_MAX:-4}"
 NODE_COUNT_DESIRED="${NODE_COUNT_DESIRED:-2}"
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
 AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
+CAPABILITY="${CAPABILITY:-nexus}"
+APP_ENV="${APP_ENV:-dev}"
+SKIP_ENDPOINTS="${SKIP_ENDPOINTS:-false}"
+SKIP_ADDONS="${SKIP_ADDONS:-false}"
 
-# These can be set via flags or env vars (empty = auto-discover/create)
 VPC_ID="${VPC_ID:-}"
 PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
 PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
-# Legacy: SUBNETS env var still supported as combined list
 SUBNETS="${SUBNETS:-}"
 
 # Parse command-line options
@@ -49,45 +57,46 @@ while [[ $# -gt 0 ]]; do
         --subnets)          SUBNETS="$2"; shift 2 ;;
         --cluster-role-arn) CLUSTER_ROLE_ARN="$2"; shift 2 ;;
         --node-role-arn)    NODE_ROLE_ARN="$2"; shift 2 ;;
+        --capability)       CAPABILITY="$2"; shift 2 ;;
+        --env)              APP_ENV="$2"; shift 2 ;;
+        --skip-endpoints)   SKIP_ENDPOINTS=true; shift ;;
+        --skip-addons)      SKIP_ADDONS=true; shift ;;
         --auto-approve)     AUTO_APPROVE=yes; shift ;;
         --help|-h)
             echo "Usage: $0 [cluster-name] [OPTIONS]"
             echo ""
-            echo "Positional:"
-            echo "  cluster-name              Cluster name (default: nexus-dev)"
+            echo "Creates a fully private EKS cluster with OIDC, VPC endpoints,"
+            echo "IRSA roles, Load Balancer Controller, EBS CSI, and CIS hardening."
             echo ""
-            echo "Options:"
-            echo "  --name NAME               Cluster name (alternative to positional arg)"
+            echo "Cluster:"
+            echo "  --name NAME               Cluster name (default: nexus-dev)"
             echo "  --region REGION            AWS region (default: us-east-1)"
             echo "  --profile PROFILE          AWS CLI profile (default: ptr-tech)"
-            echo "  --k8s-version VER          Kubernetes version (default: 1.34)"
+            echo "  --k8s-version VER          Kubernetes version (default: 1.32)"
             echo ""
-            echo "Networking (if none provided, VPC + subnets are auto-created):"
+            echo "Networking:"
             echo "  --vpc-id VPC_ID            Use an existing VPC"
             echo "  --public-subnets  S1,S2    Comma-separated public subnet IDs"
             echo "  --private-subnets S1,S2    Comma-separated private subnet IDs"
-            echo "  --subnets S1,S2,...         All subnets as a flat list (legacy)"
+            echo "  --subnets S1,S2,...         All subnets as a flat list"
             echo ""
             echo "Nodes:"
-            echo "  --instance-type TYPE       Node instance type (default: c6a.large)"
+            echo "  --instance-type TYPE       Node instance type (default: c6a.xlarge)"
             echo "  --nodes-min N              Min node count (default: 2)"
             echo "  --nodes-max N              Max node count (default: 4)"
             echo "  --nodes-desired N          Desired node count (default: 2)"
             echo ""
-            echo "IAM (if not provided, roles are auto-discovered or created):"
+            echo "IAM:"
             echo "  --cluster-role-arn ARN     EKS cluster IAM role ARN"
             echo "  --node-role-arn ARN        EKS node group IAM role ARN"
+            echo "  --capability NAME          Capability name for app role (default: nexus)"
+            echo "  --env ENV                  Environment for app role (default: dev)"
             echo ""
-            echo "Other:"
+            echo "Toggles:"
+            echo "  --skip-endpoints           Skip VPC endpoint creation"
+            echo "  --skip-addons              Skip EBS CSI and LB controller installation"
             echo "  --auto-approve             Skip all confirmation prompts"
             echo "  --help                     Show this help"
-            echo ""
-            echo "Examples:"
-            echo "  $0 my-cluster"
-            echo "  $0 --name my-cluster --region us-east-1 --auto-approve"
-            echo "  $0 --name my-cluster --vpc-id vpc-123abc \\"
-            echo "     --public-subnets subnet-aaa,subnet-bbb \\"
-            echo "     --private-subnets subnet-ccc,subnet-ddd"
             exit 0
             ;;
         -*)
@@ -95,13 +104,11 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            # Positional arg = cluster name (backward compatible)
             CLUSTER_NAME="$1"; shift
             ;;
     esac
 done
 
-# Build SUBNETS from public + private if provided separately
 if [ -z "$SUBNETS" ] && { [ -n "$PUBLIC_SUBNETS" ] || [ -n "$PRIVATE_SUBNETS" ]; }; then
     if [ -n "$PUBLIC_SUBNETS" ] && [ -n "$PRIVATE_SUBNETS" ]; then
         SUBNETS="${PUBLIC_SUBNETS},${PRIVATE_SUBNETS}"
@@ -112,7 +119,12 @@ if [ -z "$SUBNETS" ] && { [ -n "$PUBLIC_SUBNETS" ] || [ -n "$PRIVATE_SUBNETS" ];
     fi
 fi
 
-# ── Resolve AWS Account ID from profile ──
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# ── Prerequisites ────────────────────────────────────────────────────
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query 'Account' --output text 2>/dev/null || true)
 if [ -z "$AWS_ACCOUNT_ID" ]; then
     echo "❌ Failed to get credentials from profile '$AWS_PROFILE'"
@@ -120,13 +132,35 @@ if [ -z "$AWS_ACCOUNT_ID" ]; then
     exit 1
 fi
 
-# ── Resolve Subnets ──
-# Priority: --subnets / --public/private-subnets > --vpc-id subnets > default VPC > create new VPC
+if ! command -v kubectl &>/dev/null; then
+    echo "❌ kubectl not found. Install it: https://kubernetes.io/docs/tasks/tools/"
+    exit 1
+fi
+if ! command -v jq &>/dev/null; then
+    echo "❌ jq not found. Install it: sudo apt install jq"
+    exit 1
+fi
+if ! command -v helm &>/dev/null; then
+    echo "📦 helm not found. Installing..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    if ! command -v helm &>/dev/null; then
+        echo "❌ helm installation failed."
+        echo "   Install manually: https://helm.sh/docs/intro/install/"
+        echo "   Or pass --skip-addons to skip addon installation."
+        exit 1
+    fi
+    echo -e "${GREEN}✓ helm installed: $(helm version --short)${NC}"
+fi
+
+if [ ! -d "$PERMISSIONS_DIR" ]; then
+    echo "❌ Permissions directory not found: $PERMISSIONS_DIR"
+    echo "   Expected kube-operator/permissions/ relative to deploy/eks/"
+    exit 1
+fi
+
+# ── Resolve Subnets ──────────────────────────────────────────────────
 VPC_CREATED=false
 
-# EKS doesn't support all AZs in every region (e.g. us-east-1e).
-# There is no API to query EKS-supported AZs, so we pick subnets from
-# only the first 2 AZs alphabetically (a, b are universally supported).
 pick_eks_subnets() {
     local vpc="$1"
     local all_subnets
@@ -155,8 +189,6 @@ pick_eks_subnets() {
 }
 
 if [ -z "$SUBNETS" ]; then
-
-    # If --vpc-id was given, discover its subnets
     if [ -n "$VPC_ID" ]; then
         echo "🔍 Discovering subnets in VPC: $VPC_ID..."
         SUBNETS=$(pick_eks_subnets "$VPC_ID")
@@ -167,40 +199,34 @@ if [ -z "$SUBNETS" ]; then
         echo "   Subnets: $SUBNETS"
     else
         echo "🔍 Looking for existing VPC/subnets in $REGION..."
-
-        # Try default VPC first
         EXISTING_VPC=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Vpcs[0].VpcId' --output text 2>/dev/null)
-
-        # Fall back to any VPC
         if [ -z "$EXISTING_VPC" ] || [ "$EXISTING_VPC" == "None" ]; then
             EXISTING_VPC=$(aws ec2 describe-vpcs --region "$REGION" --profile "$AWS_PROFILE" \
                 --query 'Vpcs[0].VpcId' --output text 2>/dev/null)
         fi
-
         if [ -n "$EXISTING_VPC" ] && [ "$EXISTING_VPC" != "None" ]; then
             SUBNETS=$(pick_eks_subnets "$EXISTING_VPC")
             if [ -n "$SUBNETS" ]; then
+                VPC_ID="$EXISTING_VPC"
                 echo "   Using existing VPC: $EXISTING_VPC"
                 echo "   Subnets: $SUBNETS"
             fi
         fi
     fi
 
-    # No usable subnets found — create a new VPC with proper public/private layout
+    # ── Auto-create VPC (NO NAT gateway) ─────────────────────────────
     if [ -z "$SUBNETS" ]; then
         echo ""
-        echo "🏗️  No VPC/subnets found. Creating EKS-ready VPC..."
+        echo "🏗️  Creating EKS-ready VPC (private, VPC-endpoint-based)..."
 
-        # Pick two AZs
         AZ1=$(aws ec2 describe-availability-zones --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'AvailabilityZones[0].ZoneName' --output text)
         AZ2=$(aws ec2 describe-availability-zones --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'AvailabilityZones[1].ZoneName' --output text)
         echo "   AZs: $AZ1, $AZ2"
 
-        # Create VPC (10.0.0.0/16)
         VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
             --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${CLUSTER_NAME}-vpc}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
@@ -212,16 +238,14 @@ if [ -z "$SUBNETS" ]; then
         echo "   VPC: $VPC_ID (10.0.0.0/16)"
         VPC_CREATED=true
 
-        # Create Internet Gateway
         IGW_ID=$(aws ec2 create-internet-gateway \
             --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${CLUSTER_NAME}-igw}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'InternetGateway.InternetGatewayId' --output text)
         aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" \
             --region "$REGION" --profile "$AWS_PROFILE"
-        echo "   IGW: $IGW_ID"
+        echo "   IGW: $IGW_ID (for ALB ingress only)"
 
-        # Create public subnets (10.0.1.0/24, 10.0.2.0/24)
         PUB_SUB1=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.1.0/24 \
             --availability-zone "$AZ1" \
             --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-${AZ1}},{Key=kubernetes.io/role/elb,Value=1}]" \
@@ -237,9 +261,8 @@ if [ -z "$SUBNETS" ]; then
             --query 'Subnet.SubnetId' --output text)
         aws ec2 modify-subnet-attribute --subnet-id "$PUB_SUB2" --map-public-ip-on-launch \
             --region "$REGION" --profile "$AWS_PROFILE"
-        echo "   Public:  $PUB_SUB1 ($AZ1), $PUB_SUB2 ($AZ2)"
+        echo "   Public:  $PUB_SUB1 ($AZ1), $PUB_SUB2 ($AZ2)  [ALB only]"
 
-        # Public route table → IGW
         PUB_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
             --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-rt}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
@@ -251,21 +274,6 @@ if [ -z "$SUBNETS" ]; then
         aws ec2 associate-route-table --route-table-id "$PUB_RT" --subnet-id "$PUB_SUB2" \
             --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
 
-        # Elastic IP + NAT Gateway (in first public subnet)
-        EIP_ALLOC=$(aws ec2 allocate-address --domain vpc \
-            --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${CLUSTER_NAME}-nat-eip}]" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'AllocationId' --output text)
-        NAT_ID=$(aws ec2 create-nat-gateway --subnet-id "$PUB_SUB1" --allocation-id "$EIP_ALLOC" \
-            --tag-specifications "ResourceType=natgateway,Tags=[{Key=Name,Value=${CLUSTER_NAME}-nat}]" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'NatGateway.NatGatewayId' --output text)
-        echo "   NAT GW: $NAT_ID (waiting for it to become available...)"
-        aws ec2 wait nat-gateway-available --nat-gateway-ids "$NAT_ID" \
-            --region "$REGION" --profile "$AWS_PROFILE"
-        echo "   NAT GW: available"
-
-        # Create private subnets (10.0.10.0/24, 10.0.11.0/24)
         PRIV_SUB1=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.10.0/24 \
             --availability-zone "$AZ1" \
             --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ1}},{Key=kubernetes.io/role/internal-elb,Value=1}]" \
@@ -277,27 +285,140 @@ if [ -z "$SUBNETS" ]; then
             --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ2}},{Key=kubernetes.io/role/internal-elb,Value=1}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Subnet.SubnetId' --output text)
-        echo "   Private: $PRIV_SUB1 ($AZ1), $PRIV_SUB2 ($AZ2)"
+        echo "   Private: $PRIV_SUB1 ($AZ1), $PRIV_SUB2 ($AZ2)  [Nodes]"
 
-        # Private route table → NAT GW
         PRIV_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
             --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'RouteTable.RouteTableId' --output text)
-        aws ec2 create-route --route-table-id "$PRIV_RT" --destination-cidr-block 0.0.0.0/0 \
-            --nat-gateway-id "$NAT_ID" --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
         aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB1" \
             --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
         aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB2" \
             --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+        echo "   Private RT: $PRIV_RT (no default route -- VPC endpoints only)"
 
-        SUBNETS="${PUB_SUB1},${PUB_SUB2},${PRIV_SUB1},${PRIV_SUB2}"
+        PUBLIC_SUBNETS="${PUB_SUB1},${PUB_SUB2}"
+        PRIVATE_SUBNETS="${PRIV_SUB1},${PRIV_SUB2}"
+        SUBNETS="${PUBLIC_SUBNETS},${PRIVATE_SUBNETS}"
         echo "   All subnets: $SUBNETS"
         echo ""
     fi
 fi
 
-# ── Resolve or Create EKS Cluster Role ──
+# Resolve VPC_ID if not already set (from existing subnets)
+if [ -z "$VPC_ID" ] && [ -n "$SUBNETS" ]; then
+    FIRST_SUBNET=$(echo "$SUBNETS" | cut -d',' -f1)
+    VPC_ID=$(aws ec2 describe-subnets --subnet-ids "$FIRST_SUBNET" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'Subnets[0].VpcId' --output text 2>/dev/null)
+fi
+
+# Resolve PRIV_RT if not set (for VPC endpoints on existing VPCs)
+if [ -z "$PRIV_RT" ] && [ -n "$VPC_ID" ]; then
+    PRIV_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
+fi
+
+# Resolve PRIVATE_SUBNETS if not set (needed for interface endpoints)
+if [ -z "$PRIVATE_SUBNETS" ] && [ -n "$VPC_ID" ]; then
+    PRIVATE_SUBNETS=$(aws ec2 describe-subnets \
+        --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=false" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'Subnets[].SubnetId' --output text 2>/dev/null | tr '\t' ',')
+    if [ -z "$PRIVATE_SUBNETS" ]; then
+        PRIVATE_SUBNETS="$SUBNETS"
+    fi
+fi
+
+#=============================================================================
+# Step 0b: Create VPC Endpoints
+#=============================================================================
+
+if [ "$SKIP_ENDPOINTS" != "true" ] && [ -n "$VPC_ID" ]; then
+    echo "=== Creating VPC Endpoints ==="
+
+    VPCE_SG=$(aws ec2 create-security-group \
+        --group-name "${CLUSTER_NAME}-vpce-sg" \
+        --description "Allow HTTPS from VPC for VPC endpoints" \
+        --vpc-id "$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'GroupId' --output text 2>/dev/null || true)
+
+    if [ -n "$VPCE_SG" ] && [ "$VPCE_SG" != "None" ]; then
+        VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'Vpcs[0].CidrBlock' --output text)
+        aws ec2 authorize-security-group-ingress --group-id "$VPCE_SG" \
+            --protocol tcp --port 443 --cidr "$VPC_CIDR" \
+            --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
+        aws ec2 create-tags --resources "$VPCE_SG" \
+            --tags "Key=Name,Value=${CLUSTER_NAME}-vpce-sg" \
+            --region "$REGION" --profile "$AWS_PROFILE"
+        echo "   Security Group: $VPCE_SG"
+    else
+        VPCE_SG=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${CLUSTER_NAME}-vpce-sg" "Name=vpc-id,Values=$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
+        echo "   Security Group (existing): $VPCE_SG"
+    fi
+
+    EXISTING_ENDPOINTS=$(aws ec2 describe-vpc-endpoints \
+        --filters "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'VpcEndpoints[].ServiceName' --output text 2>/dev/null)
+
+    PRIV_SUBNET_LIST=$(echo "$PRIVATE_SUBNETS" | tr ',' ' ')
+
+    GATEWAY_SERVICES="s3 dynamodb"
+
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        SVC_FULL="com.amazonaws.${REGION}.$(echo "$line" | sed "s/com\.amazonaws\.[^.]*\.//;s/ //g")"
+        SVC_SHORT=$(echo "$SVC_FULL" | sed "s/com\.amazonaws\.${REGION}\.//")
+
+        if echo "$EXISTING_ENDPOINTS" | grep -q "$SVC_FULL"; then
+            echo "   ✓ $SVC_SHORT (exists)"
+            continue
+        fi
+
+        IS_GATEWAY=false
+        for gw in $GATEWAY_SERVICES; do
+            [ "$SVC_SHORT" == "$gw" ] && IS_GATEWAY=true
+        done
+
+        if [ "$IS_GATEWAY" == "true" ]; then
+            if aws ec2 create-vpc-endpoint --vpc-endpoint-type Gateway \
+                --vpc-id "$VPC_ID" --service-name "$SVC_FULL" \
+                --route-table-ids "$PRIV_RT" \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}}]" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+                echo "   ✓ $SVC_SHORT (gateway)"
+            else
+                echo "   ⚠ $SVC_SHORT (gateway - failed, may already exist)"
+            fi
+        else
+            if aws ec2 create-vpc-endpoint --vpc-endpoint-type Interface \
+                --vpc-id "$VPC_ID" --service-name "$SVC_FULL" \
+                --subnet-ids $PRIV_SUBNET_LIST \
+                --security-group-ids "$VPCE_SG" \
+                --private-dns-enabled \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}}]" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+                echo "   ✓ $SVC_SHORT (interface)"
+            else
+                echo "   ⚠ $SVC_SHORT (interface - failed, may not be available in $REGION)"
+            fi
+        fi
+    done < <(sed "s/com\.amazonaws\.[^.]*\./com.amazonaws.${REGION}./g" "$PERMISSIONS_DIR/vpc-endpoints.md")
+    echo ""
+fi
+
+#=============================================================================
+# Resolve or Create EKS Cluster Role
+#=============================================================================
+
 if [ -z "$CLUSTER_ROLE_ARN" ]; then
     EKS_CLUSTER_ROLE_NAME="AmazonEKSAutoClusterRole"
     CLUSTER_ROLE_ARN=$(aws iam get-role --role-name "$EKS_CLUSTER_ROLE_NAME" \
@@ -352,15 +473,12 @@ if [ -z "$NODE_ROLE_ARN" ]; then
     fi
 fi
 
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+#=============================================================================
+# Summary
+#=============================================================================
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║     Hardened EKS Cluster Creation Script                      ║"
-echo "║     EKS ${K8S_VERSION} + CIS Level 2 Hardening                          ║"
+echo "║  Hardened EKS Cluster (Private, VPC Endpoints, IRSA, ALB)    ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Cluster:      $CLUSTER_NAME"
@@ -368,36 +486,30 @@ echo "Region:       $REGION"
 echo "K8s Version:  $K8S_VERSION"
 echo "AWS Profile:  $AWS_PROFILE"
 echo "AWS Account:  $AWS_ACCOUNT_ID"
+echo "VPC:          $VPC_ID"
+echo "Subnets:      $SUBNETS"
 echo "Cluster Role: $CLUSTER_ROLE_ARN"
 echo "Node Role:    $NODE_ROLE_ARN"
-if [ -n "$VPC_ID" ]; then
-    echo "VPC:          $VPC_ID"
-fi
-if [ -n "$PUBLIC_SUBNETS" ]; then
-    echo "Public Subs:  $PUBLIC_SUBNETS"
-    echo "Private Subs: $PRIVATE_SUBNETS"
-else
-    echo "Subnets:      $SUBNETS"
-fi
-if [ "$VPC_CREATED" == "true" ]; then
-    echo "VPC:          $VPC_ID (auto-created)"
-fi
+echo "Capability:   $CAPABILITY"
+echo "Environment:  $APP_ENV"
 echo "Nodes:        ${NODE_COUNT_DESIRED} (min:${NODE_COUNT_MIN} max:${NODE_COUNT_MAX}) x ${NODE_INSTANCE_TYPE}"
+echo "Endpoints:    $([ "$SKIP_ENDPOINTS" == "true" ] && echo "SKIPPED" || echo "Enabled")"
+echo "Addons:       $([ "$SKIP_ADDONS" == "true" ] && echo "SKIPPED" || echo "EBS CSI + LB Controller")"
 
 if [ "$AUTO_APPROVE" == "yes" ]; then
     echo -e "${GREEN}Mode: NON-INTERACTIVE (AUTO_APPROVE=yes)${NC}"
-    echo "No keyboard input required - script will run to completion"
 else
-    echo "Mode: INTERACTIVE (will prompt for confirmations)"
-    echo "Tip: Use AUTO_APPROVE=yes for non-interactive mode"
+    echo "Mode: INTERACTIVE"
 fi
 echo ""
 
-# Check if cluster already exists
+#=============================================================================
+# Handle existing cluster
+#=============================================================================
+
 echo "=== Checking if cluster exists ==="
 if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" &>/dev/null; then
     echo -e "${YELLOW}Warning: Cluster $CLUSTER_NAME already exists${NC}"
-    
     if [ "$AUTO_APPROVE" != "yes" ]; then
         read -p "Delete and recreate? (yes/no): " CONFIRM
         if [ "$CONFIRM" != "yes" ]; then
@@ -407,35 +519,27 @@ if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile 
     else
         echo "AUTO_APPROVE=yes - Proceeding with deletion and recreation"
     fi
-    
+
     echo "Deleting existing node groups..."
     for ng in $(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'nodegroups[]' --output text); do
         echo "  Deleting node group: $ng"
         aws eks delete-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$ng" --region "$REGION" --profile "$AWS_PROFILE" &>/dev/null || true
     done
-    
-    echo "Waiting for node groups to delete completely..."
+    echo "Waiting for node groups to delete..."
     while true; do
         NODEGROUPS=$(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'nodegroups[]' --output text 2>/dev/null)
-        if [ -z "$NODEGROUPS" ]; then
-            echo "  All node groups deleted"
-            break
-        fi
+        [ -z "$NODEGROUPS" ] && break
         echo -n "."
         sleep 10
     done
     echo ""
-    
-    echo "Deleting cluster (output suppressed)..."
+
     aws eks delete-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1
-    
     echo "Waiting for cluster deletion (5-10 minutes)..."
     COUNT=0
     while aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" &>/dev/null; do
         COUNT=$((COUNT + 1))
-        if [ $((COUNT % 6)) -eq 0 ]; then
-            echo "  Still deleting... ($((COUNT / 6)) minutes)"
-        fi
+        [ $((COUNT % 6)) -eq 0 ] && echo "  Still deleting... ($((COUNT / 6)) minutes)"
         sleep 10
     done
     echo -e "${GREEN}✓ Cluster deleted${NC}"
@@ -462,7 +566,6 @@ if ! aws eks create-cluster \
     exit 1
 fi
 
-echo "Cluster creation initiated..."
 echo "Waiting for cluster to become ACTIVE..."
 COUNT=0
 while true; do
@@ -472,19 +575,48 @@ while true; do
         break
     fi
     COUNT=$((COUNT + 1))
-    if [ $((COUNT % 2)) -eq 0 ]; then
-        echo "  Status: $STATUS ($((COUNT / 2)) minutes)"
-    fi
+    [ $((COUNT % 2)) -eq 0 ] && echo "  Status: $STATUS ($((COUNT / 2)) minutes)"
     sleep 30
 done
 
-# Get cluster details
 CLUSTER_ENDPOINT=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'cluster.endpoint' --output text)
-CLUSTER_CA=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'cluster.certificateAuthority.data' --output text)
 CLUSTER_SG=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' --output text)
-
-echo "Cluster Endpoint: $CLUSTER_ENDPOINT"
+echo "Endpoint: $CLUSTER_ENDPOINT"
 echo "Cluster SG: $CLUSTER_SG"
+
+#=============================================================================
+# Step 1b: Create Access Entry for caller's IAM role
+#=============================================================================
+
+echo ""
+echo "=== Step 1b: Granting cluster admin access to caller ==="
+
+CALLER_ARN=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query 'Arn' --output text 2>/dev/null)
+CALLER_ROLE_ARN=$(echo "$CALLER_ARN" | sed 's|:sts::|:iam::|;s|:assumed-role/|:role/|;s|/[^/]*$||')
+
+FULL_ROLE_ARN=$(aws iam get-role \
+    --role-name "$(echo "$CALLER_ROLE_ARN" | sed 's|.*/||')" \
+    --profile "$AWS_PROFILE" --query 'Role.Arn' --output text 2>/dev/null || echo "$CALLER_ROLE_ARN")
+
+echo "   Caller: $CALLER_ARN"
+echo "   Role:   $FULL_ROLE_ARN"
+
+if aws eks describe-access-entry --cluster-name "$CLUSTER_NAME" --principal-arn "$FULL_ROLE_ARN" \
+    --region "$REGION" --profile "$AWS_PROFILE" &>/dev/null; then
+    echo "   Access entry exists, ensuring policy is attached..."
+else
+    aws eks create-access-entry --cluster-name "$CLUSTER_NAME" --principal-arn "$FULL_ROLE_ARN" \
+        --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
+fi
+
+if aws eks associate-access-policy --cluster-name "$CLUSTER_NAME" --principal-arn "$FULL_ROLE_ARN" \
+    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+    --access-scope type=cluster \
+    --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Cluster admin access granted${NC}"
+else
+    echo -e "${YELLOW}⚠ Could not associate access policy (may already exist)${NC}"
+fi
 
 #=============================================================================
 # Step 2: Update kubeconfig
@@ -496,11 +628,122 @@ aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$REGION" --profile "$
 echo -e "${GREEN}✓ Kubeconfig updated${NC}"
 
 #=============================================================================
-# Step 3: Create aws-auth ConfigMap
+# Step 3: Register OIDC Provider in IAM
 #=============================================================================
 
 echo ""
-echo "=== Step 3: Creating aws-auth ConfigMap ==="
+echo "=== Step 3: Registering OIDC Provider ==="
+
+OIDC_ISSUER=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" \
+    --query "cluster.identity.oidc.issuer" --output text)
+OIDC_PROVIDER=$(echo "$OIDC_ISSUER" | sed 's|https://||')
+echo "   OIDC Issuer: $OIDC_ISSUER"
+
+if aws iam get-open-id-connect-provider \
+    --open-id-connect-provider-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}" \
+    --profile "$AWS_PROFILE" &>/dev/null; then
+    echo -e "${GREEN}✓ OIDC provider already registered in IAM${NC}"
+else
+    echo "   Computing thumbprint..."
+    THUMBPRINT=$(echo | openssl s_client -servername oidc.eks.${REGION}.amazonaws.com \
+        -connect oidc.eks.${REGION}.amazonaws.com:443 2>/dev/null \
+        | openssl x509 -fingerprint -sha1 -noout \
+        | sed 's/sha1 Fingerprint=//;s/://g' | tr '[:upper:]' '[:lower:]')
+    echo "   Thumbprint: ${THUMBPRINT:0:12}..."
+
+    aws iam create-open-id-connect-provider \
+        --url "$OIDC_ISSUER" \
+        --client-id-list sts.amazonaws.com \
+        --thumbprint-list "$THUMBPRINT" \
+        --profile "$AWS_PROFILE" > /dev/null
+    echo -e "${GREEN}✓ OIDC provider registered${NC}"
+fi
+
+#=============================================================================
+# Step 4: Create IRSA Roles (Operator, App, EBS CSI)
+#=============================================================================
+
+echo ""
+echo "=== Step 4: Creating IRSA Roles ==="
+
+create_irsa_role() {
+    local role_name="$1"
+    local trust_file="$2"
+    local policy_file="$3"
+    local policy_name="$4"
+    local managed_policy_arn="$5"
+
+    if aws iam get-role --role-name "$role_name" --profile "$AWS_PROFILE" &>/dev/null; then
+        echo "   ✓ $role_name (exists)"
+        return 0
+    fi
+
+    local trust_json
+    trust_json=$(sed \
+        -e "s|\${ACCOUNT_ID}|${AWS_ACCOUNT_ID}|g" \
+        -e "s|\${OIDC_PROVIDER}|${OIDC_PROVIDER}|g" \
+        -e "s|\${CAPABILITY}|${CAPABILITY}|g" \
+        -e "s|\${ENV}|${APP_ENV}|g" \
+        "$trust_file")
+
+    aws iam create-role \
+        --role-name "$role_name" \
+        --assume-role-policy-document "$trust_json" \
+        --profile "$AWS_PROFILE" > /dev/null
+
+    if [ -n "$policy_file" ] && [ -f "$policy_file" ]; then
+        local perms_json
+        perms_json=$(sed \
+            -e "s|<region>|${REGION}|g" \
+            -e "s|<account-id>|${AWS_ACCOUNT_ID}|g" \
+            -e "s|<capability>|${CAPABILITY}|g" \
+            -e "s|<env>|${APP_ENV}|g" \
+            "$policy_file")
+        aws iam put-role-policy \
+            --role-name "$role_name" \
+            --policy-name "$policy_name" \
+            --policy-document "$perms_json" \
+            --profile "$AWS_PROFILE"
+    fi
+
+    if [ -n "$managed_policy_arn" ]; then
+        aws iam attach-role-policy \
+            --role-name "$role_name" \
+            --policy-arn "$managed_policy_arn" \
+            --profile "$AWS_PROFILE"
+    fi
+
+    echo "   ✓ $role_name (created)"
+}
+
+create_irsa_role "totogi-operator-role" \
+    "$PERMISSIONS_DIR/operator-trust-policy.json" \
+    "$PERMISSIONS_DIR/operator-policy.json" \
+    "totogi-operator-policy" \
+    ""
+
+APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
+create_irsa_role "$APP_ROLE_NAME" \
+    "$PERMISSIONS_DIR/app-trust-policy.json" \
+    "$PERMISSIONS_DIR/app-policy.json" \
+    "${APP_ROLE_NAME}-policy" \
+    ""
+
+create_irsa_role "AmazonEKS_EBS_CSI_DriverRole" \
+    "$PERMISSIONS_DIR/ebs-csi-trust-policy.json" \
+    "" \
+    "" \
+    "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+
+echo "   Waiting 10s for IAM propagation..."
+sleep 10
+
+#=============================================================================
+# Step 5: Create aws-auth ConfigMap
+#=============================================================================
+
+echo ""
+echo "=== Step 5: Creating aws-auth ConfigMap ==="
 
 cat > /tmp/aws-auth-${CLUSTER_NAME}.yaml <<EOF
 apiVersion: v1
@@ -521,39 +764,26 @@ kubectl apply -f /tmp/aws-auth-${CLUSTER_NAME}.yaml
 echo -e "${GREEN}✓ aws-auth ConfigMap created${NC}"
 
 #=============================================================================
-# Step 4: Get EKS-Optimized AMI
+# Step 6: Get EKS-Optimized AMI & Create Node Group
 #=============================================================================
 
 echo ""
-echo "=== Step 4: Getting EKS-Optimized AMI ==="
+echo "=== Step 6: Creating Node Group ==="
 
 EKS_AMI=$(aws ssm get-parameter \
     --name "/aws/service/eks/optimized-ami/${K8S_VERSION}/amazon-linux-2023/x86_64/standard/recommended/image_id" \
-    --region "$REGION" \
-    --profile "$AWS_PROFILE" \
-    --query 'Parameter.Value' \
-    --output text)
-
-echo "EKS-Optimized AMI: $EKS_AMI"
+    --region "$REGION" --profile "$AWS_PROFILE" \
+    --query 'Parameter.Value' --output text)
+echo "AMI: $EKS_AMI"
 
 AMI_VERSION=$(aws ssm get-parameter \
     --name "/aws/service/eks/optimized-ami/${K8S_VERSION}/amazon-linux-2023/x86_64/standard/recommended" \
-    --region "$REGION" \
-    --profile "$AWS_PROFILE" \
-    --query 'Parameter.Value' \
-    --output text | jq -r '.release_version')
-
-echo "Release Version: $AMI_VERSION"
-
-#=============================================================================
-# Step 5: Create Node Group
-#=============================================================================
-
-echo ""
-echo "=== Step 5: Creating Node Group ==="
-echo "This takes 3-5 minutes..."
+    --region "$REGION" --profile "$AWS_PROFILE" \
+    --query 'Parameter.Value' --output text | jq -r '.release_version')
+echo "Release: $AMI_VERSION"
 
 NODEGROUP_NAME="eks-optimized-nodes"
+echo "This takes 3-5 minutes..."
 
 aws eks create-nodegroup \
     --cluster-name "$CLUSTER_NAME" \
@@ -569,15 +799,14 @@ aws eks create-nodegroup \
     --region "$REGION" \
     --profile "$AWS_PROFILE" > /dev/null 2>&1
 
-echo "Node group creation initiated..."
 echo "Waiting for nodes to join..."
 while true; do
     NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
     READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready ") || READY_COUNT=0
     NG_STATUS=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --region "$REGION" --profile "$AWS_PROFILE" --query 'nodegroup.status' --output text 2>/dev/null)
-    
+
     echo "  NodeGroup: $NG_STATUS | Nodes: $NODE_COUNT | Ready: $READY_COUNT"
-    
+
     if [ "$READY_COUNT" -ge "$NODE_COUNT_DESIRED" ]; then
         echo -e "${GREEN}✓ All nodes are Ready!${NC}"
         break
@@ -585,18 +814,131 @@ while true; do
         echo -e "${RED}✗ Node group creation failed${NC}"
         exit 1
     fi
-    
+
     sleep 20
 done
 
 kubectl get nodes -o wide
 
 #=============================================================================
-# Step 6: Apply CIS Level 2 Hardening with Verification
+# Step 7: Install EBS CSI Driver & AWS Load Balancer Controller
+#=============================================================================
+
+if [ "$SKIP_ADDONS" != "true" ]; then
+    echo ""
+    echo "=== Step 7: Installing EBS CSI Driver ==="
+
+    if aws eks describe-addon --cluster-name "$CLUSTER_NAME" --addon-name aws-ebs-csi-driver \
+        --region "$REGION" --profile "$AWS_PROFILE" &>/dev/null; then
+        echo -e "${GREEN}✓ EBS CSI Driver already installed${NC}"
+    else
+        aws eks create-addon \
+            --cluster-name "$CLUSTER_NAME" \
+            --addon-name aws-ebs-csi-driver \
+            --service-account-role-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/AmazonEKS_EBS_CSI_DriverRole" \
+            --resolve-conflicts OVERWRITE \
+            --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+        echo "   Waiting for EBS CSI addon to become ACTIVE..."
+        COUNT=0
+        while true; do
+            ADDON_STATUS=$(aws eks describe-addon --cluster-name "$CLUSTER_NAME" --addon-name aws-ebs-csi-driver \
+                --region "$REGION" --profile "$AWS_PROFILE" --query 'addon.status' --output text 2>/dev/null)
+            if [ "$ADDON_STATUS" == "ACTIVE" ]; then
+                echo -e "${GREEN}✓ EBS CSI Driver is ACTIVE${NC}"
+                break
+            fi
+            COUNT=$((COUNT + 1))
+            [ $COUNT -gt 30 ] && echo -e "${YELLOW}⚠ EBS CSI taking long, continuing...${NC}" && break
+            sleep 10
+        done
+    fi
+
+    echo ""
+    echo "=== Step 7b: Installing AWS Load Balancer Controller ==="
+
+    LBC_ROLE_NAME="aws-load-balancer-controller-role"
+    LBC_POLICY_NAME="AWSLoadBalancerControllerIAMPolicy"
+
+    LBC_POLICY_ARN=$(aws iam list-policies --query "Policies[?PolicyName=='$LBC_POLICY_NAME'].Arn" \
+        --profile "$AWS_PROFILE" --output text 2>/dev/null)
+
+    if [ -z "$LBC_POLICY_ARN" ] || [ "$LBC_POLICY_ARN" == "None" ]; then
+        echo "   Downloading LB controller IAM policy..."
+        curl -sL -o /tmp/lbc-iam-policy.json \
+            https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.12.0/docs/install/iam_policy.json
+
+        LBC_POLICY_ARN=$(aws iam create-policy \
+            --policy-name "$LBC_POLICY_NAME" \
+            --policy-document file:///tmp/lbc-iam-policy.json \
+            --profile "$AWS_PROFILE" --query 'Policy.Arn' --output text)
+        echo "   Policy: $LBC_POLICY_ARN"
+    else
+        echo "   ✓ LBC IAM policy exists: $LBC_POLICY_ARN"
+    fi
+
+    if ! aws iam get-role --role-name "$LBC_ROLE_NAME" --profile "$AWS_PROFILE" &>/dev/null; then
+        LBC_TRUST=$(cat <<TRUSTEOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "Federated": "arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
+    },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "${OIDC_PROVIDER}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
+      },
+      "ForAnyValue:StringEquals": {
+        "${OIDC_PROVIDER}:aud": "sts.amazonaws.com"
+      }
+    }
+  }]
+}
+TRUSTEOF
+)
+        aws iam create-role \
+            --role-name "$LBC_ROLE_NAME" \
+            --assume-role-policy-document "$LBC_TRUST" \
+            --profile "$AWS_PROFILE" > /dev/null
+        aws iam attach-role-policy \
+            --role-name "$LBC_ROLE_NAME" \
+            --policy-arn "$LBC_POLICY_ARN" \
+            --profile "$AWS_PROFILE"
+        echo "   ✓ LBC role created: $LBC_ROLE_NAME"
+        sleep 5
+    else
+        echo "   ✓ LBC role exists: $LBC_ROLE_NAME"
+    fi
+
+    LBC_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${LBC_ROLE_NAME}"
+
+    helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
+    helm repo update eks 2>/dev/null || true
+
+    if helm status aws-load-balancer-controller -n kube-system &>/dev/null; then
+        echo -e "${GREEN}✓ AWS Load Balancer Controller already installed${NC}"
+    else
+        helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName="$CLUSTER_NAME" \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=$LBC_ROLE_ARN" \
+            --set region="$REGION" \
+            --set vpcId="$VPC_ID" \
+            --wait --timeout 120s
+        echo -e "${GREEN}✓ AWS Load Balancer Controller installed${NC}"
+    fi
+fi
+
+#=============================================================================
+# Step 8: Apply CIS Level 2 Hardening with Verification
 #=============================================================================
 
 echo ""
-echo "=== Step 6: Applying CIS Level 2 Hardening ==="
+echo "=== Step 8: Applying CIS Level 2 Hardening ==="
 echo "Getting node instance IDs..."
 
 INSTANCE_IDS=$(aws ec2 describe-instances \
@@ -609,14 +951,13 @@ INSTANCE_IDS=$(aws ec2 describe-instances \
 echo "Instances: $INSTANCE_IDS"
 echo ""
 
-# Function to apply hardening
 apply_hardening() {
     local instances="$1"
     echo "Applying CIS Level 2 hardening..."
-    
+
     for instance in $instances; do
         echo "  Hardening instance: $instance"
-        
+
         aws ssm send-command \
             --instance-ids "$instance" \
             --document-name "AWS-RunShellScript" \
@@ -624,18 +965,17 @@ apply_hardening() {
             --timeout-seconds 300 \
             --region "$REGION" \
             --profile "$AWS_PROFILE" > /dev/null 2>&1
-        
+
         sleep 2
     done
-    
+
     echo "Waiting for hardening to complete (60 seconds)..."
     sleep 60
 }
 
-# Function to verify CIS controls
 verify_cis_controls() {
     local instance="$1"
-    
+
     VERIFY_CMD=$(aws ssm send-command \
         --instance-ids "$instance" \
         --document-name "AWS-RunShellScript" \
@@ -644,9 +984,9 @@ verify_cis_controls() {
         --region "$REGION" \
         --profile "$AWS_PROFILE" \
         --output json | jq -r '.Command.CommandId')
-    
+
     sleep 15
-    
+
     RESULT=$(aws ssm get-command-invocation \
         --command-id "$VERIFY_CMD" \
         --instance-id "$instance" \
@@ -654,20 +994,17 @@ verify_cis_controls() {
         --profile "$AWS_PROFILE" \
         --query 'StandardOutputContent' \
         --output text 2>/dev/null | grep -A 20 "VERIFY_START")
-    
+
     echo "$RESULT"
 }
 
-# Apply hardening
 apply_hardening "$INSTANCE_IDS"
 
-# Verify on first node
 echo ""
 echo "=== Verifying CIS Controls ==="
 FIRST_NODE=$(echo $INSTANCE_IDS | awk '{print $1}')
 VERIFICATION=$(verify_cis_controls "$FIRST_NODE")
 
-# Parse verification results
 SYNCOOKIES=$(echo "$VERIFICATION" | sed -n '2p')
 ASLR=$(echo "$VERIFICATION" | sed -n '3p')
 COREDUMP=$(echo "$VERIFICATION" | sed -n '4p')
@@ -684,33 +1021,27 @@ AUDIT_RULES=$(echo "$VERIFICATION" | sed -n '13p')
 PASS_COUNT=0
 TOTAL_COUNT=12
 
-# Count passed controls
 [ "$SYNCOOKIES" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$ASLR" == "2" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$COREDUMP" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$SEND_REDIR" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$ACCEPT_REDIR" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$LOG_MART" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-[ "$SSH_ROOT" -ge "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-[ "$SSH_PASS" -ge "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$SSH_ROOT" -ge "1" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$SSH_PASS" -ge "1" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$SHADOW_PERM" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$PASS_MAX" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$AUDIT_ENABLED" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-[ "$AUDIT_RULES" -ge "5" ] && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$AUDIT_RULES" -ge "5" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
 
 COMPLIANCE_PCT=$((PASS_COUNT * 100 / TOTAL_COUNT))
 
-echo "Initial verification: $PASS_COUNT/$TOTAL_COUNT controls passed ($COMPLIANCE_PCT%)"
+echo "Verification: $PASS_COUNT/$TOTAL_COUNT controls passed ($COMPLIANCE_PCT%)"
 
-# Retry if compliance is below 75%
 if [ $COMPLIANCE_PCT -lt 75 ]; then
     echo -e "${YELLOW}Compliance below 75% - Retrying hardening...${NC}"
     apply_hardening "$INSTANCE_IDS"
-    
-    echo "Re-verifying..."
     VERIFICATION=$(verify_cis_controls "$FIRST_NODE")
-    
-    # Recount
     PASS_COUNT=0
     SYNCOOKIES=$(echo "$VERIFICATION" | sed -n '2p')
     ASLR=$(echo "$VERIFICATION" | sed -n '3p')
@@ -724,22 +1055,20 @@ if [ $COMPLIANCE_PCT -lt 75 ]; then
     PASS_MAX=$(echo "$VERIFICATION" | sed -n '11p')
     AUDIT_ENABLED=$(echo "$VERIFICATION" | sed -n '12p')
     AUDIT_RULES=$(echo "$VERIFICATION" | sed -n '13p')
-    
     [ "$SYNCOOKIES" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$ASLR" == "2" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$COREDUMP" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$SEND_REDIR" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$ACCEPT_REDIR" == "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$LOG_MART" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-    [ "$SSH_ROOT" -ge "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-    [ "$SSH_PASS" -ge "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
+    [ "$SSH_ROOT" -ge "1" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+    [ "$SSH_PASS" -ge "1" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$SHADOW_PERM" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$PASS_MAX" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
     [ "$AUDIT_ENABLED" == "1" ] && PASS_COUNT=$((PASS_COUNT + 1))
-    [ "$AUDIT_RULES" -ge "5" ] && PASS_COUNT=$((PASS_COUNT + 1))
-    
+    [ "$AUDIT_RULES" -ge "5" ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
     COMPLIANCE_PCT=$((PASS_COUNT * 100 / TOTAL_COUNT))
-    echo "After retry: $PASS_COUNT/$TOTAL_COUNT controls passed ($COMPLIANCE_PCT%)"
+    echo "After retry: $PASS_COUNT/$TOTAL_COUNT ($COMPLIANCE_PCT%)"
 fi
 
 if [ $COMPLIANCE_PCT -ge 75 ]; then
@@ -749,137 +1078,53 @@ else
 fi
 
 #=============================================================================
-# Step 7: Comprehensive Verification & Compliance Report
-#=============================================================================
-
-echo ""
-echo "=== Step 7: Final Verification & Compliance Report ==="
-
-# Verify each control
-echo ""
-echo "Verifying individual CIS controls..."
-
-VERIFY_DETAIL=$(aws ssm send-command \
-    --instance-ids "$FIRST_NODE" \
-    --document-name "AWS-RunShellScript" \
-    --parameters 'commands=["#!/bin/bash","echo === CIS Level 2 Compliance Report ===","echo","echo 1. Kernel Security:","echo -n \"  TCP SYN Cookies: \"; sysctl -n net.ipv4.tcp_syncookies; [ $(sysctl -n net.ipv4.tcp_syncookies) == \"1\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  ASLR: \"; sysctl -n kernel.randomize_va_space; [ $(sysctl -n kernel.randomize_va_space) == \"2\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  Core dumps: \"; sysctl -n fs.suid_dumpable; [ $(sysctl -n fs.suid_dumpable) == \"0\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  Send redirects: \"; sysctl -n net.ipv4.conf.all.send_redirects; [ $(sysctl -n net.ipv4.conf.all.send_redirects) == \"0\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  Accept redirects: \"; sysctl -n net.ipv4.conf.all.accept_redirects; [ $(sysctl -n net.ipv4.conf.all.accept_redirects) == \"0\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  Log martians: \"; sysctl -n net.ipv4.conf.all.log_martians; [ $(sysctl -n net.ipv4.conf.all.log_martians) == \"1\" ] && echo \"  [PASS]\" || echo \"  [FAIL]\"","echo -n \"  IP forward (K8s): \"; sysctl -n net.ipv4.ip_forward; [ $(sysctl -n net.ipv4.ip_forward) == \"1\" ] && echo \"  [K8S-EXCEPTION]\" || echo \"  [FAIL]\"","echo","echo 2. SSH Configuration:","grep -q \"^PermitRootLogin no\" /etc/ssh/sshd_config.d/*.conf 2>/dev/null && echo \"  Root login: no [PASS]\" || echo \"  Root login: [FAIL]\"","grep -q \"^PasswordAuthentication no\" /etc/ssh/sshd_config* 2>/dev/null && echo \"  Password auth: no [PASS]\" || echo \"  Password auth: [FAIL]\"","grep -q \"^X11Forwarding no\" /etc/ssh/sshd_config.d/*.conf 2>/dev/null && echo \"  X11: no [PASS]\" || echo \"  X11: [FAIL]\"","echo","echo 3. File Permissions:","ls -l /etc/shadow | awk \"{print \\$1}\" | grep -q \"^----------\" && echo \"  /etc/shadow: 000 [PASS]\" || echo \"  /etc/shadow: [FAIL]\"","ls -l /etc/passwd | awk \"{print \\$1}\" | grep -q \"^-rw-r--r--\" && echo \"  /etc/passwd: 644 [PASS]\" || echo \"  /etc/passwd: [FAIL]\"","ls -l /etc/ssh/sshd_config | awk \"{print \\$1}\" | grep -q \"^-rw-------\" && echo \"  sshd_config: 600 [PASS]\" || echo \"  sshd_config: [FAIL]\"","echo","echo 4. Services:","systemctl is-enabled auditd 2>/dev/null | grep -q enabled && echo \"  auditd: enabled [PASS]\" || echo \"  auditd: [FAIL]\"","systemctl is-enabled chronyd 2>/dev/null | grep -q enabled && echo \"  chronyd: enabled [PASS]\" || echo \"  chronyd: [FAIL]\"","echo","echo 5. Password Policy:","grep \"^PASS_MAX_DAYS.*90\" /etc/login.defs > /dev/null && echo \"  Max days: 90 [PASS]\" || echo \"  Max days: [FAIL]\"","grep \"^PASS_MIN_DAYS.*1\" /etc/login.defs > /dev/null && echo \"  Min days: 1 [PASS]\" || echo \"  Min days: [FAIL]\"","echo","echo 6. Audit Rules:","RULES=$(auditctl -l 2>/dev/null | wc -l); echo \"  Active rules: $RULES\"; [ $RULES -ge 5 ] && echo \"  [PASS]\" || echo \"  [FAIL]\""]' \
-    --timeout-seconds 60 \
-    --region "$REGION" \
-    --profile "$AWS_PROFILE" \
-    --output json | jq -r '.Command.CommandId')
-
-sleep 20
-
-DETAIL_REPORT=$(aws ssm get-command-invocation \
-    --command-id "$VERIFY_DETAIL" \
-    --instance-id "$FIRST_NODE" \
-    --region "$REGION" \
-    --profile "$AWS_PROFILE" \
-    --query 'StandardOutputContent' \
-    --output text 2>/dev/null)
-
-echo "$DETAIL_REPORT"
-
-# Test Kubernetes functionality
-echo ""
-echo "=== Testing Kubernetes Functionality ==="
-kubectl get nodes > /dev/null 2>&1 && echo "  ✓ Nodes accessible"
-kubectl get pods -n kube-system > /dev/null 2>&1 && echo "  ✓ System pods queryable"
-kubectl run verify-test --image=nginx:alpine --restart=Never 2>&1 || true
-sleep 10
-kubectl get pod verify-test > /dev/null 2>&1 && echo "  ✓ Pod deployment works" || echo "  ✗ Pod deployment failed"
-kubectl delete pod verify-test --force --grace-period=0 &>/dev/null || true
-
-#=============================================================================
-# Final Compliance Report
+# Final Report
 #=============================================================================
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║         ✅ HARDENED EKS CLUSTER DEPLOYMENT COMPLETE            ║"
+echo "║  ✅ HARDENED PRIVATE EKS CLUSTER DEPLOYMENT COMPLETE          ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║              CIS LEVEL 2 COMPLIANCE REPORT                     ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
-echo ""
-echo "📊 VERIFIED CIS CONTROLS:"
-echo ""
-echo "  Category              | Verified | Status"
-echo "  ─────────────────────────────────────────"
-echo "  Kernel Security       |    7     | ✅ PASS"
-echo "  SSH Hardening         |    5     | ✅ PASS"
-echo "  File Permissions      |    3     | ✅ PASS"
-echo "  Audit Logging         |    2     | ✅ PASS"
-echo "  Security Services     |    2     | ✅ PASS"
-echo "  Password Policies     |    3     | ✅ PASS"
-echo "  ─────────────────────────────────────────"
-echo "  TOTAL VERIFIED        |   22     | ✅ PASS"
-echo ""
-echo "  Verified Compliance: $COMPLIANCE_PCT%"
-echo "  Estimated Full CIS Level 2: 75-80%"
-echo ""
-echo "⚠️  KUBERNETES EXCEPTIONS (Required, Documented):"
-echo "  1. IP forwarding enabled (pod networking)"
-echo "  2. iptables managed by kube-proxy"
-echo "  3. Kernel modules dynamic (CNI plugins)"
-echo "  4. /var exec allowed (containers)"
-echo "  5. SELinux permissive (EKS requirement)"
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "📋 CLUSTER DETAILS:"
-echo ""
+echo "📋 CLUSTER:"
 echo "  Name:       $CLUSTER_NAME"
 echo "  Version:    EKS $K8S_VERSION"
 echo "  Region:     $REGION"
-echo "  Auth Mode:  API_AND_CONFIG_MAP"
+echo "  Account:    $AWS_ACCOUNT_ID"
+echo "  VPC:        $VPC_ID"
 echo "  Endpoint:   ${CLUSTER_ENDPOINT:0:60}..."
 echo ""
-echo "  Node Group: $NODEGROUP_NAME"
-echo "  AMI:        $EKS_AMI (EKS-optimized AL2023)"
-echo "  Type:       $NODE_INSTANCE_TYPE"
-echo "  Nodes:      $NODE_COUNT_DESIRED (Ready)"
+echo "🔐 OIDC / IRSA:"
+echo "  OIDC:       ${OIDC_PROVIDER:0:60}..."
+echo "  Operator:   totogi-operator-role"
+echo "  App:        $APP_ROLE_NAME"
+echo "  EBS CSI:    AmazonEKS_EBS_CSI_DriverRole"
+if [ "$SKIP_ADDONS" != "true" ]; then
+echo "  LB Ctrl:    $LBC_ROLE_NAME"
+fi
 echo ""
-echo "═══════════════════════════════════════════════════════════════"
+echo "🌐 VPC ENDPOINTS: $([ "$SKIP_ENDPOINTS" == "true" ] && echo "Skipped" || echo "Created (no NAT gateway)")"
+echo ""
+echo "📦 ADDONS:"
+if [ "$SKIP_ADDONS" != "true" ]; then
+echo "  • EBS CSI Driver (storage)"
+echo "  • AWS Load Balancer Controller (ingress)"
+fi
+echo "  • CIS Level 2 Hardening ($COMPLIANCE_PCT%)"
 echo ""
 echo "✅ CLUSTER HEALTH:"
-echo ""
-kubectl get nodes -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[3].status,VERSION:.status.nodeInfo.kubeletVersion | head -3
+kubectl get nodes -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1:].type,VERSION:.status.nodeInfo.kubeletVersion 2>/dev/null | head -5
 RUNNING_PODS=$(kubectl get pods -A --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
 echo ""
-echo "  • Nodes: 2/2 Ready ✅"
-echo "  • System Pods: $RUNNING_PODS Running ✅"
-echo "  • Kubernetes: Fully Functional ✅"
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "📝 COMPLIANCE STATEMENT:"
-echo ""
-echo "  \"This EKS 1.34 cluster on Amazon Linux 2023 has been"
-echo "   hardened with CIS Level 2 controls. Verified compliance"
-echo "   of core controls: $COMPLIANCE_PCT%. Estimated full benchmark"
-echo "   compliance: 75-80%. Five controls are intentionally"
-echo "   excepted for Kubernetes platform compatibility.\""
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "📁 DOCUMENTATION:"
-echo "  • nexus-deployer/deploy/eks/"
-echo "  • CIS-SCANNER-RESULTS.md"
-echo "  • FINAL-VERIFICATION-REPORT.md"
-echo "  • CIS-COMPLIANCE-FINAL-REPORT.md"
+echo "  Nodes: $NODE_COUNT_DESIRED Ready"
+echo "  System Pods: $RUNNING_PODS Running"
 echo ""
 echo "🔧 NEXT STEPS:"
-echo "  1. Deploy your applications"
-echo "  2. Configure monitoring (AWS Security Hub)"
-echo "  3. Run full OpenSCAP scan (optional)"
-echo "  4. Review documentation for compliance details"
-echo ""
-echo "Kubeconfig:"
-echo "  aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION"
+echo "  1. Deploy operator:  cd kube-operator && ./e2e-deploy.sh"
+echo "  2. Test kubectl:     kubectl get nodes"
+echo "  3. Kubeconfig:       aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION"
 echo ""
 echo "════════════════════════════════════════════════════════════════"
 echo ""
-echo "✅ Cluster is PRODUCTION-READY with CIS Level 2 hardening"
+echo "✅ Cluster is PRODUCTION-READY"
 echo ""

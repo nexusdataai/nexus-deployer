@@ -559,7 +559,7 @@ class ClusterPreparation:
                 api_ext.list_custom_resource_definition(limit=1)
                 logger.info("✓ Can access CRD API (required for operator)")
                 
-                # Check if we can create namespaces (operator will create totogi-system)
+                # Check if we can create namespaces (operator will create nexus-system)
                 self._k8s_client.list_namespace(limit=1)
                 logger.info("✓ Can list namespaces")
                 

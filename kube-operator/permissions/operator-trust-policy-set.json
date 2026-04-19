@@ -9,7 +9,7 @@
         "Action": "sts:AssumeRoleWithWebIdentity",
         "Condition": {
           "StringEquals": {
-            "oidc.eks.ap-southeast-1.amazonaws.com/id/98DAC2C48D003C3A23F43EF39C854FCF:sub": "system:serviceaccount:totogi-system:totogi-operator"
+            "oidc.eks.ap-southeast-1.amazonaws.com/id/98DAC2C48D003C3A23F43EF39C854FCF:sub": "system:serviceaccount:nexus-system:totogi-operator"
           },
           "ForAnyValue:StringEquals": {
             "oidc.eks.ap-southeast-1.amazonaws.com/id/98DAC2C48D003C3A23F43EF39C854FCF:aud": "sts.amazonaws.com"

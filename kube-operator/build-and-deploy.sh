@@ -81,7 +81,7 @@ if [ $? -eq 0 ]; then
     echo "  ./operator-starhub-test.sh status"
     echo ""
     echo "View operator logs:"
-    echo "  kubectl -n totogi-system logs -f deployment/totogi-operator"
+    echo "  kubectl -n nexus-system logs -f deployment/totogi-operator"
     echo ""
 else
     echo ""

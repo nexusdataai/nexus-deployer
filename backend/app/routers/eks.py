@@ -66,7 +66,7 @@ class OperatorStatusResponse(BaseModel):
     operator_installed: bool
     operator_status: str  # not_installed, installing, installed, failed, unknown
     operator_version: Optional[str] = None
-    namespace: str = "totogi-system"
+    namespace: str = "nexus-system"
 
 
 class EKSNamespaceListResponse(BaseModel):
@@ -216,7 +216,7 @@ async def check_operator_status(
             operator_installed=status_info.get("installed", False),
             operator_status=status_info.get("status", "unknown"),
             operator_version=status_info.get("version"),
-            namespace=status_info.get("namespace", "totogi-system")
+            namespace=status_info.get("namespace", "nexus-system")
         )
     except Exception as e:
         raise HTTPException(
@@ -260,7 +260,7 @@ async def deploy_operator(
     """
     Deploy the Totogi Operator to the EKS cluster.
     
-    Creates the totogi-system namespace, IAM role with IRSA, and deploys the operator.
+    Creates the nexus-system namespace, IAM role with IRSA, and deploys the operator.
     
     Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8
     """
@@ -274,7 +274,7 @@ async def deploy_operator(
             success=result.get("success", False),
             message=result.get("message", ""),
             operator_version=result.get("version", "latest"),
-            namespace=result.get("namespace", "totogi-system")
+            namespace=result.get("namespace", "nexus-system")
         )
     except Exception as e:
         raise HTTPException(

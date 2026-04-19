@@ -1,32 +1,32 @@
 #!/bin/bash
 #
 # Create ECR Images
-# Builds/loads and pushes operator, CallSense (backend + frontend), and BSS Magic
+# Builds/loads and pushes operator, Nexus (backend + frontend), and BSS Magic
 # Docker images to ECR. Run this before e2e-deploy.sh.
 # Reads defaults from .env.local.
 #
 # Usage:
 #   ./create-ecr-images.sh                       # Push all images to ECR
 #   ./create-ecr-images.sh --skip-operator       # Skip operator image
-#   ./create-ecr-images.sh --skip-app-images     # Skip CallSense images
+#   ./create-ecr-images.sh --skip-app-images     # Skip Nexus images
 #   ./create-ecr-images.sh --skip-bssmagic       # Skip BSS Magic image
 #   ./create-ecr-images.sh --only-operator       # Only push operator image
 #   ./create-ecr-images.sh --help
 #
 # Image sources (auto-detected):
 #   Operator:   Built from kube-operator/Dockerfile (or images/operator/*.tar.gz)
-#   CallSense:  images/callsense/*.tar.gz (or built from starhub-backend + starhub-ui)
+#   Nexus:      images/nexus/*.tar.gz (or built from nexus-backend + nexus-ui)
 #   BSS Magic:  images/bssmagic/*.tar.gz
 #
 
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGES_DIR="${SCRIPT_DIR}/images/callsense"
+IMAGES_DIR="${SCRIPT_DIR}/images/nexus"
 BSSMAGIC_IMAGES_DIR="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_IMAGES_DIR="${SCRIPT_DIR}/images/operator"
-BACKEND_DIR="/opt/mycode/trilogy/starhub-backend"
-FRONTEND_DIR="/opt/mycode/trilogy/starhub-ui"
+BACKEND_DIR="/opt/mycode/nexus/nexus-backend"
+FRONTEND_DIR="/opt/mycode/nexus/nexus-ui"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -35,9 +35,9 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
-REGION="${REGION:-ap-southeast-1}"
-AWS_PROFILE="${AWS_PROFILE:-external-access}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
+REGION="${REGION:-us-east-1}"
+AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
 
 PUSH_OPERATOR=true
 PUSH_APP=true
@@ -70,10 +70,10 @@ while [[ $# -gt 0 ]]; do
             echo "Usage:"
             echo "  $0                       # Push all images"
             echo "  $0 --skip-operator       # Skip operator"
-            echo "  $0 --skip-app-images     # Skip CallSense (backend + frontend)"
+            echo "  $0 --skip-app-images     # Skip Nexus (backend + frontend)"
             echo "  $0 --skip-bssmagic       # Skip BSS Magic"
             echo "  $0 --only-operator       # Only operator"
-            echo "  $0 --only-app-images     # Only CallSense"
+            echo "  $0 --only-app-images     # Only Nexus"
             echo "  $0 --only-bssmagic       # Only BSS Magic"
             echo "  $0 --no-cache            # Force rebuild from Dockerfile (ignore tar files)"
             exit 0
@@ -107,7 +107,7 @@ echo "  AWS Account:  ${CURRENT_ACCOUNT}"
 echo "  Region:       ${REGION}"
 echo "  ECR Registry: ${ECR_REGISTRY}"
 echo "  Operator:     ${PUSH_OPERATOR}"
-echo "  CallSense:    ${PUSH_APP}"
+echo "  Nexus:        ${PUSH_APP}"
 echo "  BSS Magic:    ${PUSH_BSSMAGIC}"
 echo ""
 
@@ -155,35 +155,35 @@ if [ "$PUSH_OPERATOR" = true ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────
-# CallSense Images (backend + frontend)
+# Nexus Images (backend + frontend)
 # ──────────────────────────────────────────────────────────────
 if [ "$PUSH_APP" = true ]; then
     STEP=$((STEP+1))
-    echo -e "${CYAN}── [${STEP}/${TOTAL}] CallSense Images (backend + frontend) ──${NC}"
+    echo -e "${CYAN}── [${STEP}/${TOTAL}] Nexus Images (backend + frontend) ──${NC}"
 
     HAS_TAR_IMAGES=false
-    [ -f "${IMAGES_DIR}/ai-job-engine.tar.gz" ] && [ -f "${IMAGES_DIR}/starhub-ui.tar.gz" ] && HAS_TAR_IMAGES=true
+    [ -f "${IMAGES_DIR}/ai-job-engine.tar.gz" ] && [ -f "${IMAGES_DIR}/nexus-ui.tar.gz" ] && HAS_TAR_IMAGES=true
 
     if [ "$NO_CACHE" = true ] || [ "$HAS_TAR_IMAGES" = false ]; then
         if [ ! -d "${BACKEND_DIR}" ] || [ ! -d "${FRONTEND_DIR}" ]; then
             echo -e "${RED}  Source directories not available for fresh build.${NC}"
-            echo "  Ensure starhub-backend and starhub-ui repos exist."
+            echo "  Ensure nexus-backend and nexus-ui repos exist."
             exit 1
         fi
         echo "  Building from source (fresh)..."
         echo "  Building backend (ai-job-engine)..."
         docker build --no-cache -t ai-job-engine:latest "${BACKEND_DIR}"
-        echo "  Building frontend (starhub-ui)..."
-        docker build --no-cache -t starhub-ui:latest "${FRONTEND_DIR}"
+        echo "  Building frontend (nexus-ui)..."
+        docker build --no-cache -t nexus-ui:latest "${FRONTEND_DIR}"
     else
         echo "  Loading from tar files..."
         echo "    Loading ai-job-engine..."
         docker load -i "${IMAGES_DIR}/ai-job-engine.tar.gz"
-        echo "    Loading starhub-ui..."
-        docker load -i "${IMAGES_DIR}/starhub-ui.tar.gz"
+        echo "    Loading nexus-ui..."
+        docker load -i "${IMAGES_DIR}/nexus-ui.tar.gz"
     fi
 
-    for repo in ai-job-engine starhub-ui; do
+    for repo in ai-job-engine nexus-ui; do
         aws ecr describe-repositories --repository-names "$repo" \
             --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
         || aws ecr create-repository --repository-name "$repo" \
@@ -203,22 +203,22 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] BSS Magic Image ──${NC}"
 
-    if [ -f "${BSSMAGIC_IMAGES_DIR}/bssmagic-starhub-k8s.tar.gz" ]; then
-        echo "  Loading from tar: ${BSSMAGIC_IMAGES_DIR}/bssmagic-starhub-k8s.tar.gz"
-        docker load -i "${BSSMAGIC_IMAGES_DIR}/bssmagic-starhub-k8s.tar.gz"
+    if [ -f "${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz" ]; then
+        echo "  Loading from tar: ${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
+        docker load -i "${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
 
-        aws ecr describe-repositories --repository-names "bssmagic-starhub-k8s" \
+        aws ecr describe-repositories --repository-names "bssmagic-nexus-k8s" \
             --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
-        || aws ecr create-repository --repository-name "bssmagic-starhub-k8s" \
+        || aws ecr create-repository --repository-name "bssmagic-nexus-k8s" \
             --region "${REGION}" --profile "${AWS_PROFILE}" \
             --image-scanning-configuration scanOnPush=true > /dev/null 2>&1 \
         || true
 
-        docker tag "bssmagic-starhub-k8s:latest" "${ECR_REGISTRY}/bssmagic-starhub-k8s:latest"
-        docker push "${ECR_REGISTRY}/bssmagic-starhub-k8s:latest"
+        docker tag "bssmagic-nexus-k8s:latest" "${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
+        docker push "${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
         echo -e "  ${GREEN}✓${NC} BSS Magic image pushed"
     else
-        echo -e "  ${YELLOW}!${NC} BSS Magic tar not found at ${BSSMAGIC_IMAGES_DIR}/bssmagic-starhub-k8s.tar.gz"
+        echo -e "  ${YELLOW}!${NC} BSS Magic tar not found at ${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
         echo "    Will use whatever image is already in ECR."
         echo "    Run ./package-images.sh --only-bssmagic to create the tar."
     fi

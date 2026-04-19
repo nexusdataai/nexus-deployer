@@ -1,0 +1,15 @@
+com.amazonaws.us-east-1.ec2
+com.amazonaws.us-east-1.s3
+com.amazonaws.us-east-1.dynamodb
+com.amazonaws.us-east-1.sts
+com.amazonaws.us-east-1.ssm
+com.amazonaws.us-east-1.glue
+com.amazonaws.us-east-1.ecr.api
+com.amazonaws.us-east-1.ecr.dkr
+com.amazonaws.us-east-1.secretsmanager
+com.amazonaws.us-east-1.logs
+com.amazonaws.us-east-1.cognito-idp
+com.amazonaws.us-east-1.athena
+com.amazonaws.us-east-1.events
+com.amazonaws.us-east-1.eks
+com.amazonaws.us-east-1.iam

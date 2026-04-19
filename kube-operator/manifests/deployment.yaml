@@ -5,16 +5,16 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: totogi-system
+  name: nexus-system
   labels:
-    app.kubernetes.io/name: totogi-system
+    app.kubernetes.io/name: nexus-system
     app.kubernetes.io/managed-by: totogi-operator
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: totogi-operator
-  namespace: totogi-system
+  namespace: nexus-system
   labels:
     app.kubernetes.io/name: totogi-operator
     app.kubernetes.io/component: operator
@@ -120,7 +120,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: totogi-operator
-  namespace: totogi-system
+  namespace: nexus-system
   labels:
     app.kubernetes.io/name: totogi-operator
 spec:

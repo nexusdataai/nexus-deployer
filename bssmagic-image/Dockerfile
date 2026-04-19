@@ -19,7 +19,7 @@
 # Build context: this directory (starhub-deployer/bssmagic-image/)
 # =============================================================================
 
-FROM 764119721991.dkr.ecr.us-east-1.amazonaws.com/prod/bssmagic-runtime:latest
+FROM 654654554404.dkr.ecr.us-east-1.amazonaws.com/nexus/bssmagic-runtime:latest
 
 # ---- Move product TMF Server to internal port 8001 ----
 ENV SERVER_PORT=8001
