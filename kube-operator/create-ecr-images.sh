@@ -132,24 +132,24 @@ if [ "$PUSH_OPERATOR" = true ]; then
     echo -e "${CYAN}── [${STEP}/${TOTAL}] Operator Image ──${NC}"
 
     HAS_OPERATOR_TAR=false
-    [ -f "${OPERATOR_IMAGES_DIR}/totogi-operator.tar.gz" ] && HAS_OPERATOR_TAR=true
+    [ -f "${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz" ] && HAS_OPERATOR_TAR=true
 
     if [ "$NO_CACHE" = true ] || [ "$HAS_OPERATOR_TAR" = false ]; then
         echo "  Building from source: ${SCRIPT_DIR}/Dockerfile"
-        docker build --no-cache -t totogi-operator:latest "${SCRIPT_DIR}"
+        docker build --no-cache -t nexus-operator:latest "${SCRIPT_DIR}"
     else
-        echo "  Loading from tar: ${OPERATOR_IMAGES_DIR}/totogi-operator.tar.gz"
-        docker load -i "${OPERATOR_IMAGES_DIR}/totogi-operator.tar.gz"
+        echo "  Loading from tar: ${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz"
+        docker load -i "${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz"
     fi
 
-    aws ecr describe-repositories --repository-names "totogi-operator" \
+    aws ecr describe-repositories --repository-names "nexus-operator" \
         --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
-    || aws ecr create-repository --repository-name "totogi-operator" \
+    || aws ecr create-repository --repository-name "nexus-operator" \
         --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
     || true
 
-    docker tag totogi-operator:latest "${ECR_REGISTRY}/totogi-operator:latest"
-    docker push "${ECR_REGISTRY}/totogi-operator:latest"
+    docker tag nexus-operator:latest "${ECR_REGISTRY}/nexus-operator:latest"
+    docker push "${ECR_REGISTRY}/nexus-operator:latest"
     echo -e "  ${GREEN}✓${NC} Operator image pushed"
     echo ""
 fi

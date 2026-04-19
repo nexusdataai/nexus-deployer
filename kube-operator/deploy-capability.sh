@@ -127,7 +127,7 @@ aws eks update-kubeconfig \
 kubectl get nodes >/dev/null 2>&1 || fail "kubectl cannot connect to cluster (Unauthorized)"
 
 # Verify operator is running
-OPERATOR_READY=$(kubectl get deployment totogi-operator -n nexus-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+OPERATOR_READY=$(kubectl get deployment nexus-operator -n nexus-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
 if [ "$OPERATOR_READY" = "" ] || [ "$OPERATOR_READY" = "0" ]; then
     fail "Totogi operator is not running. Deploy operator first with: ./operator-starhub-test.sh deploy"
 fi

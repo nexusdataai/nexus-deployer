@@ -68,13 +68,13 @@ logger = logging.getLogger("cleanup-operator")
 
 # Constants
 OPERATOR_NAMESPACE = "nexus-system"
-OPERATOR_DEPLOYMENT = "totogi-operator"
-OPERATOR_SERVICE_ACCOUNT = "totogi-operator"
-OPERATOR_CLUSTER_ROLE = "totogi-operator"
-OPERATOR_CLUSTER_ROLE_BINDING = "totogi-operator"
+OPERATOR_DEPLOYMENT = "nexus-operator"
+OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
+OPERATOR_CLUSTER_ROLE = "nexus-operator"
+OPERATOR_CLUSTER_ROLE_BINDING = "nexus-operator"
 CRD_NAME = "totogicapabilities.totogi.com"
 IAM_ROLE_NAME = "TotogiOperatorRole"
-ECR_REPO_NAME = "totogi-operator"
+ECR_REPO_NAME = "nexus-operator"
 
 
 class OperatorCleanup:
@@ -958,7 +958,7 @@ class OperatorCleanup:
         try:
             # List all namespaces with totogi labels
             result = subprocess.run(
-                ["kubectl", "get", "namespaces", "-l", "app.kubernetes.io/managed-by=totogi-operator", "-o", "jsonpath={.items[*].metadata.name}"],
+                ["kubectl", "get", "namespaces", "-l", "app.kubernetes.io/managed-by=nexus-operator", "-o", "jsonpath={.items[*].metadata.name}"],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -993,7 +993,7 @@ class OperatorCleanup:
         try:
             # List all namespaces with totogi label
             namespaces = self._k8s_core_api.list_namespace(
-                label_selector="app.kubernetes.io/managed-by=totogi-operator"
+                label_selector="app.kubernetes.io/managed-by=nexus-operator"
             )
             
             if namespaces.items:

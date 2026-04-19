@@ -716,10 +716,10 @@ create_irsa_role() {
     echo "   ✓ $role_name (created)"
 }
 
-create_irsa_role "totogi-operator-role" \
+create_irsa_role "nexus-operator-role" \
     "$PERMISSIONS_DIR/operator-trust-policy.json" \
     "$PERMISSIONS_DIR/operator-policy.json" \
-    "totogi-operator-policy" \
+    "nexus-operator-policy" \
     ""
 
 APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
@@ -1096,7 +1096,7 @@ echo "  Endpoint:   ${CLUSTER_ENDPOINT:0:60}..."
 echo ""
 echo "🔐 OIDC / IRSA:"
 echo "  OIDC:       ${OIDC_PROVIDER:0:60}..."
-echo "  Operator:   totogi-operator-role"
+echo "  Operator:   nexus-operator-role"
 echo "  App:        $APP_ROLE_NAME"
 echo "  EBS CSI:    AmazonEKS_EBS_CSI_DriverRole"
 if [ "$SKIP_ADDONS" != "true" ]; then

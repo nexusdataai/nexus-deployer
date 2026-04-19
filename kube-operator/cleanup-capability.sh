@@ -12,7 +12,7 @@
 # kubectl in the image (see kube-operator Dockerfile). Use -it for --confirm
 # so the confirmation prompt works:
 #
-#   kubectl exec -n nexus-system -it deploy/totogi-operator -- \
+#   kubectl exec -n nexus-system -it deploy/nexus-operator -- \
 #     env DEPLOY_ENV=stage /bin/bash /app/cleanup-capability.sh --confirm
 #
 # Usage:

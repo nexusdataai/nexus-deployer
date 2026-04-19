@@ -22,7 +22,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-IMAGE_NAME="totogi-operator"
+IMAGE_NAME="nexus-operator"
 TAG="${1:-latest}"
 REGION="${2:-${AWS_REGION:-us-east-1}}"
 AWS_PROFILE="${3:-${AWS_PROFILE:-}}"
@@ -73,7 +73,7 @@ else
         --repository-name "${IMAGE_NAME}" \
         --region "${REGION}" \
         --image-scanning-configuration scanOnPush=true \
-        --tags Key=managed-by,Value=starhub-deployer Key=component,Value=totogi-operator \
+        --tags Key=managed-by,Value=starhub-deployer Key=component,Value=nexus-operator \
         >/dev/null
     
     echo -e "${GREEN}✓ ECR repository '${IMAGE_NAME}' created${NC}"

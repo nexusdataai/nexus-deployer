@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Operator configuration
 OPERATOR_NAMESPACE = "nexus-system"
-OPERATOR_DEPLOYMENT_NAME = "totogi-operator"
-OPERATOR_SERVICE_ACCOUNT = "totogi-operator"
-OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "totogi-operator")
+OPERATOR_DEPLOYMENT_NAME = "nexus-operator"
+OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
+OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "nexus-operator")
 CRD_GROUP = "totogi.com"
 CRD_VERSION = "v1"
 CRD_PLURAL = "totogicapabilities"
@@ -406,7 +406,7 @@ class OperatorDeploymentService:
             operator_version: Operator version tag (default: latest)
             
         Returns:
-            Full ECR image URL: {account}.dkr.ecr.{region}.amazonaws.com/totogi-operator:{version}
+            Full ECR image URL: {account}.dkr.ecr.{region}.amazonaws.com/nexus-operator:{version}
         """
         # Check if OPERATOR_IMAGE env var is set with a full URL (backwards compatibility)
         env_image = os.environ.get("OPERATOR_IMAGE")
@@ -497,7 +497,7 @@ class OperatorDeploymentService:
             metadata=V1ObjectMeta(
                 name=OPERATOR_NAMESPACE,
                 labels={
-                    "app.kubernetes.io/name": "totogi-operator",
+                    "app.kubernetes.io/name": "nexus-operator",
                     "app.kubernetes.io/managed-by": "totogi-deployer"
                 }
             )
@@ -522,7 +522,7 @@ class OperatorDeploymentService:
         
         Requirements: 3.5, 3.6
         """
-        role_name = "totogi-operator-role"
+        role_name = "nexus-operator-role"
         
         # Build trust policy
         if oidc_provider:
@@ -664,7 +664,7 @@ class OperatorDeploymentService:
                 
                 self.iam_client.put_role_policy(
                     RoleName=role_name,
-                    PolicyName="totogi-operator-policy",
+                    PolicyName="nexus-operator-policy",
                     PolicyDocument=json.dumps(operator_policy)
                 )
                 logger.info(f"Updated inline policy for {role_name}")
@@ -680,14 +680,14 @@ class OperatorDeploymentService:
                 Description="IAM role for Totogi Operator with IRSA",
                 Tags=[
                     {"Key": "managed-by", "Value": "totogi-deployer"},
-                    {"Key": "component", "Value": "totogi-operator"}
+                    {"Key": "component", "Value": "nexus-operator"}
                 ]
             )
             role_arn = response["Role"]["Arn"]
             
             self.iam_client.put_role_policy(
                 RoleName=role_name,
-                PolicyName="totogi-operator-policy",
+                PolicyName="nexus-operator-policy",
                 PolicyDocument=json.dumps(operator_policy)
             )
             
@@ -712,7 +712,7 @@ class OperatorDeploymentService:
                     "eks.amazonaws.com/role-arn": role_arn
                 },
                 labels={
-                    "app.kubernetes.io/name": "totogi-operator",
+                    "app.kubernetes.io/name": "nexus-operator",
                     "app.kubernetes.io/component": "operator"
                 }
             )
@@ -848,7 +848,7 @@ class OperatorDeploymentService:
         
         # ClusterRole
         cluster_role = k8s_client.V1ClusterRole(
-            metadata=k8s_client.V1ObjectMeta(name="totogi-operator-role"),
+            metadata=k8s_client.V1ObjectMeta(name="nexus-operator-role"),
             rules=[
                 k8s_client.V1PolicyRule(
                     api_groups=[CRD_GROUP],
@@ -902,21 +902,21 @@ class OperatorDeploymentService:
         
         try:
             rbac_v1.create_cluster_role(cluster_role)
-            logger.info("Created ClusterRole totogi-operator-role")
+            logger.info("Created ClusterRole nexus-operator-role")
         except ApiException as e:
             if e.status == 409:
-                rbac_v1.replace_cluster_role("totogi-operator-role", cluster_role)
-                logger.info("Updated ClusterRole totogi-operator-role")
+                rbac_v1.replace_cluster_role("nexus-operator-role", cluster_role)
+                logger.info("Updated ClusterRole nexus-operator-role")
             else:
                 raise
         
         # ClusterRoleBinding
         cluster_role_binding = k8s_client.V1ClusterRoleBinding(
-            metadata=k8s_client.V1ObjectMeta(name="totogi-operator-binding"),
+            metadata=k8s_client.V1ObjectMeta(name="nexus-operator-binding"),
             role_ref=k8s_client.V1RoleRef(
                 api_group="rbac.authorization.k8s.io",
                 kind="ClusterRole",
-                name="totogi-operator-role"
+                name="nexus-operator-role"
             ),
             subjects=[
                 k8s_client.RbacV1Subject(
@@ -929,11 +929,11 @@ class OperatorDeploymentService:
         
         try:
             rbac_v1.create_cluster_role_binding(cluster_role_binding)
-            logger.info("Created ClusterRoleBinding totogi-operator-binding")
+            logger.info("Created ClusterRoleBinding nexus-operator-binding")
         except ApiException as e:
             if e.status == 409:
-                rbac_v1.patch_cluster_role_binding("totogi-operator-binding", cluster_role_binding)
-                logger.info("Updated ClusterRoleBinding totogi-operator-binding")
+                rbac_v1.patch_cluster_role_binding("nexus-operator-binding", cluster_role_binding)
+                logger.info("Updated ClusterRoleBinding nexus-operator-binding")
             else:
                 raise
     
@@ -985,16 +985,16 @@ class OperatorDeploymentService:
             metadata=k8s_client.V1ObjectMeta(
                 name=OPERATOR_DEPLOYMENT_NAME,
                 namespace=OPERATOR_NAMESPACE,
-                labels={"app.kubernetes.io/name": "totogi-operator"}
+                labels={"app.kubernetes.io/name": "nexus-operator"}
             ),
             spec=k8s_client.V1DeploymentSpec(
                 replicas=1,
                 selector=k8s_client.V1LabelSelector(
-                    match_labels={"app.kubernetes.io/name": "totogi-operator"}
+                    match_labels={"app.kubernetes.io/name": "nexus-operator"}
                 ),
                 template=k8s_client.V1PodTemplateSpec(
                     metadata=k8s_client.V1ObjectMeta(
-                        labels={"app.kubernetes.io/name": "totogi-operator"}
+                        labels={"app.kubernetes.io/name": "nexus-operator"}
                     ),
                     spec=k8s_client.V1PodSpec(
                         service_account_name=OPERATOR_SERVICE_ACCOUNT,

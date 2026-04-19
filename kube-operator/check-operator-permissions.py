@@ -3,7 +3,7 @@
 Check operator role permissions by testing actual AWS API calls.
 
 Designed to run INSIDE the operator pod via:
-    kubectl exec -n nexus-system deployment/totogi-operator -- python3 /app/check-operator-permissions.py
+    kubectl exec -n nexus-system deployment/nexus-operator -- python3 /app/check-operator-permissions.py
 
 Or copy into the pod first:
     kubectl cp check-operator-permissions.py nexus-system/<pod-name>:/tmp/check.py
@@ -158,9 +158,9 @@ PERMISSION_CHECKS = [
      "glue:GetDatabase"),
 
     # IAMRoleManagement
-    ("IAMRoleManagement", "iam", "get_role", {"RoleName": "totogi-operator-role"},
+    ("IAMRoleManagement", "iam", "get_role", {"RoleName": "nexus-operator-role"},
      "iam:GetRole"),
-    ("IAMRoleManagement", "iam", "get_role_policy", {"RoleName": "totogi-operator-role", "PolicyName": "totogi-operator-policy"},
+    ("IAMRoleManagement", "iam", "get_role_policy", {"RoleName": "nexus-operator-role", "PolicyName": "nexus-operator-policy"},
      "iam:GetRolePolicy"),
 
     # EKSAccess
@@ -633,7 +633,7 @@ def main():
     has_issues = results["denied"] > 0 or ep_results["unreachable"] > 0 or diag_issues > 0
     print()
     if results["denied"] > 0:
-        print("  ACTION: Update totogi-operator-role inline policy with missing permissions.")
+        print("  ACTION: Update nexus-operator-role inline policy with missing permissions.")
         print("          See permissions/operator-policy.json for the full required policy.")
     if ep_results["unreachable"] > 0:
         print("  ACTION: VPC endpoints missing for some services.")

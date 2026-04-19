@@ -56,7 +56,7 @@ fi
 
 # Get account ID for image URL
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "${REGION}")
-IMAGE_URL="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/totogi-operator:${TAG}"
+IMAGE_URL="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/nexus-operator:${TAG}"
 
 echo ""
 echo -e "${BLUE}Step 2: Deploying operator to cluster...${NC}"
@@ -81,7 +81,7 @@ if [ $? -eq 0 ]; then
     echo "  ./operator-starhub-test.sh status"
     echo ""
     echo "View operator logs:"
-    echo "  kubectl -n nexus-system logs -f deployment/totogi-operator"
+    echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"
     echo ""
 else
     echo ""

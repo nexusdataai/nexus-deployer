@@ -23,7 +23,7 @@
 #   images/nexus/checksums.sha256
 #   images/bssmagic/bssmagic-nexus-k8s.tar.gz
 #   images/bssmagic/checksums.sha256
-#   images/operator/totogi-operator.tar.gz
+#   images/operator/nexus-operator.tar.gz
 #   images/operator/checksums.sha256
 #
 
@@ -50,7 +50,7 @@ OPERATOR_OUTPUT="${SCRIPT_DIR}/images/operator"
 BACKEND_IMAGE="ai-job-engine:latest"
 FRONTEND_IMAGE="nexus-ui:latest"
 BSSMAGIC_IMAGE="bssmagic-nexus-k8s:latest"
-OPERATOR_IMAGE="totogi-operator:latest"
+OPERATOR_IMAGE="nexus-operator:latest"
 
 SKIP_BSSMAGIC=false
 ONLY_BSSMAGIC=false
@@ -273,14 +273,14 @@ if [ "$PACKAGE_OPERATOR" = true ]; then
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving operator image as tar.gz ==="
     echo "  Saving ${OPERATOR_IMAGE}..."
-    docker save "${OPERATOR_IMAGE}" | gzip > "${OPERATOR_OUTPUT}/totogi-operator.tar.gz"
+    docker save "${OPERATOR_IMAGE}" | gzip > "${OPERATOR_OUTPUT}/nexus-operator.tar.gz"
     echo "  Done."
     echo ""
 
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Generating operator checksums ==="
     cd "${OPERATOR_OUTPUT}"
-    sha256sum totogi-operator.tar.gz > checksums.sha256
+    sha256sum nexus-operator.tar.gz > checksums.sha256
     cd "${SCRIPT_DIR}"
     echo "  Done."
     echo ""

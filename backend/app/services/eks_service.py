@@ -51,7 +51,7 @@ class EKSService:
     """Service for EKS cluster discovery and management."""
     
     OPERATOR_NAMESPACE = "nexus-system"
-    OPERATOR_DEPLOYMENT_NAME = "totogi-operator"
+    OPERATOR_DEPLOYMENT_NAME = "nexus-operator"
     
     def __init__(
         self,

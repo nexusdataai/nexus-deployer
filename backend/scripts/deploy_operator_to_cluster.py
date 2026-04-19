@@ -909,7 +909,7 @@ class OperatorDeployer:
             logger.info("[1/3] Checking deployment status...")
             try:
                 deployment = self._k8s_apps_api.read_namespaced_deployment(
-                    name="totogi-operator",
+                    name="nexus-operator",
                     namespace="nexus-system"
                 )
                 
@@ -933,7 +933,7 @@ class OperatorDeployer:
             try:
                 pods = self._k8s_core_api.list_namespaced_pod(
                     namespace="nexus-system",
-                    label_selector="app.kubernetes.io/name=totogi-operator"
+                    label_selector="app.kubernetes.io/name=nexus-operator"
                 )
                 
                 if not pods.items:
@@ -1038,7 +1038,7 @@ class OperatorDeployer:
                     logger.error("✗ Operator pods have errors - deployment FAILED")
                     logger.error("")
                     logger.error("Check pod details:")
-                    logger.error("  kubectl -n nexus-system describe pod -l app.kubernetes.io/name=totogi-operator")
+                    logger.error("  kubectl -n nexus-system describe pod -l app.kubernetes.io/name=nexus-operator")
                     logger.error("")
                     logger.error("View events:")
                     logger.error("  kubectl -n nexus-system get events --sort-by='.lastTimestamp'")
@@ -1063,7 +1063,7 @@ class OperatorDeployer:
                         logger.info("")
                         logger.info("Monitor progress:")
                         logger.info("  kubectl -n nexus-system get pods -w")
-                        logger.info("  kubectl -n nexus-system logs -f deployment/totogi-operator")
+                        logger.info("  kubectl -n nexus-system logs -f deployment/nexus-operator")
                         logger.info("")
                         # Return True for initial pull scenario
                         return True
@@ -1071,8 +1071,8 @@ class OperatorDeployer:
                         logger.warning("⚠ No healthy pods yet - still starting up")
                         logger.info("")
                         logger.info("Wait and check again:")
-                        logger.info("  kubectl -n nexus-system get pods -l app.kubernetes.io/name=totogi-operator")
-                        logger.info("  kubectl -n nexus-system logs -f deployment/totogi-operator")
+                        logger.info("  kubectl -n nexus-system get pods -l app.kubernetes.io/name=nexus-operator")
+                        logger.info("  kubectl -n nexus-system logs -f deployment/nexus-operator")
                         logger.info("")
                         return False
                     
@@ -1084,7 +1084,7 @@ class OperatorDeployer:
             logger.info("[3/3] Checking service...")
             try:
                 service = self._k8s_core_api.read_namespaced_service(
-                    name="totogi-operator",
+                    name="nexus-operator",
                     namespace="nexus-system"
                 )
                 logger.info(f"  ✓ Service exists: {service.spec.cluster_ip}")

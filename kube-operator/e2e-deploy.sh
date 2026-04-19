@@ -288,7 +288,7 @@ TRUSTEOF
             --role-name "${EBS_CSI_ROLE_NAME}" \
             --assume-role-policy-document "${TRUST_POLICY}" \
             --description "IRSA role for EBS CSI Driver on EKS cluster ${CLUSTER_NAME}" \
-            --tags "Key=Capability,Value=call-processing" "Key=Environment,Value=${DEPLOY_ENV}" "Key=managed-by,Value=totogi-operator" \
+            --tags "Key=Capability,Value=call-processing" "Key=Environment,Value=${DEPLOY_ENV}" "Key=managed-by,Value=nexus-operator" \
             --profile "${AWS_PROFILE}" >/dev/null 2>&1 || {
                 echo "  Role may already exist (IAM propagation delay) — continuing"
             }

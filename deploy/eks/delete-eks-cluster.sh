@@ -247,7 +247,7 @@ if [ "$DELETE_ROLES" == "true" ]; then
     }
 
     APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
-    delete_role "totogi-operator-role"
+    delete_role "nexus-operator-role"
     delete_role "$APP_ROLE_NAME"
     delete_role "AmazonEKS_EBS_CSI_DriverRole"
     delete_role "aws-load-balancer-controller-role"
@@ -394,7 +394,7 @@ echo "  Cluster:       $CLUSTER_NAME"
 echo ""
 if [ "$DELETE_ROLES" != "true" ] || [ "$DELETE_VPC" != "true" ]; then
     echo "Resources NOT deleted (pass flags to include):"
-    [ "$DELETE_ROLES" != "true" ] && echo "  --delete-roles  IAM roles (totogi-operator-role, ${CAPABILITY}-${APP_ENV}-app-role, etc.)"
+    [ "$DELETE_ROLES" != "true" ] && echo "  --delete-roles  IAM roles (nexus-operator-role, ${CAPABILITY}-${APP_ENV}-app-role, etc.)"
     [ "$DELETE_VPC" != "true" ] && echo "  --delete-vpc    VPC, subnets, endpoints, security groups"
     echo ""
 fi

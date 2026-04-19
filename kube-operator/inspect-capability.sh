@@ -13,7 +13,7 @@
 #   Uses pod service account credentials (no --profile). Detected when KUBERNETES_SERVICE_HOST is set.
 #   Requires aws CLI + kubectl in the container (see kube-operator Dockerfile).
 #
-#   kubectl exec -n nexus-system deploy/totogi-operator -- \
+#   kubectl exec -n nexus-system deploy/nexus-operator -- \
 #     env DEPLOY_ENV=stage AWS_REGION=us-east-1 /bin/bash /app/inspect-capability.sh
 #
 #   In-cluster AWS calls use the pod service account (IRSA). DynamoDB checks use boto3 (same as the
@@ -129,7 +129,7 @@ taws() {
     fi
 }
 
-# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as totogi-operator process).
+# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as nexus-operator process).
 # Table name -> prints "STATUS|details" where details are items/billing/tags (empty if NOT FOUND).
 inspect_ddb_boto3_line() {
     local tn="$1"
