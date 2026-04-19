@@ -129,6 +129,20 @@ setup_iam() {
     local OIDC_PROVIDER="${OIDC_ISSUER#https://}"
     local POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${IAM_POLICY_NAME}"
 
+    # Test if IAM API is reachable (may not be on private jumpboxes without NAT/VPC endpoint)
+    local IAM_REACHABLE=true
+    local IAM_TEST
+    IAM_TEST=$(aws iam get-policy --policy-arn "$POLICY_ARN" --profile "$AWS_PROFILE" 2>&1) || true
+    if echo "$IAM_TEST" | grep -qi "connection was closed\|Could not connect\|timed out\|Name or service not known"; then
+        IAM_REACHABLE=false
+        log_warn "IAM API is not reachable from this machine (no VPC endpoint or NAT)"
+        log_info "Assuming role '$IAM_ROLE_NAME' and policy '$IAM_POLICY_NAME' were pre-created by admin"
+        log_info "See permissions/ADMIN-SETUP.md Step 4 for instructions"
+        ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${IAM_ROLE_NAME}"
+        log_ok "Using pre-created role: $ROLE_ARN"
+        return
+    fi
+
     # --- Policy ---
     local POLICY_DOC
     POLICY_DOC=$(cat <<POLICYJSON
@@ -170,7 +184,14 @@ setup_iam() {
 POLICYJSON
     )
 
-    if aws iam get-policy --policy-arn "$POLICY_ARN" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+    if echo "$IAM_TEST" | grep -q "NoSuchEntity"; then
+        log_info "Creating IAM policy $IAM_POLICY_NAME"
+        aws iam create-policy \
+            --policy-name "$IAM_POLICY_NAME" \
+            --policy-document "$POLICY_DOC" \
+            --profile "$AWS_PROFILE" > /dev/null
+        log_ok "IAM policy created: $POLICY_ARN"
+    else
         log_ok "IAM policy $IAM_POLICY_NAME already exists"
         local CURRENT_VERSION_ID
         CURRENT_VERSION_ID=$(aws iam get-policy --policy-arn "$POLICY_ARN" --profile "$AWS_PROFILE" \
@@ -197,23 +218,9 @@ POLICYJSON
                 --profile "$AWS_PROFILE" > /dev/null
             log_ok "IAM policy updated"
         fi
-    else
-        log_info "Creating IAM policy $IAM_POLICY_NAME"
-        aws iam create-policy \
-            --policy-name "$IAM_POLICY_NAME" \
-            --policy-document "$POLICY_DOC" \
-            --profile "$AWS_PROFILE" > /dev/null
-        log_ok "IAM policy created: $POLICY_ARN"
     fi
 
     # --- Role ---
-    if aws iam get-role --role-name "$IAM_ROLE_NAME" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
-        log_ok "IAM role $IAM_ROLE_NAME already exists"
-        log_info "Updating trust policy for current cluster OIDC"
-    else
-        log_info "Creating IAM role $IAM_ROLE_NAME"
-    fi
-
     local TRUST_POLICY
     TRUST_POLICY=$(cat <<TRUSTJSON
 {
@@ -238,12 +245,13 @@ TRUSTJSON
     )
 
     if aws iam get-role --role-name "$IAM_ROLE_NAME" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+        log_ok "IAM role $IAM_ROLE_NAME already exists"
         aws iam update-assume-role-policy \
             --role-name "$IAM_ROLE_NAME" \
             --policy-document "$TRUST_POLICY" \
-            --profile "$AWS_PROFILE"
-        log_ok "Trust policy updated"
+            --profile "$AWS_PROFILE" 2>/dev/null && log_ok "Trust policy updated" || log_warn "Could not update trust policy (may need admin)"
     else
+        log_info "Creating IAM role $IAM_ROLE_NAME"
         aws iam create-role \
             --role-name "$IAM_ROLE_NAME" \
             --assume-role-policy-document "$TRUST_POLICY" \
@@ -252,14 +260,13 @@ TRUSTJSON
     fi
 
     if aws iam list-attached-role-policies --role-name "$IAM_ROLE_NAME" --profile "$AWS_PROFILE" \
-        --query "AttachedPolicies[?PolicyArn=='${POLICY_ARN}'].PolicyArn" --output text | grep -q "$POLICY_ARN"; then
+        --query "AttachedPolicies[?PolicyArn=='${POLICY_ARN}'].PolicyArn" --output text 2>/dev/null | grep -q "$POLICY_ARN"; then
         log_ok "Policy already attached to role"
     else
         aws iam attach-role-policy \
             --role-name "$IAM_ROLE_NAME" \
             --policy-arn "$POLICY_ARN" \
-            --profile "$AWS_PROFILE"
-        log_ok "Policy attached to role"
+            --profile "$AWS_PROFILE" 2>/dev/null && log_ok "Policy attached to role" || log_warn "Could not attach policy (may need admin)"
     fi
 
     ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${IAM_ROLE_NAME}"
@@ -504,17 +511,20 @@ do_list_backups() {
     echo -e "${CYAN}── Available Backups ──${NC}"
     echo ""
 
-    local BACKUP_COUNT
-    BACKUP_COUNT=$(velero backup get -o json 2>/dev/null | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('items',[])))" 2>/dev/null || echo "0")
+    local BACKUP_OUTPUT
+    BACKUP_OUTPUT=$(velero backup get 2>/dev/null || kubectl get backups -n velero 2>/dev/null || true)
 
-    if [ "$BACKUP_COUNT" = "0" ]; then
+    if [ -z "$BACKUP_OUTPUT" ] || echo "$BACKUP_OUTPUT" | grep -qi "no backups found\|No resources found"; then
         log_warn "No backups found"
         return 0
     fi
 
+    local BACKUP_COUNT
+    BACKUP_COUNT=$(echo "$BACKUP_OUTPUT" | tail -n +2 | grep -c . || echo "0")
+
     log_info "$BACKUP_COUNT backup(s) found:"
     echo ""
-    velero backup get 2>/dev/null
+    echo "$BACKUP_OUTPUT"
     echo ""
 
     log_info "To restore from a backup:"

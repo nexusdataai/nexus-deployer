@@ -3,13 +3,23 @@
 # Full Capability Cleanup Script
 # Completely removes all Kubernetes and AWS resources for a capability.
 # Dry run by default — requires --confirm to actually delete.
-# Reads defaults from .env.local.
+# Reads defaults from .env.local when run from a dev machine.
+#
+# Local / jumpbox: uses AWS_PROFILE and aws eks update-kubeconfig.
+#
+# In-cluster (operator pod + IRSA): detected when KUBERNETES_SERVICE_HOST is set;
+# uses default AWS credential chain and in-cluster kubectl. Requires aws CLI +
+# kubectl in the image (see kube-operator Dockerfile). Use -it for --confirm
+# so the confirmation prompt works:
+#
+#   kubectl exec -n totogi-system -it deploy/totogi-operator -- \
+#     env DEPLOY_ENV=stage /bin/bash /app/cleanup-capability.sh --confirm
 #
 # Usage:
-#   ./cleanup-capability.sh                          # Dry run (shows what would be deleted)
-#   ./cleanup-capability.sh --confirm                # Actually delete everything
-#   ./cleanup-capability.sh --env dev --confirm      # Clean dev environment
-#   ./cleanup-capability.sh --help
+#   ./cleanup-capability.sh                          # Dry run
+#   ./cleanup-capability.sh --confirm                # Delete (interactive confirm)
+#   ./cleanup-capability.sh --env dev --confirm
+#   ./cleanup-capability.sh --local ...              # Force profile mode in a pod
 #
 
 set -e
@@ -26,6 +36,7 @@ DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
 REGION="${REGION:-ap-southeast-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
+INSPECT_FORCE_LOCAL="${INSPECT_FORCE_LOCAL:-0}"
 CONFIRM=false
 
 GREEN='\033[0;32m'
@@ -45,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --confirm) CONFIRM=true; shift ;;
         --env)     DEPLOY_ENV="$2"; shift 2 ;;
         --cluster) CLUSTER_NAME="$2"; shift 2 ;;
+        --local)   INSPECT_FORCE_LOCAL=1; shift ;;
         --help|-h)
             echo "Full Capability Cleanup"
             echo ""
@@ -52,23 +64,41 @@ while [[ $# -gt 0 ]]; do
             echo "DRY RUN by default — use --confirm to actually delete."
             echo ""
             echo "Usage:"
-            echo "  $0                          # Dry run"
-            echo "  $0 --confirm                # Delete everything"
-            echo "  $0 --env dev --confirm      # Clean dev environment"
+            echo "  $0 [--local] [--env ENV] [--cluster NAME] [--confirm]"
             echo ""
             echo "Options:"
             echo "  --confirm        Actually perform deletions (required)"
             echo "  --env ENV        Target environment (default: from .env.local)"
-            echo "  --cluster NAME   EKS cluster name (default: from .env.local)"
+            echo "  --cluster NAME   EKS cluster name (local mode only)"
+            echo "  --local          Force AWS profile + kubeconfig (not IRSA)"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
+USE_AWS_PROFILE=1
+RUN_MODE="local"
+if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && [ "${INSPECT_FORCE_LOCAL}" != "1" ]; then
+    USE_AWS_PROFILE=0
+    RUN_MODE="in-cluster"
+    REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-${REGION}}}"
+    CLUSTER_NAME="${EKS_CLUSTER_NAME:-${CLUSTER_NAME}}"
+fi
+
 CAP="call-processing"
 NS="${CAP}-${DEPLOY_ENV}"
 CAP_US="${CAP//-/_}_${DEPLOY_ENV//-/_}"
+
+# Timeout wrapper for AWS CLI (prevents hanging on unreachable services)
+AWS_TIMEOUT=10
+taws() {
+    if [ "${USE_AWS_PROFILE}" = "1" ]; then
+        timeout "${AWS_TIMEOUT}" aws "$@" --profile "${AWS_PROFILE}"
+    else
+        timeout "${AWS_TIMEOUT}" aws "$@"
+    fi
+}
 
 echo ""
 echo -e "${RED}================================================================${NC}"
@@ -79,6 +109,7 @@ else
 fi
 echo -e "${RED}================================================================${NC}"
 echo ""
+echo "  Mode:        ${RUN_MODE}"
 echo "  Capability:  ${CAP}"
 echo "  Environment: ${DEPLOY_ENV}"
 echo "  Namespace:   ${NS}"
@@ -97,8 +128,14 @@ if [ "$CONFIRM" = true ]; then
     echo ""
 fi
 
-aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1
-ACCOUNT_ID=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null)
+if [ "${USE_AWS_PROFILE}" = "1" ]; then
+    aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 || true
+    ACCOUNT_ID=$(timeout 15 aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null || echo "")
+else
+    ACCOUNT_ID=$(timeout 15 aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+fi
+
+export CLEANUP_USE_AWS_PROFILE="${USE_AWS_PROFILE}"
 
 DELETED=0
 SKIPPED=0
@@ -152,11 +189,11 @@ fi
 echo ""
 log_info "Waiting for ALB controller to delete ALBs..."
 for ALB_NAME in "${CAP}-${DEPLOY_ENV}" "${CAP}-${DEPLOY_ENV}-internal"; do
-    ALB_EXISTS=$(aws elbv2 describe-load-balancers --names "${ALB_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo "None")
+    ALB_EXISTS=$(taws elbv2 describe-load-balancers --names "${ALB_NAME}" --region "${REGION}" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo "None")
     if [ "$ALB_EXISTS" != "None" ] && [ -n "$ALB_EXISTS" ]; then
         if [ "$CONFIRM" = true ]; then
             for i in $(seq 1 18); do
-                STILL=$(aws elbv2 describe-load-balancers --names "${ALB_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo "None")
+                STILL=$(taws elbv2 describe-load-balancers --names "${ALB_NAME}" --region "${REGION}" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo "None")
                 if [ "$STILL" = "None" ] || [ -z "$STILL" ]; then
                     log_ok "ALB ${ALB_NAME} removed by controller"
                     DELETED=$((DELETED+1))
@@ -167,7 +204,7 @@ for ALB_NAME in "${CAP}-${DEPLOY_ENV}" "${CAP}-${DEPLOY_ENV}-internal"; do
             done
             if [ "$STILL" != "None" ] && [ -n "$STILL" ]; then
                 log_warn "ALB ${ALB_NAME} still exists — force deleting via AWS API"
-                aws elbv2 delete-load-balancer --load-balancer-arn "$STILL" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null && log_ok "Force deleted ALB ${ALB_NAME}" || log_fail "Could not delete ALB ${ALB_NAME}"
+                taws elbv2 delete-load-balancer --load-balancer-arn "$STILL" --region "${REGION}" 2>/dev/null && log_ok "Force deleted ALB ${ALB_NAME}" || log_fail "Could not delete ALB ${ALB_NAME}"
                 DELETED=$((DELETED+1))
             fi
         else
@@ -218,41 +255,24 @@ echo ""
 echo -e "${CYAN}── Step 3: Cognito ──${NC}"
 
 POOL_NAME="${CAP}-${DEPLOY_ENV}"
-POOL_ID=$(aws cognito-idp list-user-pools --max-results 60 --region "${REGION}" --profile "${AWS_PROFILE}" --query "UserPools[?Name=='${POOL_NAME}'].Id | [0]" --output text 2>/dev/null || echo "None")
+POOL_ID=$(taws cognito-idp list-user-pools --max-results 60 --region "${REGION}" --query "UserPools[?Name=='${POOL_NAME}'].Id | [0]" --output text 2>/dev/null || echo "None")
 
 if [ "$POOL_ID" != "None" ] && [ -n "$POOL_ID" ]; then
-    DOMAIN=$(aws cognito-idp describe-user-pool --user-pool-id "${POOL_ID}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'UserPool.Domain' --output text 2>/dev/null || echo "None")
+    DOMAIN=$(taws cognito-idp describe-user-pool --user-pool-id "${POOL_ID}" --region "${REGION}" --query 'UserPool.Domain' --output text 2>/dev/null || echo "None")
     if [ "$DOMAIN" != "None" ] && [ -n "$DOMAIN" ]; then
-        do_delete "Cognito Domain: ${DOMAIN}" aws cognito-idp delete-user-pool-domain --user-pool-id "${POOL_ID}" --domain "${DOMAIN}" --region "${REGION}" --profile "${AWS_PROFILE}"
+        do_delete "Cognito Domain: ${DOMAIN}" taws cognito-idp delete-user-pool-domain --user-pool-id "${POOL_ID}" --domain "${DOMAIN}" --region "${REGION}"
     fi
-    do_delete "Cognito User Pool: ${POOL_NAME} (${POOL_ID})" aws cognito-idp delete-user-pool --user-pool-id "${POOL_ID}" --region "${REGION}" --profile "${AWS_PROFILE}"
+    do_delete "Cognito User Pool: ${POOL_NAME} (${POOL_ID})" taws cognito-idp delete-user-pool --user-pool-id "${POOL_ID}" --region "${REGION}"
 else
     log_info "Cognito pool ${POOL_NAME} already deleted"
 fi
 
 # ──────────────────────────────────────────────────────────────
-# Step 4: IAM Role
+# Step 4: IAM Role (admin-managed — never delete)
 # ──────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}── Step 4: IAM Role ──${NC}"
-
-APP_ROLE="${CAP}-${DEPLOY_ENV}-app-role"
-if aws iam get-role --role-name "${APP_ROLE}" --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
-    if [ "$CONFIRM" = true ]; then
-        for POLICY in $(aws iam list-role-policies --role-name "${APP_ROLE}" --profile "${AWS_PROFILE}" --query 'PolicyNames' --output text 2>/dev/null); do
-            aws iam delete-role-policy --role-name "${APP_ROLE}" --policy-name "${POLICY}" --profile "${AWS_PROFILE}" 2>/dev/null || true
-        done
-        for POLICY_ARN in $(aws iam list-attached-role-policies --role-name "${APP_ROLE}" --profile "${AWS_PROFILE}" --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null); do
-            aws iam detach-role-policy --role-name "${APP_ROLE}" --policy-arn "${POLICY_ARN}" --profile "${AWS_PROFILE}" 2>/dev/null || true
-        done
-        do_delete "IAM Role: ${APP_ROLE}" aws iam delete-role --role-name "${APP_ROLE}" --profile "${AWS_PROFILE}"
-    else
-        log_dry "IAM Role: ${APP_ROLE} (+ inline/attached policies)"
-        SKIPPED=$((SKIPPED+1))
-    fi
-else
-    log_info "IAM role ${APP_ROLE} already deleted"
-fi
+log_info "IAM roles are admin-managed — skipping (not deleting ${CAP}-${DEPLOY_ENV}-app-role)"
 
 # ──────────────────────────────────────────────────────────────
 # Step 5: Secrets Manager
@@ -262,8 +282,8 @@ echo -e "${CYAN}── Step 5: Secrets Manager ──${NC}"
 
 for SECRET_TYPE in api-keys wxcc openai license anthropic github bssmagic-credentials bssmagic-axway-config; do
     SECRET_ID="${CAP}/${DEPLOY_ENV}/${SECRET_TYPE}"
-    if aws secretsmanager describe-secret --secret-id "${SECRET_ID}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
-        do_delete "Secret: ${SECRET_ID}" aws secretsmanager delete-secret --secret-id "${SECRET_ID}" --force-delete-without-recovery --region "${REGION}" --profile "${AWS_PROFILE}"
+    if taws secretsmanager describe-secret --secret-id "${SECRET_ID}" --region "${REGION}" > /dev/null 2>&1; then
+        do_delete "Secret: ${SECRET_ID}" taws secretsmanager delete-secret --secret-id "${SECRET_ID}" --force-delete-without-recovery --region "${REGION}"
     else
         log_info "Secret ${SECRET_ID} already deleted"
     fi
@@ -276,13 +296,13 @@ echo ""
 echo -e "${CYAN}── Step 6: SSM Parameters ──${NC}"
 
 SSM_PREFIX="/${CAP}/${DEPLOY_ENV}/"
-SSM_PARAMS=$(aws ssm get-parameters-by-path --path "${SSM_PREFIX}" --recursive --region "${REGION}" --profile "${AWS_PROFILE}" --query 'Parameters[*].Name' --output text 2>/dev/null || echo "")
+SSM_PARAMS=$(taws ssm get-parameters-by-path --path "${SSM_PREFIX}" --recursive --region "${REGION}" --query 'Parameters[*].Name' --output text 2>/dev/null || echo "")
 
 if [ -n "$SSM_PARAMS" ]; then
     PARAM_COUNT=$(echo "$SSM_PARAMS" | wc -w)
     if [ "$CONFIRM" = true ]; then
         for PARAM in $SSM_PARAMS; do
-            aws ssm delete-parameter --name "${PARAM}" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null || true
+            taws ssm delete-parameter --name "${PARAM}" --region "${REGION}" 2>/dev/null || true
         done
         log_ok "Deleted ${PARAM_COUNT} SSM parameters under ${SSM_PREFIX}"
         DELETED=$((DELETED+PARAM_COUNT))
@@ -303,14 +323,14 @@ echo -e "${CYAN}── Step 7: Glue Catalog ──${NC}"
 GLUE_DB="${CAP_US}_db"
 GLUE_TABLE="${CAP_US}_call_records"
 
-if aws glue get-table --database-name "${GLUE_DB}" --name "${GLUE_TABLE}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
-    do_delete "Glue Table: ${GLUE_TABLE}" aws glue delete-table --database-name "${GLUE_DB}" --name "${GLUE_TABLE}" --region "${REGION}" --profile "${AWS_PROFILE}"
+if taws glue get-table --database-name "${GLUE_DB}" --name "${GLUE_TABLE}" --region "${REGION}" > /dev/null 2>&1; then
+    do_delete "Glue Table: ${GLUE_TABLE}" taws glue delete-table --database-name "${GLUE_DB}" --name "${GLUE_TABLE}" --region "${REGION}"
 else
     log_info "Glue table ${GLUE_TABLE} already deleted"
 fi
 
-if aws glue get-database --name "${GLUE_DB}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
-    do_delete "Glue Database: ${GLUE_DB}" aws glue delete-database --name "${GLUE_DB}" --region "${REGION}" --profile "${AWS_PROFILE}"
+if taws glue get-database --name "${GLUE_DB}" --region "${REGION}" > /dev/null 2>&1; then
+    do_delete "Glue Database: ${GLUE_DB}" taws glue delete-database --name "${GLUE_DB}" --region "${REGION}"
 else
     log_info "Glue database ${GLUE_DB} already deleted"
 fi
@@ -321,34 +341,38 @@ fi
 echo ""
 echo -e "${CYAN}── Step 8: S3 Buckets ──${NC}"
 
-for BUCKET_SUFFIX in call-data wxcc-simulator journey-logs journey-reports bssmagic-dumps; do
+for BUCKET_SUFFIX in call-data wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
     BUCKET="${CAP}-${DEPLOY_ENV}-${BUCKET_SUFFIX}-${ACCOUNT_ID}"
-    if aws s3api head-bucket --bucket "${BUCKET}" --profile "${AWS_PROFILE}" --region "${REGION}" > /dev/null 2>&1; then
+    if taws s3api head-bucket --bucket "${BUCKET}" --region "${REGION}" > /dev/null 2>&1; then
         if [ "$CONFIRM" = true ]; then
             log_info "Emptying bucket ${BUCKET} (objects + versions + delete markers)..."
 
             python3 -c "
-import boto3, sys
-session = boto3.Session(profile_name='${AWS_PROFILE}', region_name='${REGION}')
+import boto3, os
+region = '${REGION}'
+if os.environ.get('CLEANUP_USE_AWS_PROFILE') == '1':
+    session = boto3.Session(profile_name=os.environ.get('AWS_PROFILE', 'default'), region_name=region)
+else:
+    session = boto3.Session(region_name=region)
 s3 = session.resource('s3')
 bucket = s3.Bucket('${BUCKET}')
 bucket.object_versions.delete()
 print('  All versions and delete markers removed')
 " 2>/dev/null || {
-                aws s3 rm "s3://${BUCKET}" --recursive --profile "${AWS_PROFILE}" --region "${REGION}" 2>/dev/null || true
+                taws s3 rm "s3://${BUCKET}" --recursive --region "${REGION}" 2>/dev/null || true
             }
 
-            if aws s3api delete-bucket --bucket "${BUCKET}" --profile "${AWS_PROFILE}" --region "${REGION}" > /dev/null 2>&1; then
+            if taws s3api delete-bucket --bucket "${BUCKET}" --region "${REGION}" > /dev/null 2>&1; then
                 log_ok "Deleted: S3 Bucket: ${BUCKET}"
                 DELETED=$((DELETED+1))
-            elif ! aws s3api head-bucket --bucket "${BUCKET}" --profile "${AWS_PROFILE}" --region "${REGION}" > /dev/null 2>&1; then
+            elif ! taws s3api head-bucket --bucket "${BUCKET}" --region "${REGION}" > /dev/null 2>&1; then
                 log_ok "Already deleted: S3 Bucket: ${BUCKET}"
             else
                 log_fail "Could not delete S3 Bucket: ${BUCKET} (may still have objects/versions)"
                 FAILED=$((FAILED+1))
             fi
         else
-            OBJ_COUNT=$(aws s3 ls "s3://${BUCKET}" --recursive --profile "${AWS_PROFILE}" --region "${REGION}" 2>/dev/null | wc -l || echo "0")
+            OBJ_COUNT=$(taws s3 ls "s3://${BUCKET}" --recursive --region "${REGION}" 2>/dev/null | wc -l || echo "0")
             log_dry "S3 Bucket: ${BUCKET} (~${OBJ_COUNT} objects)"
             SKIPPED=$((SKIPPED+1))
         fi
@@ -363,10 +387,10 @@ done
 echo ""
 echo -e "${CYAN}── Step 9: DynamoDB Tables ──${NC}"
 
-for TABLE_SUFFIX in transformation-system license wxcc-task-tracking sessions audit-log; do
+for TABLE_SUFFIX in transformation-system license wxcc-task-tracking sessions audit-log lead-opportunity-tracking; do
     TABLE_NAME="${CAP}-${DEPLOY_ENV}-${TABLE_SUFFIX}"
-    if aws dynamodb describe-table --table-name "${TABLE_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
-        do_delete "DynamoDB Table: ${TABLE_NAME}" aws dynamodb delete-table --table-name "${TABLE_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}"
+    if taws dynamodb describe-table --table-name "${TABLE_NAME}" --region "${REGION}" > /dev/null 2>&1; then
+        do_delete "DynamoDB Table: ${TABLE_NAME}" taws dynamodb delete-table --table-name "${TABLE_NAME}" --region "${REGION}"
     else
         log_info "Table ${TABLE_NAME} already deleted"
     fi

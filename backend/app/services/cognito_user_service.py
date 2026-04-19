@@ -7,6 +7,8 @@ from typing import Dict, Optional, List, Callable
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,15 +44,19 @@ class CognitoUserService:
     def _get_client(self, service: str, region: str):
         """Get boto3 client with credentials"""
         if self.credentials:
-            # Handle both credential key formats
-            return boto3.client(
-                service,
-                region_name=region,
-                aws_access_key_id=self.credentials.get('aws_access_key_id') or self.credentials.get('access_key_id'),
-                aws_secret_access_key=self.credentials.get('aws_secret_access_key') or self.credentials.get('secret_access_key'),
-                aws_session_token=self.credentials.get('aws_session_token') or self.credentials.get('session_token')
-            )
-        return boto3.client(service, region_name=region)
+            kw = {
+                "region_name": region,
+                "aws_access_key_id": self.credentials.get("aws_access_key_id")
+                or self.credentials.get("access_key_id"),
+                "aws_secret_access_key": self.credentials.get("aws_secret_access_key")
+                or self.credentials.get("secret_access_key"),
+                "aws_session_token": self.credentials.get("aws_session_token")
+                or self.credentials.get("session_token"),
+            }
+            return boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
+        return boto3.client(
+            service, **merge_vpc_boto3_kwargs(service, region, {"region_name": region})
+        )
     
     def set_user_password(
         self,

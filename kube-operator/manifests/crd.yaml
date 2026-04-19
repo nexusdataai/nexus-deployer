@@ -49,9 +49,10 @@ spec:
                   pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+.*$"
                 environment:
                   type: string
-                  description: "Target environment (dev, staging, prod)"
+                  description: "Target environment (dev, stage, staging, prod)"
                   enum:
                     - dev
+                    - stage
                     - staging
                     - prod
                     - test
@@ -304,6 +305,10 @@ spec:
                       type: string
                       description: "Health check path for internal ALB target group"
                       default: "/health"
+                    httpsOnly:
+                      type: boolean
+                      default: false
+                      description: "When true (and certificateArn is set), internal ALB listens on HTTPS:443 only — no HTTP:80 listener or ssl-redirect"
                     annotations:
                       type: object
                       description: "Additional ALB annotations for internal ingress"

@@ -15,6 +15,8 @@ from typing import List, Optional, Callable
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from .models import (
     ResourceType,
     ResourceStatus,
@@ -64,11 +66,12 @@ class DynamoDBProvisioner:
         if endpoint_url:
             client_kwargs["endpoint_url"] = endpoint_url
         
+        merged = merge_vpc_boto3_kwargs("dynamodb", region, dict(client_kwargs))
         # Use provided session or create new one
         if boto3_session:
-            self.client = boto3_session.client("dynamodb", **client_kwargs)
+            self.client = boto3_session.client("dynamodb", **merged)
         else:
-            self.client = boto3.client("dynamodb", **client_kwargs)
+            self.client = boto3.client("dynamodb", **merged)
     
     def _log_progress(self, message: str):
         """Log progress to both logger and callback if available."""
@@ -84,13 +87,15 @@ class DynamoDBProvisioner:
             List of ResourceStatus for each table
         """
         results = []
-        self._log_progress(f"  Creating 3 DynamoDB tables...")
-        self._log_progress(f"  [1/3] transformation-system table")
+        self._log_progress(f"  Creating 4 DynamoDB tables...")
+        self._log_progress(f"  [1/4] transformation-system table")
         results.append(self.create_transformation_system_table())
-        self._log_progress(f"  [2/3] license table")
+        self._log_progress(f"  [2/4] license table")
         results.append(self.create_license_table())
-        self._log_progress(f"  [3/3] wxcc-task-tracking table")
+        self._log_progress(f"  [3/4] wxcc-task-tracking table")
         results.append(self.create_wxcc_task_tracking_table())
+        self._log_progress(f"  [4/4] lead-opportunity-tracking table")
+        results.append(self.create_lead_opportunity_tracking_table())
         return results
     
     def create_transformation_system_table(self) -> ResourceStatus:
@@ -362,6 +367,90 @@ class DynamoDBProvisioner:
                 error=error_code,
             )
     
+    def create_lead_opportunity_tracking_table(self) -> ResourceStatus:
+        """
+        Create the lead/opportunity tracking table.
+
+        Table: call-processing-{env}-lead-opportunity-tracking
+        Key Schema: task_id (HASH)
+        GSI: tracking_status-index (tracking_status HASH, created_at RANGE)
+        """
+        table_name = self.naming.lead_opportunity_tracking_table()
+
+        if self.table_exists(table_name):
+            self._log_progress(f"  [OK] Table {table_name} already exists")
+            return ResourceStatus(
+                resource_type=ResourceType.DYNAMODB_TABLE,
+                resource_name=table_name,
+                status=ResourceStatusType.ALREADY_EXISTS,
+                message=f"Table {table_name} already exists",
+            )
+
+        try:
+            self._log_progress(f"  > Creating table: {table_name}")
+            self._log_progress(f"    Key Schema: task_id (HASH)")
+            self._log_progress(f"    GSI: tracking_status-index (tracking_status HASH, created_at RANGE)")
+
+            create_params = {
+                "TableName": table_name,
+                "KeySchema": [
+                    {"AttributeName": "task_id", "KeyType": "HASH"},
+                ],
+                "AttributeDefinitions": [
+                    {"AttributeName": "task_id", "AttributeType": "S"},
+                    {"AttributeName": "tracking_status", "AttributeType": "S"},
+                    {"AttributeName": "created_at", "AttributeType": "S"},
+                ],
+                "GlobalSecondaryIndexes": [
+                    {
+                        "IndexName": "tracking_status-index",
+                        "KeySchema": [
+                            {"AttributeName": "tracking_status", "KeyType": "HASH"},
+                            {"AttributeName": "created_at", "KeyType": "RANGE"},
+                        ],
+                        "Projection": {"ProjectionType": "ALL"},
+                    }
+                ],
+                "BillingMode": self.config.dynamodb_billing_mode,
+            }
+
+            if self.config.dynamodb_billing_mode == "PROVISIONED":
+                create_params["ProvisionedThroughput"] = {
+                    "ReadCapacityUnits": self.config.dynamodb_read_capacity or 5,
+                    "WriteCapacityUnits": self.config.dynamodb_write_capacity or 5,
+                }
+                for gsi in create_params["GlobalSecondaryIndexes"]:
+                    gsi["ProvisionedThroughput"] = {
+                        "ReadCapacityUnits": self.config.dynamodb_read_capacity or 5,
+                        "WriteCapacityUnits": self.config.dynamodb_write_capacity or 5,
+                    }
+
+            self.client.create_table(**create_params)
+
+            self._log_progress(f"    [...] Waiting for table to become ACTIVE...")
+            self.wait_for_table_active(table_name)
+
+            self._log_progress(f"  [OK] Table {table_name} created successfully")
+            return ResourceStatus(
+                resource_type=ResourceType.DYNAMODB_TABLE,
+                resource_name=table_name,
+                status=ResourceStatusType.CREATED,
+                message=f"Table {table_name} created successfully",
+                created_at=datetime.utcnow(),
+            )
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            error_msg = e.response.get("Error", {}).get("Message", str(e))
+            self._log_progress(f"  [X] Failed to create table {table_name}: {error_msg}")
+            return ResourceStatus(
+                resource_type=ResourceType.DYNAMODB_TABLE,
+                resource_name=table_name,
+                status=ResourceStatusType.FAILED,
+                message=f"Failed to create table: {error_msg}",
+                error=error_code,
+            )
+
     def table_exists(self, table_name: str) -> bool:
         """
         Check if a table already exists.

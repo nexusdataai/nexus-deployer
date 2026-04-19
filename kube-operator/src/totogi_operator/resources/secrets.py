@@ -8,9 +8,9 @@ import json
 import logging
 from typing import Dict, List, Any
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class SecretsProvisioner:
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("secretsmanager", region_name=region)
+        self.client = vpc_boto3_client("secretsmanager", region_name=region)
     
     async def provision_all(self) -> List[Dict[str, Any]]:
         """Provision all required secrets with placeholder/default values."""

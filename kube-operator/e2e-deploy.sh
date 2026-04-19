@@ -167,6 +167,7 @@ else
 fi
 export CLUSTER_NAME
 export DEPLOY_ENV
+export REGION
 
 # Switch kubeconfig to target cluster
 aws eks update-kubeconfig \
@@ -671,7 +672,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Verify all resources"
 
-AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh verify-capability 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh verify-capability "${NAMESPACE}" 2>&1
 verify_exit=$?
 
 # ──────────────────────────────────────────────────────────────

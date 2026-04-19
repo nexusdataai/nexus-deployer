@@ -8,6 +8,8 @@ from typing import Optional, Dict, List, Tuple
 from datetime import datetime
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from app.services.tinydb_deployment_state_service import (
     TinyDBDeploymentStateService,
     tinydb_deployment_state_service
@@ -57,15 +59,19 @@ class StackDetectionService:
             boto3 client
         """
         if self.credentials:
+            kw = {
+                "region_name": region,
+                "aws_access_key_id": self.credentials.get("aws_access_key_id"),
+                "aws_secret_access_key": self.credentials.get("aws_secret_access_key"),
+                "aws_session_token": self.credentials.get("aws_session_token"),
+            }
             return boto3.client(
-                service_name,
-                region_name=region,
-                aws_access_key_id=self.credentials.get('aws_access_key_id'),
-                aws_secret_access_key=self.credentials.get('aws_secret_access_key'),
-                aws_session_token=self.credentials.get('aws_session_token'),
+                service_name, **merge_vpc_boto3_kwargs(service_name, region, kw)
             )
-        else:
-            return boto3.client(service_name, region_name=region)
+        return boto3.client(
+            service_name,
+            **merge_vpc_boto3_kwargs(service_name, region, {"region_name": region}),
+        )
     
     def _classify_stack_state(self, stack_status: str) -> str:
         """

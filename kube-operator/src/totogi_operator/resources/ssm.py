@@ -7,9 +7,9 @@ Requirements: 4.6
 import logging
 from typing import Dict, List, Any, Tuple
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class SSMProvisioner:
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("ssm", region_name=region)
+        self.client = vpc_boto3_client("ssm", region_name=region)
     
     def get_all_parameters(self, resources: Dict[str, Any] = None) -> Dict[str, Tuple[str, str]]:
         """
@@ -60,6 +60,9 @@ class SSMProvisioner:
         params[self.naming.ssm_parameter("dynamodb", "audit-log-table")] = (
             self.naming.dynamodb_table("audit-log"), "Audit log table"
         )
+        params[self.naming.ssm_parameter("dynamodb", "lead-tracking-table")] = (
+            self.naming.lead_opportunity_tracking_table(), "Lead/opportunity tracking table"
+        )
         
         # S3 parameters
         params[self.naming.ssm_parameter("s3", "recordings-bucket")] = (
@@ -92,6 +95,17 @@ class SSMProvisioner:
         )
         params[self.naming.ssm_parameter("wxcc", "org-id")] = (
             "sim-org-001", "Simulated organization ID"
+        )
+        
+        # SFDC Simulator parameters
+        params[self.naming.ssm_parameter("sfdc", "enabled")] = (
+            "true", "Enable SFDC simulator"
+        )
+        params[self.naming.ssm_parameter("sfdc", "bucket")] = (
+            self.naming.sfdc_simulator_bucket(), "SFDC simulator S3 bucket"
+        )
+        params[self.naming.ssm_parameter("sfdc", "prefix")] = (
+            "sfdc-simulator", "SFDC simulator S3 prefix"
         )
         
         # CloudWatch parameters

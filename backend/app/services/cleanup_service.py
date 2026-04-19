@@ -9,6 +9,8 @@ import logging
 from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
 from botocore.exceptions import ClientError
+
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.services.tinydb_deployment_state_service import tinydb_deployment_state_service as deployment_state_service
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,8 @@ class CleanupService:
     
     def _get_client(self, service: str, region: str) -> Any:
         """Get boto3 client with credentials"""
-        return boto3.client(service, region_name=region, **self.credentials)
+        kw = {"region_name": region, **self.credentials}
+        return boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
     
     def get_stack_name(self, capability_name: str, environment: str, stack_type: str) -> str:
         """Generate stack name - sanitize to match CloudFormation service"""

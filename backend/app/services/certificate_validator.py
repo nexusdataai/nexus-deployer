@@ -6,6 +6,8 @@ import boto3
 from typing import Dict, Optional, Tuple
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 
 class CertificateValidator:
     """Validates ACM certificate requirements"""
@@ -21,7 +23,8 @@ class CertificateValidator:
     
     def _get_client(self, service: str, region: str):
         """Get boto3 client with credentials"""
-        return boto3.client(service, region_name=region, **self.credentials)
+        kw = {"region_name": region, **self.credentials}
+        return boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
     
     def validate_hosted_zone(self, hosted_zone_id: str, base_domain: str) -> Tuple[bool, Optional[str]]:
         """

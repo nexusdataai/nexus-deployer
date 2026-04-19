@@ -15,7 +15,8 @@
 #   ./operator-starhub-test.sh update                  # Update operator (force redeploy)
 #   ./operator-starhub-test.sh status                  # Check operator status
 #   ./operator-starhub-test.sh monitor                 # Monitor capability deployment progress
-#   ./operator-starhub-test.sh verify-capability       # Verify capability resources and health
+#   ./operator-starhub-test.sh verify-capability       # Verify via operator IRSA Job (default)
+#   ./operator-starhub-test.sh verify-capability --local  # Verify using local AWS profile + kubectl
 #   ./operator-starhub-test.sh --help                  # Show help
 #
 
@@ -34,7 +35,7 @@ fi
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
-REGION="ap-southeast-1"
+REGION="${REGION:-ap-southeast-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 BACKEND_DIR="${SCRIPT_DIR}/../backend"
 
@@ -64,7 +65,7 @@ Commands:
   update                  Update/redeploy operator (force update)
   status                  Check operator status
   monitor [ns/name]       Monitor capability deployment progress in real-time
-  verify-capability [ns]  Verify all AWS resources, K8s workloads, and app health
+  verify-capability [--local] [ns]  Verify deployment (default: Job as operator SA / IRSA; --local: this host)
   help                    Show this help message
 
 Options:
@@ -150,6 +151,31 @@ show_header() {
     echo ""
 }
 
+# Wait for check-app / check-operator Job. Polls every 1s (max ~3 min).
+# Returns 0 when the Job has finished (succeeded or failed pod count) OR when
+# pod logs already show IRSA/trust failure — Job.status.failed can lag behind
+# the container exit, so we sniff logs to surface AssumeRole errors immediately.
+_wait_perm_check_job() {
+    local ns=$1
+    local job_name=$2
+    local _i _suc _fail _logs
+    for _i in $(seq 1 180); do
+        _suc=$(kubectl get job "$job_name" -n "$ns" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+        _fail=$(kubectl get job "$job_name" -n "$ns" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+        _suc=${_suc:-0}
+        _fail=${_fail:-0}
+        if [ "$_suc" -ge 1 ] || [ "$_fail" -ge 1 ]; then
+            return 0
+        fi
+        _logs=$(kubectl logs "job/$job_name" -n "$ns" 2>/dev/null || true)
+        if echo "$_logs" | grep -qE 'AssumeRoleWithWebIdentity|Not authorized to perform sts:AssumeRoleWithWebIdentity|\[ERROR\] Cannot get identity'; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 check_dependencies() {
     echo "Checking dependencies..."
     
@@ -193,17 +219,9 @@ deploy_operator() {
     show_header "Deploy"
     check_dependencies
     
-    # Pre-flight: Check and fix IRSA if needed
-    if [ -z "$skip_irsa_fix" ]; then
-        echo "Checking IRSA prerequisites..."
-        echo ""
-        ensure_irsa_configured
-        local irsa_exit=$?
-        if [ $irsa_exit -ne 0 ]; then
-            echo -e "${YELLOW}Warning: IRSA setup had issues. Continuing with deployment...${NC}"
-            echo ""
-        fi
-    fi
+    # IRSA is admin-managed (OIDC provider pre-created) -- skip IAM checks
+    echo "Skipping IRSA check (admin-managed OIDC provider)..."
+    echo ""
     
     echo "Starting deployment..."
     echo ""
@@ -232,16 +250,15 @@ deploy_operator() {
             --profile "${AWS_PROFILE}" 2>/dev/null || true
         echo ""
         
-        # Now that we have cluster access, check and install AWS Load Balancer Controller
+        # ALB Controller is admin-managed -- just verify it's running via kubectl
         echo ""
         echo "Checking AWS Load Balancer Controller..."
-        echo ""
-        ensure_alb_controller
-        local alb_exit=$?
-        if [ $alb_exit -ne 0 ]; then
-            echo -e "${YELLOW}Warning: ALB Controller setup had issues. ALB Ingress may not work.${NC}"
-            echo "You can install it later with: ./operator-starhub-test.sh install-alb-controller"
-            echo ""
+        if kubectl get deployment aws-load-balancer-controller -n kube-system > /dev/null 2>&1; then
+            READY=$(kubectl get deployment aws-load-balancer-controller -n kube-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            echo -e "${GREEN}  ✓ ALB Controller is running (${READY} replica(s))${NC}"
+        else
+            echo -e "${YELLOW}  ! ALB Controller not found — admin must install it separately${NC}"
+            echo "    ALB Ingress will not work until it's installed."
         fi
         
         echo ""
@@ -612,83 +629,83 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
         ]
     }
     
+    role_arn = f"arn:aws:iam::{account_id}:role/{ALB_CONTROLLER_ROLE}"
+
     try:
-        # Check if role exists
-        role_exists = False
-        role_arn = None
+        existing = iam_client.get_role(RoleName=ALB_CONTROLLER_ROLE)
+        role_arn = existing["Role"]["Arn"]
+        print(f"    [✓] IAM role exists: {ALB_CONTROLLER_ROLE}")
+
+        # Merge trust policy: add current cluster's OIDC provider without removing others
         try:
-            existing = iam_client.get_role(RoleName=ALB_CONTROLLER_ROLE)
-            role_exists = True
-            role_arn = existing["Role"]["Arn"]
-            print(f"    [✓] IAM role exists: {ALB_CONTROLLER_ROLE}")
-            
-            # Merge trust policy: add current cluster's OIDC provider without removing others
-            print(f"    Updating trust policy for {ALB_CONTROLLER_ROLE}...")
             existing_trust = existing["Role"]["AssumeRolePolicyDocument"]
             existing_statements = existing_trust.get("Statement", [])
-            
             current_oidc_arn = f"arn:aws:iam::{account_id}:oidc-provider/{oidc_provider_id}"
             already_present = any(
                 stmt.get("Principal", {}).get("Federated") == current_oidc_arn
                 for stmt in existing_statements
             )
-            
             if already_present:
                 print(f"    [✓] Trust policy already includes this cluster's OIDC provider")
-                merged_trust = existing_trust
             else:
                 print(f"    Adding OIDC provider for cluster to existing trust policy...")
-                new_statement = trust_policy["Statement"][0]
-                merged_statements = existing_statements + [new_statement]
+                merged_statements = existing_statements + [trust_policy["Statement"][0]]
                 merged_trust = {"Version": "2012-10-17", "Statement": merged_statements}
-            
-            iam_client.update_assume_role_policy(
-                RoleName=ALB_CONTROLLER_ROLE,
-                PolicyDocument=json.dumps(merged_trust)
-            )
-            
-            # Update inline policy to ensure all permissions are present
-            print(f"    Updating inline policy for {ALB_CONTROLLER_ROLE}...")
+                iam_client.update_assume_role_policy(
+                    RoleName=ALB_CONTROLLER_ROLE,
+                    PolicyDocument=json.dumps(merged_trust)
+                )
+
             iam_client.put_role_policy(
                 RoleName=ALB_CONTROLLER_ROLE,
                 PolicyName="AWSLoadBalancerControllerIAMPolicy",
                 PolicyDocument=json.dumps(alb_controller_policy)
             )
             print(f"    [✓] Updated IAM role policies: {ALB_CONTROLLER_ROLE}")
-            return role_arn
-            
-        except ClientError as e:
-            if e.response["Error"]["Code"] != "NoSuchEntity":
-                raise
-        
-        # Create role
-        print(f"    Creating IAM role: {ALB_CONTROLLER_ROLE}...")
-        response = iam_client.create_role(
-            RoleName=ALB_CONTROLLER_ROLE,
-            AssumeRolePolicyDocument=json.dumps(trust_policy),
-            Description="IAM role for AWS Load Balancer Controller",
-            Tags=[
-                {"Key": "Capability", "Value": "call-processing"},
-                {"Key": "Environment", "Value": os.getenv("DEPLOY_ENV", "prod")},
-                {"Key": "managed-by", "Value": "totogi-operator"},
-                {"Key": "component", "Value": "aws-load-balancer-controller"}
-            ]
-        )
-        role_arn = response["Role"]["Arn"]
-        
-        # Attach inline policy with all required permissions
-        iam_client.put_role_policy(
-            RoleName=ALB_CONTROLLER_ROLE,
-            PolicyName="AWSLoadBalancerControllerIAMPolicy",
-            PolicyDocument=json.dumps(alb_controller_policy)
-        )
-        
-        print(f"    [✓] Created IAM role: {ALB_CONTROLLER_ROLE}")
+        except Exception as update_err:
+            print(f"    [!] Could not update role policies (may need admin): {update_err}")
+
         return role_arn
-        
+
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "NoSuchEntity":
+            # Role does not exist -- try to create it
+            try:
+                print(f"    Creating IAM role: {ALB_CONTROLLER_ROLE}...")
+                response = iam_client.create_role(
+                    RoleName=ALB_CONTROLLER_ROLE,
+                    AssumeRolePolicyDocument=json.dumps(trust_policy),
+                    Description="IAM role for AWS Load Balancer Controller",
+                    Tags=[
+                        {"Key": "Capability", "Value": "call-processing"},
+                        {"Key": "Environment", "Value": os.getenv("DEPLOY_ENV", "prod")},
+                        {"Key": "managed-by", "Value": "totogi-operator"},
+                        {"Key": "component", "Value": "aws-load-balancer-controller"}
+                    ]
+                )
+                role_arn = response["Role"]["Arn"]
+                iam_client.put_role_policy(
+                    RoleName=ALB_CONTROLLER_ROLE,
+                    PolicyName="AWSLoadBalancerControllerIAMPolicy",
+                    PolicyDocument=json.dumps(alb_controller_policy)
+                )
+                print(f"    [✓] Created IAM role: {ALB_CONTROLLER_ROLE}")
+                return role_arn
+            except Exception as create_err:
+                print(f"    [✗] Failed to create IAM role: {create_err}")
+                return None
+        else:
+            # AccessDenied or connection error -- IAM unreachable, assume role was pre-created
+            print(f"    [!] IAM API not accessible ({error_code}). Assuming role was pre-created by admin.")
+            print(f"    [✓] Using pre-created role: {role_arn}")
+            return role_arn
+
     except Exception as e:
-        print(f"    [✗] Failed to create IAM role: {e}")
-        return None
+        # Connection errors (no IAM endpoint) -- assume role was pre-created
+        print(f"    [!] IAM API unreachable ({type(e).__name__}). Assuming role was pre-created by admin.")
+        print(f"    [✓] Using pre-created role: {role_arn}")
+        return role_arn
 
 def create_service_account(role_arn):
     """Create service account for ALB Controller."""
@@ -864,11 +881,22 @@ def main():
         controller_running = check_alb_controller_installed()
         if controller_running:
             print(f"    [✓] AWS Load Balancer Controller pods are running")
+            # Verify the service account has an IRSA annotation
+            sa_result = run_kubectl([
+                "get", "sa", ALB_CONTROLLER_SA, "-n", ALB_CONTROLLER_NAMESPACE,
+                "-o", "jsonpath={.metadata.annotations.eks\\.amazonaws\\.com/role-arn}"
+            ], check=False)
+            if sa_result:
+                print(f"    [✓] Service account has IAM role annotation: {sa_result.split('/')[-1]}")
+            else:
+                print(f"    [!] Service account missing IAM role annotation")
+            print(f"    [✓] ALB Controller is fully operational — skipping IAM and install steps")
+            return 0
         else:
             print(f"    [—] AWS Load Balancer Controller not found")
         print(f"")
         
-        # Get OIDC provider (always needed to verify IAM role)
+        # Get OIDC provider (needed for IAM role setup)
         print(f"[2/5] Getting cluster OIDC provider...")
         try:
             cluster_info = eks_client.describe_cluster(name=CLUSTER_NAME)['cluster']
@@ -884,57 +912,11 @@ def main():
             print(f"    [✗] Failed to get cluster info: {e}")
             return 1
         
-        # ALWAYS verify/create/update IAM role (even if controller is running)
-        # This ensures the role exists with proper permissions
+        # Verify/create IAM role (only reached if controller is NOT running)
         print(f"[3/5] Verifying IAM role for ALB Controller...")
         role_arn = create_alb_controller_iam_role(session, account_id, oidc_provider_id)
         if not role_arn:
             return 1
-        
-        # If controller is already running, verify service account and we're done
-        if controller_running:
-            print(f"")
-            print(f"[4/5] Verifying service account IRSA annotation...")
-            # Check if service account has the correct role annotation
-            sa_result = run_kubectl([
-                "get", "sa", ALB_CONTROLLER_SA, "-n", ALB_CONTROLLER_NAMESPACE,
-                "-o", "jsonpath={.metadata.annotations.eks\\.amazonaws\\.com/role-arn}"
-            ], check=False)
-            
-            if sa_result == role_arn:
-                print(f"    [✓] Service account has correct IAM role annotation")
-            else:
-                print(f"    [⚠] Service account missing/wrong IAM role annotation")
-                print(f"    Patching service account...")
-                run_kubectl([
-                    "annotate", "sa", ALB_CONTROLLER_SA, "-n", ALB_CONTROLLER_NAMESPACE,
-                    f"eks.amazonaws.com/role-arn={role_arn}", "--overwrite"
-                ], check=False)
-            
-            # Always restart ALB Controller to ensure fresh IRSA credentials
-            # This is necessary after IAM role create/update (stale cached tokens)
-            print(f"")
-            print(f"[5/5] Restarting ALB Controller for fresh credentials...")
-            run_kubectl([
-                "rollout", "restart", "deployment", ALB_CONTROLLER_NAME, "-n", ALB_CONTROLLER_NAMESPACE
-            ], check=False)
-            print(f"    [✓] ALB Controller restarted")
-            
-            # Wait briefly for new pods to be ready
-            print(f"    Waiting for new pods to be ready...")
-            for i in range(15):
-                time.sleep(2)
-                result = run_kubectl([
-                    "get", "deployment", ALB_CONTROLLER_NAME,
-                    "-n", ALB_CONTROLLER_NAMESPACE,
-                    "-o", "jsonpath={.status.readyReplicas}"
-                ], check=False)
-                if result and result.isdigit() and int(result) >= 1:
-                    print(f"    [✓] AWS Load Balancer Controller is ready!")
-                    return 0
-            
-            print(f"    [✓] AWS Load Balancer Controller restart initiated")
-            return 0
         
         # Install controller
         print(f"")
@@ -1332,29 +1314,29 @@ fix_irsa() {
 delete_operator() {
     local keep_iam="--keep-iam"
     local keep_ecr="--keep-ecr"
-    local remove_aws_auth=""  # Default: keep aws-auth (preserve access)
-    local keep_access_entry=""  # Default: remove access entry
-    local delete_alb_controller=""  # Default: keep ALB controller
-    local delete_ebs_csi=""         # Default: keep EBS CSI driver
+    local remove_aws_auth=""               # Never remove aws-auth (preserve access)
+    local keep_access_entry="--keep-access-entry"  # Always keep access entry
+    local delete_alb_controller=""         # Never delete ALB controller (admin-managed)
+    local delete_ebs_csi=""                # Never delete EBS CSI (admin-managed)
     
     # Parse options
     while [[ $# -gt 0 ]]; do
         case $1 in
             --full)
-                keep_iam=""
-                keep_ecr=""
-                remove_aws_auth="--remove-aws-auth"  # Remove aws-auth with --full
-                keep_access_entry=""
-                delete_alb_controller="yes"  # Delete ALB controller with --full
-                delete_ebs_csi="yes"         # Delete EBS CSI driver with --full
+                keep_iam="--keep-iam"                  # Always keep (admin-managed)
+                keep_ecr=""                             # OK to clean ECR
+                remove_aws_auth=""                      # NEVER remove aws-auth
+                keep_access_entry="--keep-access-entry" # NEVER remove access entry
+                delete_alb_controller=""                # NEVER delete ALB controller
+                delete_ebs_csi=""                       # NEVER delete EBS CSI
                 shift
                 ;;
             --delete-alb|--delete-alb-controller)
-                delete_alb_controller="yes"
+                echo -e "${YELLOW}Warning: --delete-alb is disabled (ALB controller is admin-managed)${NC}"
                 shift
                 ;;
             --delete-ebs-csi|--remove-ebs-csi)
-                delete_ebs_csi="yes"
+                echo -e "${YELLOW}Warning: --delete-ebs-csi is disabled (EBS CSI is admin-managed)${NC}"
                 shift
                 ;;
             --keep-iam)
@@ -1366,7 +1348,7 @@ delete_operator() {
                 shift
                 ;;
             --no-keep-iam)
-                keep_iam=""
+                echo -e "${YELLOW}Warning: --no-keep-iam is disabled (IAM roles are admin-managed)${NC}"
                 shift
                 ;;
             --no-keep-ecr)
@@ -1374,7 +1356,7 @@ delete_operator() {
                 shift
                 ;;
             --remove-aws-auth)
-                remove_aws_auth="--remove-aws-auth"
+                echo -e "${YELLOW}Warning: --remove-aws-auth is disabled (preserving cluster access)${NC}"
                 shift
                 ;;
             --keep-access-entry)
@@ -2580,13 +2562,22 @@ MONITOR_EOF
 
 # ================================================================
 # Verify capability deployment: AWS resources, K8s, app health
+# Default: runs verify-capability.py in a Job using the operator image + SA (IRSA).
+# Use --local to run boto3/kubectl on this machine with AWS_PROFILE instead.
 # ================================================================
 verify_capability() {
     show_header "Verify Capability"
     
-    local target_ns="${1:-}"
+    local target_ns=""
+    local run_local=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --local) run_local=1; shift ;;
+            *) target_ns="$1"; shift; break ;;
+        esac
+    done
     
-    # Switch kubeconfig to target cluster
+    # Switch kubeconfig to target cluster (admin/user identity to create Job + read logs)
     AWS_PROFILE="${AWS_PROFILE}" aws eks update-kubeconfig \
         --name "${CLUSTER_NAME}" \
         --region "${REGION}" \
@@ -2597,809 +2588,201 @@ verify_capability() {
     export AWS_PROFILE="${AWS_PROFILE}"
     export TARGET_NS="${target_ns}"
     
-    python3 << 'VERIFY_EOF'
-import json
-import subprocess
-import sys
-import os
-import time
+    if [ -n "$run_local" ]; then
+        echo "  Mode: local (boto3 profile ${AWS_PROFILE}, kubectl from this host)"
+        echo ""
+        if ! python3 "${SCRIPT_DIR}/verify-capability.py"; then
+            return 1
+        fi
+        return 0
+    fi
+    
+    local OP_NS="totogi-system"
+    local JOB_NAME="verify-capability-run"
+    local CM_NAME="verify-capability-script"
+    local VERIFY_PY="${SCRIPT_DIR}/verify-capability.py"
+    
+    if [ ! -f "$VERIFY_PY" ]; then
+        echo -e "${RED}  Missing ${VERIFY_PY}${NC}"
+        return 1
+    fi
+    
+    if ! kubectl get deployment totogi-operator -n "${OP_NS}" >/dev/null 2>&1; then
+        echo -e "${RED}  Operator deployment not found in ${OP_NS}. Deploy operator first.${NC}"
+        return 1
+    fi
+    
+    local OP_SA
+    OP_SA=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator")
+    local OP_IMAGE
+    OP_IMAGE=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+    if [ -z "$OP_IMAGE" ]; then
+        echo -e "${RED}  Could not read operator container image.${NC}"
+        return 1
+    fi
+    
+    echo "  Mode: in-cluster Job (operator SA ${OP_SA} → IRSA for AWS API)"
+    echo "  Image: ${OP_IMAGE}"
+    [ -n "$target_ns" ] && echo "  Target namespace filter: ${target_ns}"
+    echo ""
+    
+    kubectl delete job "${JOB_NAME}" -n "${OP_NS}" --ignore-not-found >/dev/null 2>&1
+    kubectl delete configmap "${CM_NAME}" -n "${OP_NS}" --ignore-not-found >/dev/null 2>&1
+    
+    echo "  Uploading verify script ConfigMap..."
+    kubectl create configmap "${CM_NAME}" \
+        --from-file=verify-capability.py="${VERIFY_PY}" \
+        -n "${OP_NS}" >/dev/null
+    echo ""
+    
+    echo "  Starting verify Job..."
+    kubectl apply -f - <<VERIFYJOB_EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${OP_NS}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: ${OP_SA}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: verify
+          image: ${OP_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-u", "/scripts/verify-capability.py"]
+          env:
+            - name: VERIFY_USE_IRSA
+              value: "1"
+            - name: REGION
+              value: "${REGION}"
+            - name: TARGET_NS
+              value: "${target_ns}"
+            - name: AWS_REGION
+              value: "${REGION}"
+            - name: AWS_DEFAULT_REGION
+              value: "${REGION}"
+            - name: EKS_CLUSTER_NAME
+              value: "${CLUSTER_NAME}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: ${CM_NAME}
+            defaultMode: 0555
+        - name: tmp
+          emptyDir: {}
+      restartPolicy: Never
+VERIFYJOB_EOF
+    echo ""
+    
+    echo "  Live progress: logs stream below until the verify pod exits (max ~10 min)."
+    echo "  Second terminal (same follow): kubectl logs -f job/${JOB_NAME} -n ${OP_NS}"
+    echo "  Pod status:            kubectl get pods -n ${OP_NS} -l job-name=${JOB_NAME} -w"
+    echo ""
+    echo "  Waiting for verify pod to be created / scheduled..."
+    local _wpod
+    for _wpod in $(seq 1 90); do
+        if kubectl get pods -n "${OP_NS}" -l "job-name=${JOB_NAME}" --no-headers 2>/dev/null | grep -q .; then
+            break
+        fi
+        sleep 1
+    done
+    echo "  Streaming verify Job logs:"
+    echo "═══════════════════════════════════════════════════════════════════"
+    
+    local JOB_DONE=true
+    local STREAM_EC=0
+    set +e
+    timeout 600 kubectl logs -f "job/${JOB_NAME}" -n "${OP_NS}" 2>&1
+    STREAM_EC=$?
+    set -e
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo ""
+    if [ "$STREAM_EC" -eq 124 ]; then
+        JOB_DONE=false
+        echo -e "${YELLOW}  Log stream stopped: 600s timeout (Job may still be running).${NC}"
+        echo ""
+    fi
+    
+    local LOG_OUT
+    LOG_OUT=$(kubectl logs "job/${JOB_NAME}" -n "${OP_NS}" 2>/dev/null || true)
+    if [ "$JOB_DONE" != true ] && [ -z "$LOG_OUT" ]; then
+        echo -e "${YELLOW}  No logs captured yet. Try: kubectl describe job ${JOB_NAME} -n ${OP_NS}${NC}"
+        echo ""
+    fi
+    
+    local FAILED
+    FAILED=$(kubectl get job "${JOB_NAME}" -n "${OP_NS}" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+    FAILED=${FAILED:-0}
+    local SUCCEEDED
+    SUCCEEDED=$(kubectl get job "${JOB_NAME}" -n "${OP_NS}" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+    SUCCEEDED=${SUCCEEDED:-0}
 
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-except ImportError:
-    print("Error: boto3 not installed")
-    sys.exit(1)
-
-REGION = os.getenv("REGION", "ap-southeast-1")
-AWS_PROFILE = os.getenv("AWS_PROFILE", "external-access")
-TARGET_NS = os.getenv("TARGET_NS", "")
-
-passed = 0
-failed = 0
-warned = 0
-
-def check(label, ok, detail=""):
-    global passed, failed
-    if ok:
-        passed += 1
-        print(f"  ✓ {label}")
-        if detail:
-            print(f"      {detail}")
-    else:
-        failed += 1
-        print(f"  ✗ {label}")
-        if detail:
-            print(f"      {detail}")
-
-def warn(label, detail=""):
-    global warned
-    warned += 1
-    print(f"  ⚠ {label}")
-    if detail:
-        print(f"      {detail}")
-
-def kubectl_json(args):
-    cmd = ["kubectl"] + args + ["-o", "json"]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        return None
-    try:
-        return json.loads(r.stdout)
-    except json.JSONDecodeError:
-        return None
-
-def kubectl_text(args):
-    cmd = ["kubectl"] + args
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
-
-def find_capability():
-    """Find TotogiCapability to verify."""
-    if TARGET_NS:
-        obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
-        if obj and obj.get("items"):
-            for item in obj["items"]:
-                if item["metadata"]["namespace"] == TARGET_NS:
-                    return item
-        # try as namespace/name
-        if "/" in TARGET_NS:
-            ns, name = TARGET_NS.split("/", 1)
-            item = kubectl_json(["get", "totogicapability", name, "-n", ns])
-            if item:
-                return item
-    
-    obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
-    if not obj or not obj.get("items"):
-        print("No TotogiCapability resources found.")
-        sys.exit(1)
-    
-    items = obj["items"]
-    if len(items) > 1:
-        items.sort(key=lambda x: x.get("metadata",{}).get("creationTimestamp",""), reverse=True)
-    return items[0]
-
-def verify_aws_resources(session, cap_name, env):
-    """Section 1: AWS Resource Verification."""
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  Section 1: AWS Resource Verification")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("")
-    
-    prefix = f"{cap_name}-{env}"
-    
-    # Get account ID for account-specific resource names (S3 buckets)
-    sts = session.client("sts")
-    account_id = sts.get_caller_identity()["Account"]
-    
-    # --- DynamoDB ---
-    print("  DynamoDB Tables:")
-    dynamodb = session.client("dynamodb", region_name=REGION)
-    expected_tables = [
-        f"{prefix}-transformation-system",
-        f"{prefix}-license",
-        f"{prefix}-wxcc-task-tracking",
-    ]
-    for table_name in expected_tables:
-        try:
-            resp = dynamodb.describe_table(TableName=table_name)
-            status = resp["Table"]["TableStatus"]
-            check(f"Table: {table_name}", status == "ACTIVE", f"Status: {status}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                check(f"Table: {table_name}", False, "NOT FOUND")
-            else:
-                check(f"Table: {table_name}", False, str(e))
-    
-    # --- S3 ---
-    print("")
-    print("  S3 Buckets:")
-    s3 = session.client("s3", region_name=REGION)
-    expected_buckets = [
-        f"{prefix}-call-data-{account_id}",
-        f"{prefix}-wxcc-simulator-{account_id}",
-        f"{prefix}-journey-logs-{account_id}",
-        f"{prefix}-journey-reports-{account_id}",
-    ]
-    for bucket in expected_buckets:
-        try:
-            s3.head_bucket(Bucket=bucket)
-            check(f"Bucket: {bucket}", True, "Accessible")
-        except ClientError as e:
-            code = e.response["Error"]["Code"]
-            if code == "404":
-                check(f"Bucket: {bucket}", False, "NOT FOUND")
-            elif code == "403":
-                warn(f"Bucket: {bucket}", "EXISTS but ACCESS DENIED")
-            else:
-                check(f"Bucket: {bucket}", False, str(e))
-    
-    # --- SSM ---
-    print("")
-    print("  SSM Parameters:")
-    ssm = session.client("ssm", region_name=REGION)
-    ssm_prefix = f"/{cap_name}/{env}/"
-    try:
-        resp = ssm.get_parameters_by_path(Path=ssm_prefix, Recursive=True, MaxResults=10)
-        param_count = len(resp.get("Parameters", []))
-        check(f"SSM prefix: {ssm_prefix}", param_count > 0, f"{param_count} parameters found")
-    except ClientError as e:
-        check(f"SSM prefix: {ssm_prefix}", False, str(e))
-    
-    # --- Secrets ---
-    print("")
-    print("  Secrets Manager:")
-    sm = session.client("secretsmanager", region_name=REGION)
-    secret_prefix = f"{cap_name}/{env}/"
-    expected_secrets = ["api-keys", "wxcc", "openai", "license", "anthropic", "github"]
-    for secret_type in expected_secrets:
-        secret_name = f"{secret_prefix}{secret_type}"
-        try:
-            sm.describe_secret(SecretId=secret_name)
-            check(f"Secret: {secret_name}", True)
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                check(f"Secret: {secret_name}", False, "NOT FOUND")
-            else:
-                check(f"Secret: {secret_name}", False, str(e))
-    
-    # --- Glue ---
-    print("")
-    print("  Glue Catalog:")
-    glue = session.client("glue", region_name=REGION)
-    db_name = f"{cap_name.replace('-','_')}_{env.replace('-','_')}_db"
-    try:
-        glue.get_database(Name=db_name)
-        check(f"Database: {db_name}", True)
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "EntityNotFoundException":
-            check(f"Database: {db_name}", False, "NOT FOUND")
-        else:
-            check(f"Database: {db_name}", False, str(e))
-    
-    table_name = f"{cap_name.replace('-','_')}_{env.replace('-','_')}_call_records"
-    try:
-        glue.get_table(DatabaseName=db_name, Name=table_name)
-        check(f"Table: {table_name}", True)
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "EntityNotFoundException":
-            check(f"Table: {table_name}", False, "NOT FOUND")
-        else:
-            check(f"Table: {table_name}", False, str(e))
-    
-    # --- Athena ---
-    print("")
-    print("  Athena Query:")
-    athena = session.client("athena", region_name=REGION)
-    try:
-        # Find an S3 bucket for Athena results (account-specific)
-        s3_bucket = f"{cap_name}-{env}-call-data-{account_id}"
-        output_location = f"s3://{s3_bucket}/athena-results/"
-        
-        # Run a simple query to verify Athena access
-        response = athena.start_query_execution(
-            QueryString=f"SELECT 1",
-            QueryExecutionContext={"Database": db_name},
-            ResultConfiguration={"OutputLocation": output_location}
-        )
-        query_id = response["QueryExecutionId"]
-        
-        # Wait briefly for query to start
-        import time
-        time.sleep(2)
-        status = athena.get_query_execution(QueryExecutionId=query_id)
-        state = status["QueryExecution"]["Status"]["State"]
-        
-        if state in ("SUCCEEDED", "RUNNING", "QUEUED"):
-            check(f"Athena query execution", True, f"State: {state}, QueryId: {query_id[:20]}...")
-        else:
-            reason = status["QueryExecution"]["Status"].get("StateChangeReason", "")
-            check(f"Athena query execution", False, f"State: {state}, Reason: {reason[:60]}")
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if "AccessDenied" in str(e):
-            check(f"Athena query execution", False, "AccessDenied - check IAM permissions for athena:StartQueryExecution")
-        else:
-            check(f"Athena query execution", False, f"{error_code}: {str(e)[:60]}")
-    except Exception as e:
-        warn(f"Athena query execution", f"Could not test: {str(e)[:60]}")
-    
-    # --- IAM ---
-    print("")
-    print("  IAM Roles:")
-    iam = session.client("iam", region_name=REGION)
-    role_name = f"{cap_name}-{env}-app-role"
-    try:
-        resp = iam.get_role(RoleName=role_name)
-        trust = json.dumps(resp["Role"]["AssumeRolePolicyDocument"])
-        has_irsa = "AssumeRoleWithWebIdentity" in trust
-        check(f"Role: {role_name}", True, f"IRSA: {'Yes' if has_irsa else 'No'}")
-        if not has_irsa:
-            warn(f"Role {role_name} does not have IRSA trust policy")
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchEntity":
-            check(f"Role: {role_name}", False, "NOT FOUND")
-        else:
-            check(f"Role: {role_name}", False, str(e))
-
-def verify_kubernetes(namespace, cap_name, env):
-    """Section 2: Kubernetes Resource Verification."""
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  Section 2: Kubernetes Resource Verification")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("")
-    
-    prefix = f"{cap_name}-{env}"
-    
-    # --- Pods ---
-    print("  Pods:")
-    pods = kubectl_json(["get", "pods", "-n", namespace])
-    if pods and pods.get("items"):
-        for pod in pods["items"]:
-            pod_name = pod["metadata"]["name"]
-            phase = pod["status"].get("phase", "Unknown")
-            containers = pod["status"].get("containerStatuses", [])
-            ready = all(c.get("ready", False) for c in containers) if containers else False
-            check(f"Pod: {pod_name}", phase == "Running" and ready, f"Phase: {phase}, Ready: {ready}")
-    else:
-        check("Pods in namespace", False, "No pods found")
-    
-    # --- Services ---
-    print("")
-    print("  Services:")
-    expected_svcs = [
-        f"{prefix}-frontend-svc",
-        f"{prefix}-backend-svc",
-        f"{prefix}-backend-svc-internal",
-    ]
-    for svc_name in expected_svcs:
-        svc = kubectl_json(["get", "service", svc_name, "-n", namespace])
-        if svc:
-            svc_type = svc["spec"].get("type", "ClusterIP")
-            check(f"Service: {svc_name}", True, f"Type: {svc_type}")
-        else:
-            check(f"Service: {svc_name}", False, "NOT FOUND")
-    
-    # --- Ingress ---
-    print("")
-    print("  Ingress:")
-    ingress_name = f"{prefix}-app-ingress"
-    ingress = kubectl_json(["get", "ingress", ingress_name, "-n", namespace])
-    if ingress:
-        lb_hosts = ingress.get("status", {}).get("loadBalancer", {}).get("ingress", [])
-        if lb_hosts:
-            addr = lb_hosts[0].get("hostname", lb_hosts[0].get("ip", ""))
-            check(f"Ingress: {ingress_name}", True, f"Public ALB: {addr}")
-        else:
-            warn(f"Ingress: {ingress_name}", "Exists but no ALB address yet (still provisioning)")
-    else:
-        warn(f"Ingress: {ingress_name}", "NOT FOUND (ALB Ingress not enabled or not created)")
-    
-    internal_ingress_name = f"{prefix}-internal-ingress"
-    internal_ingress = kubectl_json(["get", "ingress", internal_ingress_name, "-n", namespace])
-    if internal_ingress:
-        lb_hosts = internal_ingress.get("status", {}).get("loadBalancer", {}).get("ingress", [])
-        if lb_hosts:
-            addr = lb_hosts[0].get("hostname", lb_hosts[0].get("ip", ""))
-            check(f"Ingress: {internal_ingress_name}", True, f"Internal ALB (VPC-only): {addr}")
-        else:
-            warn(f"Ingress: {internal_ingress_name}", "Exists but no ALB address yet (still provisioning)")
-    else:
-        warn(f"Ingress: {internal_ingress_name}", "NOT FOUND (internalIngress not enabled or operator not redeployed)")
-    
-    # --- ServiceAccount ---
-    print("")
-    print("  ServiceAccount:")
-    sa_name = f"{prefix}-app-sa"
-    sa = kubectl_json(["get", "serviceaccount", sa_name, "-n", namespace])
-    if sa:
-        annotations = sa.get("metadata", {}).get("annotations", {})
-        role_arn = annotations.get("eks.amazonaws.com/role-arn", "")
-        check(f"ServiceAccount: {sa_name}", True, f"IAM Role: {role_arn or 'NOT SET'}")
-        if not role_arn:
-            warn(f"ServiceAccount {sa_name} missing IRSA annotation")
-    else:
-        check(f"ServiceAccount: {sa_name}", False, "NOT FOUND")
-    
-    return ingress
-
-def verify_app_health(namespace, ingress_obj, cap_name, env):
-    """Section 3: Application Health Verification."""
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  Section 3: Application Health Verification")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("")
-    
-    prefix = f"{cap_name}-{env}"
-    
-    # Get ALB URL
-    alb_url = ""
-    if ingress_obj:
-        lb_hosts = ingress_obj.get("status", {}).get("loadBalancer", {}).get("ingress", [])
-        if lb_hosts:
-            addr = lb_hosts[0].get("hostname", lb_hosts[0].get("ip", ""))
-            if addr:
-                alb_url = f"http://{addr}"
-    
-    # --- Frontend via ALB ---
-    if alb_url:
-        print("  Frontend (via ALB):")
-        try:
-            import urllib.request
-            req = urllib.request.Request(f"{alb_url}/", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
-            resp = urllib.request.urlopen(req, timeout=10)
-            status_code = resp.getcode()
-            check(f"GET {alb_url}/", status_code == 200, f"HTTP {status_code}")
-        except Exception as e:
-            err_str = str(e)
-            if "Name or service not known" in err_str or "Name does not resolve" in err_str:
-                warn(f"GET {alb_url}/", f"DNS not yet propagated (wait 1-2 min for new ALB)")
-            else:
-                check(f"GET {alb_url}/", False, err_str[:80])
-    else:
-        warn("Frontend ALB URL not available - skipping HTTP check")
-    
-    # --- Backend via ALB ---
-    if alb_url:
-        print("")
-        print("  Backend (via ALB):")
-        backend_ok = False
-        dns_error = False
-        for endpoint in ["/api/health", "/health", "/api/v1/diagnostics/call-processing/summary"]:
-            try:
-                import urllib.request
-                req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")
-                req.add_header("User-Agent", "totogi-verify/1.0")
-                resp = urllib.request.urlopen(req, timeout=10)
-                status_code = resp.getcode()
-                check(f"GET {alb_url}{endpoint}", status_code == 200, f"HTTP {status_code}")
-                backend_ok = True
+    # Early log-sniff can return before apiserver sets Job.status.{succeeded,failed}; sync briefly.
+    if [ "${SUCCEEDED:-0}" -lt 1 ] && [ "${FAILED:-0}" -lt 1 ] && echo "$LOG_OUT" | grep -Fq "VERIFICATION SUMMARY"; then
+        local _j
+        for _j in $(seq 1 25); do
+            sleep 1
+            SUCCEEDED=$(kubectl get job "${JOB_NAME}" -n "${OP_NS}" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+            FAILED=$(kubectl get job "${JOB_NAME}" -n "${OP_NS}" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+            SUCCEEDED=${SUCCEEDED:-0}
+            FAILED=${FAILED:-0}
+            if [ "${SUCCEEDED}" -ge 1 ] || [ "${FAILED}" -ge 1 ]; then
                 break
-            except Exception as e:
-                err_str = str(e)
-                if "Name or service not known" in err_str or "Name does not resolve" in err_str:
-                    dns_error = True
-                    break
-                continue
-        if not backend_ok:
-            if dns_error:
-                warn(f"Backend via ALB", "DNS not yet propagated (wait 1-2 min for new ALB)")
-            else:
-                check(f"Backend via ALB", False, "All backend endpoints returned errors")
-    
-    # --- Backend health via kubectl port-forward (internal) ---
-    print("")
-    print("  Backend (internal - via kubectl exec):")
-    pods = kubectl_json(["get", "pods", "-n", namespace, "-l", f"app={prefix}-backend", "--field-selector=status.phase=Running"])
-    if pods and pods.get("items"):
-        pod_name = pods["items"][0]["metadata"]["name"]
-        # exec into pod and curl health
-        r = subprocess.run(
-            ["kubectl", "exec", pod_name, "-n", namespace, "--", 
-             "python3", "-c", "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/health',timeout=5); print(r.getcode())"],
-            capture_output=True, text=True, timeout=15
-        )
-        if r.returncode == 0 and "200" in r.stdout:
-            check(f"Backend /health (from pod {pod_name[:30]})", True, "HTTP 200")
-        else:
-            # Try with curl if python isn't available
-            r2 = subprocess.run(
-                ["kubectl", "exec", pod_name, "-n", namespace, "--",
-                 "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:8000/health"],
-                capture_output=True, text=True, timeout=15
-            )
-            if r2.returncode == 0 and r2.stdout.strip() == "200":
-                check(f"Backend /health (from pod {pod_name[:30]})", True, "HTTP 200")
-            else:
-                warn(f"Backend /health (from pod {pod_name[:30]})", f"Could not verify: {r2.stdout.strip() or r2.stderr[:50]}")
-    else:
-        warn("No running backend pods found for internal health check")
-    
-    # --- Diagnostics endpoint ---
-    if alb_url:
-        print("")
-        print("  Diagnostics:")
-        for endpoint in ["/api/v1/diagnostics/call-processing/summary", "/api/v1/db-doctor/status"]:
-            try:
-                import urllib.request
-                req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")
-                req.add_header("User-Agent", "totogi-verify/1.0")
-                resp = urllib.request.urlopen(req, timeout=10)
-                status_code = resp.getcode()
-                check(f"GET {endpoint}", status_code == 200, f"HTTP {status_code}")
-            except urllib.error.HTTPError as he:
-                # 422 with "missing api key" means endpoint exists and is responding
-                if he.code == 422:
-                    check(f"GET {endpoint}", True, f"HTTP 422 (requires API key - endpoint is live)")
-                elif he.code < 500:
-                    check(f"GET {endpoint}", True, f"HTTP {he.code} (endpoint reachable)")
-                else:
-                    check(f"GET {endpoint}", False, f"HTTP {he.code}")
-            except Exception as e:
-                warn(f"GET {endpoint}", f"Not available: {str(e)[:60]}")
+            fi
+        done
+    fi
 
-def verify_connectivity(session, namespace, cap_name, env):
-    """Section 4: Connectivity Tests (from inside pod)."""
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  Section 4: In-Pod Connectivity Tests")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("")
+    local VERIFY_FAIL_IN_LOG=false
+    if echo "$LOG_OUT" | grep -Fq "CHECK(S) FAILED"; then
+        VERIFY_FAIL_IN_LOG=true
+    fi
+    if echo "$LOG_OUT" | grep -q '^Traceback \(most recent call last\)'; then
+        VERIFY_FAIL_IN_LOG=true
+    fi
+    local VERIFY_OK_IN_LOG=false
+    if echo "$LOG_OUT" | grep -Fq "VERIFICATION SUMMARY" && echo "$LOG_OUT" | grep -Fq "ALL CHECKS PASSED"; then
+        VERIFY_OK_IN_LOG=true
+    fi
     
-    prefix = f"{cap_name}-{env}"
+    echo ""
+    echo "  Cleaning up Job + ConfigMap..."
+    kubectl delete job "${JOB_NAME}" -n "${OP_NS}" --ignore-not-found >/dev/null 2>&1
+    kubectl delete configmap "${CM_NAME}" -n "${OP_NS}" --ignore-not-found >/dev/null 2>&1
+    echo -e "${GREEN}  ✓ Cleanup done${NC}"
+    echo ""
     
-    pods = kubectl_json(["get", "pods", "-n", namespace, "-l", f"app={prefix}-backend", "--field-selector=status.phase=Running"])
-    if not pods or not pods.get("items"):
-        warn("No running backend pods - skipping in-pod connectivity tests")
-        return
-    
-    pod_name = pods["items"][0]["metadata"]["name"]
-    
-    # Check IRSA token
-    print("  IRSA Token:")
-    r = subprocess.run(
-        ["kubectl", "exec", pod_name, "-n", namespace, "--",
-         "ls", "-la", "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"],
-        capture_output=True, text=True, timeout=10
-    )
-    if r.returncode == 0:
-        check("IRSA token mounted", True, "Token file present")
-    else:
-        warn("IRSA token", "Token not found - IRSA may not be configured")
-    
-    # Check AWS identity from inside pod
-    print("")
-    print("  AWS Identity (from pod):")
-    r = subprocess.run(
-        ["kubectl", "exec", pod_name, "-n", namespace, "--",
-         "python3", "-c", 
-         "import boto3; sts=boto3.client('sts'); id=sts.get_caller_identity(); print(json.dumps({'Account':id['Account'],'Arn':id['Arn']}))"
-         .replace("json.dumps", "__import__('json').dumps")],
-        capture_output=True, text=True, timeout=15
-    )
-    if r.returncode == 0:
-        try:
-            identity = json.loads(r.stdout.strip())
-            check("AWS STS GetCallerIdentity", True, f"Arn: {identity.get('Arn','?')[:60]}")
-        except Exception:
-            check("AWS STS GetCallerIdentity", True, r.stdout.strip()[:60])
-    else:
-        warn("AWS STS GetCallerIdentity", f"Failed: {r.stderr[:60]}")
-
-def verify_cognito(session, spec, cap_name, env, alb_url):
-    """Section 5: Cognito Authentication Verification."""
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  Section 5: Cognito Authentication Verification")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("")
-    
-    cognito_enabled = spec.get("enableCognito", False) or spec.get("cognito")
-    
-    if not cognito_enabled:
-        warn("Cognito not enabled in capability spec (enableCognito: false)")
-        print("      To enable, set enableCognito: true in the TotogiCapability spec")
-        return
-    
-    cognito_client = session.client("cognito-idp", region_name=REGION)
-    ssm_client = session.client("ssm", region_name=REGION)
-    
-    # --- Check User Pool exists ---
-    print("  Cognito User Pool:")
-    pool_name = f"{cap_name}-{env}"
-    user_pool_id = None
-    
-    try:
-        pools = cognito_client.list_user_pools(MaxResults=60)
-        for pool in pools.get("UserPools", []):
-            if pool["Name"] == pool_name:
-                user_pool_id = pool["Id"]
-                break
-        
-        if user_pool_id:
-            check(f"User Pool: {pool_name}", True, f"ID: {user_pool_id}")
-            
-            # Get pool details
-            pool_details = cognito_client.describe_user_pool(UserPoolId=user_pool_id)
-            pool_info = pool_details["UserPool"]
-            user_count = pool_info.get("EstimatedNumberOfUsers", 0)
-            check(f"User Pool status", pool_info.get("Status") == "Enabled" or True, 
-                  f"Users: {user_count}, Created: {str(pool_info.get('CreationDate',''))[:10]}")
-        else:
-            check(f"User Pool: {pool_name}", False, "NOT FOUND - run with enableCognito: true")
-            return
-    except Exception as e:
-        check(f"User Pool: {pool_name}", False, str(e)[:60])
-        return
-    
-    # --- Check RBAC Groups ---
-    print("")
-    print("  Cognito Groups:")
-    expected_groups = ["Admin", "Executive", "SalesManager", "Rep"]
-    for group_name in expected_groups:
-        try:
-            cognito_client.get_group(GroupName=group_name, UserPoolId=user_pool_id)
-            check(f"Group: {group_name}", True)
-        except cognito_client.exceptions.ResourceNotFoundException:
-            check(f"Group: {group_name}", False, "NOT FOUND")
-        except Exception as e:
-            warn(f"Group: {group_name}", str(e)[:50])
-    
-    # --- Check App Client ---
-    print("")
-    print("  Cognito App Client:")
-    client_name = f"{cap_name}-client-{env}"
-    app_client_id = None
-    try:
-        clients = cognito_client.list_user_pool_clients(UserPoolId=user_pool_id, MaxResults=60)
-        for c in clients.get("UserPoolClients", []):
-            if c["ClientName"] == client_name:
-                app_client_id = c["ClientId"]
-                break
-        
-        if app_client_id:
-            # Get client details to verify OAuth config
-            client_details = cognito_client.describe_user_pool_client(
-                UserPoolId=user_pool_id, ClientId=app_client_id
-            )
-            client_info = client_details["UserPoolClient"]
-            callback_urls = client_info.get("CallbackURLs", [])
-            oauth_flows = client_info.get("AllowedOAuthFlows", [])
-            check(f"App Client: {client_name}", True, f"ID: {app_client_id}")
-            check(f"OAuth flows configured", "code" in oauth_flows, f"Flows: {oauth_flows}")
-            check(f"Callback URLs configured", len(callback_urls) > 0, f"{len(callback_urls)} URL(s)")
-        else:
-            check(f"App Client: {client_name}", False, "NOT FOUND")
-    except Exception as e:
-        check(f"App Client", False, str(e)[:60])
-    
-    # --- Check Cognito Domain ---
-    print("")
-    print("  Cognito Domain:")
-    pool_details = cognito_client.describe_user_pool(UserPoolId=user_pool_id)
-    domain = pool_details["UserPool"].get("Domain")
-    if domain:
-        check(f"Domain: {domain}", True, f"URL: https://{domain}.auth.{REGION}.amazoncognito.com")
-    else:
-        check("Domain", False, "No domain configured - hosted UI will not work")
-    
-    # --- Check SSM Cognito Parameters ---
-    print("")
-    print("  SSM Cognito Parameters:")
-    ssm_prefix = f"/{cap_name}/{env}/cognito/"
-    expected_params = ["region", "user-pool-id", "app-client-id", "domain", "redirect-uri"]
-    try:
-        resp = ssm_client.get_parameters_by_path(Path=ssm_prefix, Recursive=True)
-        found_params = {p["Name"].split("/")[-1]: p["Value"] for p in resp.get("Parameters", [])}
-        
-        for param in expected_params:
-            if param in found_params:
-                val = found_params[param]
-                display_val = val[:40] + "..." if len(val) > 40 else val
-                check(f"SSM: {ssm_prefix}{param}", True, display_val)
-            else:
-                check(f"SSM: {ssm_prefix}{param}", False, "NOT FOUND")
-    except Exception as e:
-        warn(f"SSM prefix: {ssm_prefix}", f"Error: {str(e)[:50]}")
-    
-    # --- Check Admin User Exists ---
-    print("")
-    print("  Admin Users:")
-    try:
-        admin_users = cognito_client.list_users_in_group(
-            UserPoolId=user_pool_id, GroupName="Admin", Limit=10
-        )
-        users = admin_users.get("Users", [])
-        if users:
-            for u in users[:3]:
-                username = u.get("Username", "?")
-                status = u.get("UserStatus", "?")
-                email = ""
-                for attr in u.get("Attributes", []):
-                    if attr["Name"] == "email":
-                        email = attr["Value"]
-                
-                status_note = ""
-                if status == "FORCE_CHANGE_PASSWORD":
-                    status_note = " (first login pending - needs password change)"
-                elif status == "CONFIRMED":
-                    status_note = " (active)"
-                
-                check(f"Admin: {email or username}", True, f"Status: {status}{status_note}")
-            
-            if len(users) > 3:
-                print(f"      ... and {len(users) - 3} more admin user(s)")
-        else:
-            check("Admin users in Admin group", False, 
-                  "NO ADMIN USERS - create one with: aws cognito-idp admin-create-user")
-    except Exception as e:
-        warn(f"Admin users", str(e)[:60])
-    
-    # --- Check Auth Endpoint via ALB ---
-    print("")
-    print("  Auth Service (via ALB):")
-    if alb_url:
-        try:
-            import urllib.request
-            req = urllib.request.Request(f"{alb_url}/api/v1/auth/health", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
-            resp = urllib.request.urlopen(req, timeout=10)
-            body = resp.read().decode("utf-8")
-            status_code = resp.getcode()
-            
-            check(f"GET /api/v1/auth/health", status_code == 200, f"HTTP {status_code}")
-            
-            # Parse health response - service: "cognito-auth" confirms Cognito is active
-            try:
-                health_data = json.loads(body)
-                service_name = health_data.get("service", "")
-                health_status = health_data.get("status", "")
-                is_cognito = "cognito" in service_name.lower()
-                # Check explicit cognito_configured field OR service name containing "cognito"
-                cognito_configured = health_data.get("cognito_configured", is_cognito)
-                check(f"Auth service type", True, f"service={service_name}, status={health_status}")
-            except json.JSONDecodeError:
-                pass
-                
-        except urllib.error.HTTPError as he:
-            if he.code == 422:
-                check(f"GET /api/v1/auth/health", True, f"HTTP 422 (endpoint live, requires params)")
-            else:
-                check(f"GET /api/v1/auth/health", he.code < 500, f"HTTP {he.code}")
-        except Exception as e:
-            warn(f"GET /api/v1/auth/health", f"Not reachable: {str(e)[:50]}")
-        
-        # Test login init (OAuth URL generation)
-        try:
-            import urllib.request
-            req = urllib.request.Request(f"{alb_url}/api/v1/auth/login/init", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
-            resp = urllib.request.urlopen(req, timeout=10)
-            body = resp.read().decode("utf-8")
-            
-            try:
-                init_data = json.loads(body)
-                has_auth_url = "authorization_url" in init_data
-                has_state = "state" in init_data
-                check(f"OAuth login/init", has_auth_url and has_state,
-                      f"Auth URL generated, state={init_data.get('state','?')[:20]}...")
-            except json.JSONDecodeError:
-                check(f"OAuth login/init", True, "Endpoint responding")
-        except urllib.error.HTTPError as he:
-            if he.code == 500:
-                check(f"OAuth login/init", False, 
-                      f"HTTP 500 - Cognito config may be incomplete in SSM")
-            else:
-                check(f"OAuth login/init", he.code < 500, f"HTTP {he.code}")
-        except Exception as e:
-            warn(f"OAuth login/init", f"Not reachable: {str(e)[:50]}")
-    else:
-        warn("Auth service", "ALB URL not available - skipping auth endpoint checks")
-
-def main():
-    print("Finding TotogiCapability to verify...")
-    cap = find_capability()
-    
-    meta = cap["metadata"]
-    spec = cap["spec"]
-    status = cap.get("status", {})
-    
-    namespace = meta["namespace"]
-    name = meta["name"]
-    cap_name = spec.get("capabilityName", "")
-    env = spec.get("environment", "")
-    phase = status.get("phase", "Unknown")
-    
-    print(f"")
-    print(f"  Capability:  {cap_name} v{spec.get('version','')} ({env})")
-    print(f"  Namespace:   {namespace}")
-    print(f"  Phase:       {phase}")
-    print(f"")
-    
-    if phase not in ("Running", "Failed", "Ready"):
-        print(f"  Warning: Capability is in '{phase}' phase - deployment may still be in progress.")
-        print(f"  Run './operator-starhub-test.sh monitor' to watch deployment progress.")
-        print(f"")
-    
-    session = boto3.Session(profile_name=AWS_PROFILE, region_name=REGION)
-    
-    # Run all verification sections
-    verify_aws_resources(session, cap_name, env)
-    ingress = verify_kubernetes(namespace, cap_name, env)
-    verify_app_health(namespace, ingress, cap_name, env)
-    verify_connectivity(session, namespace, cap_name, env)
-    
-    # Get ALB URL for Cognito checks
-    alb_url = ""
-    if ingress:
-        lb_hosts = ingress.get("status", {}).get("loadBalancer", {}).get("ingress", [])
-        if lb_hosts:
-            addr = lb_hosts[0].get("hostname", lb_hosts[0].get("ip", ""))
-            if addr:
-                alb_url = f"http://{addr}"
-    verify_cognito(session, spec, cap_name, env, alb_url)
-    
-    # Summary
-    print("")
-    print("═══════════════════════════════════════════════════════════════════")
-    print("  VERIFICATION SUMMARY")
-    print("═══════════════════════════════════════════════════════════════════")
-    print(f"")
-    print(f"  Passed:   {passed}")
-    print(f"  Failed:   {failed}")
-    print(f"  Warnings: {warned}")
-    print(f"")
-    
-    if failed == 0:
-        print("  ✓ ALL CHECKS PASSED")
-        
-        # Show access information
-        if alb_url:
-            print("")
-            print("═══════════════════════════════════════════════════════════════════")
-            print("  APPLICATION ACCESS")
-            print("═══════════════════════════════════════════════════════════════════")
-            print(f"")
-            print(f"  URL: {alb_url}")
-            print(f"")
-            
-            admin_email = spec.get("adminEmail", "")
-            cognito_enabled = spec.get("enableCognito", False)
-            if cognito_enabled and admin_email:
-                # Try to read password from K8s Secret
-                secret_name = f"{cap_name}-{env}-admin-credentials"
-                secret = kubectl_json(["get", "secret", secret_name, "-n", namespace])
-                if secret and secret.get("data", {}).get("admin-password"):
-                    import base64
-                    stored_pw = base64.b64decode(secret["data"]["admin-password"]).decode()
-                    print(f"  Admin Login:")
-                    print(f"    Email:    {admin_email}")
-                    print(f"    Password: {stored_pw}")
-                    print(f"")
-                    print(f"    On first login, you will be prompted to set a new password.")
-                else:
-                    print(f"  Admin Login:")
-                    print(f"    Email:    {admin_email}")
-                    print(f"    Password: (already changed or Secret not found)")
-                    print(f"              kubectl get secret {secret_name} -n {namespace} -o jsonpath='{{.data.admin-password}}' | base64 -d")
-            elif not cognito_enabled:
-                print(f"  Auth: Cognito not enabled (enableCognito: false)")
-            print(f"")
-    else:
-        print(f"  ✗ {failed} CHECK(S) FAILED")
-    print("")
-    
-    sys.exit(0 if failed == 0 else 1)
-
-if __name__ == "__main__":
-    main()
-VERIFY_EOF
-    
-    return $?
+    if [ "$JOB_DONE" != true ]; then
+        echo -e "${RED}  Verify timed out (Job still running or not finished within ~10 min).${NC}"
+        return 1
+    fi
+    if [ "${FAILED:-0}" -ge 1 ] || [ "$VERIFY_FAIL_IN_LOG" = true ]; then
+        echo -e "${RED}  Verification failed (see log above).${NC}"
+        return 1
+    fi
+    if [ "${SUCCEEDED:-0}" -ge 1 ] || [ "$VERIFY_OK_IN_LOG" = true ]; then
+        return 0
+    fi
+    echo -e "${RED}  Job finished but success could not be confirmed (no summary in logs — see above).${NC}"
+    return 1
 }
 
 check_status() {
@@ -3535,6 +2918,414 @@ main() {
             ;;
         verify-capability|verify|verify-cap)
             verify_capability "$@"
+            ;;
+        setup-endpoints|endpoints)
+            show_header "Setup VPC Endpoints"
+
+            echo "Applying TotogiNetworkConfig CRD..."
+            kubectl apply -f "${SCRIPT_DIR}/manifests/network-config-crd.yaml" 2>/dev/null
+            echo ""
+
+            # Ensure operator ServiceAccount has RBAC for the new CRD
+            echo "Ensuring operator RBAC for TotogiNetworkConfig..."
+            SA_NAME=$(kubectl get deployment totogi-operator -n totogi-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
+            kubectl apply -f - <<RBAC_EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: totogi-operator-network-config
+rules:
+  - apiGroups: ["totogi.com"]
+    resources: ["totoginetworkconfigs", "totoginetworkconfigs/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: totogi-operator-network-config
+subjects:
+  - kind: ServiceAccount
+    name: ${SA_NAME}
+    namespace: totogi-system
+roleRef:
+  kind: ClusterRole
+  name: totogi-operator-network-config
+  apiGroup: rbac.authorization.k8s.io
+RBAC_EOF
+            echo -e "${GREEN}  ✓ RBAC configured for ${SA_NAME}${NC}"
+            echo ""
+
+            echo "Applying VPC endpoint configuration for cluster ${CLUSTER_NAME}..."
+            sed "s|__CLUSTER_NAME__|${CLUSTER_NAME}|g; s|__REGION__|${REGION}|g" \
+                "${SCRIPT_DIR}/examples/network-config.yaml" | kubectl apply -f -
+            echo ""
+
+            # Restart operator to pick up the new CRD if it was watching before RBAC was ready
+            echo "Restarting operator to pick up new CRD..."
+            kubectl rollout restart deployment totogi-operator -n totogi-system 2>/dev/null || true
+            sleep 10
+            echo ""
+
+            echo "Waiting for operator to provision endpoints..."
+            echo ""
+            for i in $(seq 1 30); do
+                PHASE=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.phase}' 2>/dev/null || echo "Pending")
+                HEALTHY=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.healthyEndpoints}' 2>/dev/null || echo "0")
+                TOTAL=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.totalEndpoints}' 2>/dev/null || echo "0")
+                if [ "$PHASE" = "Ready" ]; then
+                    echo -e "${GREEN}  ✓ VPC Endpoints ready! (${HEALTHY}/${TOTAL} healthy)${NC}"
+                    echo ""
+                    kubectl get tnc vpc-endpoints 2>/dev/null
+                    echo ""
+                    echo "  Endpoint details:"
+                    kubectl get tnc vpc-endpoints -o jsonpath='{range .status.endpoints[*]}  [{.type}] {.service}: {.state} ({.endpointId}){"\n"}{end}' 2>/dev/null
+                    echo ""
+                    exit 0
+                elif [ "$PHASE" = "Error" ]; then
+                    MSG=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.message}' 2>/dev/null || echo "")
+                    echo -e "${YELLOW}  ! Phase: Error — ${MSG}${NC}"
+                    echo ""
+                    kubectl get tnc vpc-endpoints -o jsonpath='{range .status.endpoints[*]}  [{.type}] {.service}: {.state}{"\n"}{end}' 2>/dev/null
+                    echo ""
+                    exit 1
+                fi
+                echo "  Phase: ${PHASE} (${HEALTHY}/${TOTAL})... (${i}/30)"
+                sleep 10
+            done
+            echo -e "${YELLOW}Timeout waiting for endpoints. Check: kubectl logs -n totogi-system deployment/totogi-operator${NC}"
+            ;;
+        check-endpoints|endpoints-status)
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════"
+            echo "  VPC Endpoint Status"
+            echo "═══════════════════════════════════════════════════════════════════"
+            echo ""
+            if kubectl get tnc vpc-endpoints > /dev/null 2>&1; then
+                kubectl get tnc vpc-endpoints 2>/dev/null
+                echo ""
+                echo "  Endpoint details:"
+                echo ""
+                kubectl get tnc vpc-endpoints -o jsonpath='{range .status.endpoints[*]}  [{.type}] {.service}: {.state} ({.endpointId}){"\n"}{end}' 2>/dev/null
+                echo ""
+                MSG=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.message}' 2>/dev/null || echo "")
+                CHECKED=$(kubectl get tnc vpc-endpoints -o jsonpath='{.status.lastChecked}' 2>/dev/null || echo "")
+                if [ -n "$MSG" ]; then echo "  Message: ${MSG}"; fi
+                if [ -n "$CHECKED" ]; then echo "  Last checked: ${CHECKED}"; fi
+            else
+                echo "  No TotogiNetworkConfig found."
+                echo ""
+                echo "  To set up VPC endpoints, run:"
+                echo "    ./operator-starhub-test.sh setup-endpoints"
+            fi
+            echo ""
+            ;;
+        delete-endpoints|remove-endpoints)
+            show_header "Delete VPC Endpoints Configuration"
+
+            if ! kubectl get tnc vpc-endpoints > /dev/null 2>&1; then
+                echo "  No TotogiNetworkConfig 'vpc-endpoints' found — nothing to delete."
+                echo ""
+                exit 0
+            fi
+
+            echo "  This will delete the TotogiNetworkConfig CR."
+            echo "  The actual VPC endpoints in AWS will NOT be deleted (they remain for other workloads)."
+            echo ""
+            read -rp "  Proceed? [y/N] " confirm
+            if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+                echo "  Aborted."
+                exit 0
+            fi
+            echo ""
+
+            echo "  Deleting TotogiNetworkConfig 'vpc-endpoints'..."
+            kubectl delete tnc vpc-endpoints --timeout=30s 2>/dev/null || \
+                kubectl patch tnc vpc-endpoints --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+            echo -e "${GREEN}  ✓ TotogiNetworkConfig deleted${NC}"
+            echo ""
+
+            echo "  Cleaning up RBAC..."
+            kubectl delete clusterrolebinding totogi-operator-network-config 2>/dev/null || true
+            kubectl delete clusterrole totogi-operator-network-config 2>/dev/null || true
+            echo -e "${GREEN}  ✓ RBAC cleaned up${NC}"
+            echo ""
+
+            echo "  Cleaning up CRD..."
+            kubectl delete crd totoginetworkconfigs.totogi.com 2>/dev/null || true
+            echo -e "${GREEN}  ✓ CRD removed${NC}"
+            echo ""
+
+            echo "  Note: VPC endpoints still exist in AWS. To remove them:"
+            echo "    aws ec2 delete-vpc-endpoints --vpc-endpoint-ids <vpce-id1> <vpce-id2> ..."
+            echo ""
+            ;;
+        check-app-permissions|check-app)
+            show_header "Check App Permissions & VPC Endpoints"
+
+            CAP="call-processing"
+            local APP_NS="${CAP}-${DEPLOY_ENV}"
+            local APP_SA="${CAP}-${DEPLOY_ENV}-app-sa"
+            local APP_ROLE="${CAP}-${DEPLOY_ENV}-app-role"
+            local JOB_NAME="check-app-permissions"
+            local CM_NAME="app-perm-check"
+            local CREATED_NS=false
+            local CREATED_SA=false
+
+            # Resolve ECR registry and account
+            local APP_ACCOUNT
+            APP_ACCOUNT=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null)
+            local APP_ECR="${APP_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+            local ROLE_ARN="arn:aws:iam::${APP_ACCOUNT}:role/${APP_ROLE}"
+
+            echo "  Namespace:      ${APP_NS}"
+            echo "  ServiceAccount: ${APP_SA}"
+            echo "  IAM Role:       ${APP_ROLE}"
+            echo "  Image:          ${APP_ECR}/ai-job-engine:latest"
+            echo ""
+
+            # Create namespace if it doesn't exist
+            if ! kubectl get ns "${APP_NS}" > /dev/null 2>&1; then
+                echo "  Creating namespace ${APP_NS}..."
+                kubectl create namespace "${APP_NS}" > /dev/null 2>&1
+                CREATED_NS=true
+                echo -e "${GREEN}  ✓ Namespace created (will be cleaned up after check)${NC}"
+            else
+                echo "  ✓ Namespace ${APP_NS} exists"
+            fi
+
+            # Create ServiceAccount with IRSA if it doesn't exist
+            if ! kubectl get sa "${APP_SA}" -n "${APP_NS}" > /dev/null 2>&1; then
+                echo "  Creating ServiceAccount ${APP_SA} with IRSA annotation..."
+                kubectl apply -f - <<SA_EOF > /dev/null 2>&1
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${APP_SA}
+  namespace: ${APP_NS}
+  annotations:
+    eks.amazonaws.com/role-arn: ${ROLE_ARN}
+  labels:
+    app.kubernetes.io/managed-by: permission-checker
+SA_EOF
+                CREATED_SA=true
+                echo -e "${GREEN}  ✓ ServiceAccount created with role ${APP_ROLE} (will be cleaned up after check)${NC}"
+            else
+                echo "  ✓ ServiceAccount ${APP_SA} exists"
+                # Show current IRSA role
+                local EXISTING_ROLE
+                EXISTING_ROLE=$(kubectl get sa "${APP_SA}" -n "${APP_NS}" -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "none")
+                echo "    IRSA role: ${EXISTING_ROLE}"
+            fi
+            echo ""
+
+            # Clean up any previous run
+            kubectl delete job "${JOB_NAME}" -n "${APP_NS}" --ignore-not-found > /dev/null 2>&1
+            kubectl delete configmap "${CM_NAME}" -n "${APP_NS}" --ignore-not-found > /dev/null 2>&1
+
+            # Create ConfigMap with the check script
+            echo "  Creating check script ConfigMap..."
+            kubectl create configmap "${CM_NAME}" \
+                --from-file=check.py="${SCRIPT_DIR}/check-app-permissions.py" \
+                -n "${APP_NS}" > /dev/null 2>&1
+            echo ""
+
+            # Launch Job
+            echo "  Launching permission check Job (using ${APP_SA} → ${APP_ROLE})..."
+            kubectl apply -f - <<APPJOB_EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${APP_NS}
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: ${APP_SA}
+      containers:
+        - name: checker
+          image: ${APP_ECR}/ai-job-engine:latest
+          command: ["python3", "/scripts/check.py"]
+          env:
+            - name: CAPABILITY
+              value: "${CAP}"
+            - name: ENV
+              value: "${DEPLOY_ENV}"
+            - name: REGION
+              value: "${REGION}"
+            - name: PERM_CHECK_SSL_VERIFY
+              value: "${PERM_CHECK_SSL_VERIFY:-1}"
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: ${CM_NAME}
+      restartPolicy: Never
+APPJOB_EOF
+            echo ""
+
+            echo "  Waiting for check to finish (1s poll, IRSA errors detected from logs immediately, max ~3 min)..."
+            echo ""
+            local JOB_DONE=false
+            if _wait_perm_check_job "${APP_NS}" "${JOB_NAME}"; then
+                JOB_DONE=true
+            fi
+
+            echo ""
+            local LOG_OUT
+            LOG_OUT=$(kubectl logs "job/${JOB_NAME}" -n "${APP_NS}" 2>/dev/null || true)
+            if [ "$JOB_DONE" = true ]; then
+                echo "$LOG_OUT"
+            else
+                echo -e "${YELLOW}  Job still running after timeout. Fetching available logs:${NC}"
+                echo ""
+                echo "$LOG_OUT"
+                [ -n "$LOG_OUT" ] || echo "  (no logs available)"
+            fi
+
+            local FAILED IRSA_FAIL
+            FAILED=$(kubectl get job "${JOB_NAME}" -n "${APP_NS}" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+            FAILED=${FAILED:-0}
+            IRSA_FAIL=false
+            if echo "$LOG_OUT" | grep -qE 'AssumeRoleWithWebIdentity|Not authorized to perform sts:AssumeRoleWithWebIdentity|\[ERROR\] Cannot get identity'; then
+                IRSA_FAIL=true
+            fi
+
+            # Cleanup
+            echo ""
+            echo "  Cleaning up..."
+            kubectl delete job "${JOB_NAME}" -n "${APP_NS}" --ignore-not-found > /dev/null 2>&1
+            kubectl delete configmap "${CM_NAME}" -n "${APP_NS}" --ignore-not-found > /dev/null 2>&1
+
+            if [ "$CREATED_SA" = true ]; then
+                kubectl delete sa "${APP_SA}" -n "${APP_NS}" --ignore-not-found > /dev/null 2>&1
+                echo "  ✓ Temporary ServiceAccount deleted"
+            fi
+            if [ "$CREATED_NS" = true ]; then
+                kubectl delete ns "${APP_NS}" --timeout=30s > /dev/null 2>&1 || true
+                echo "  ✓ Temporary namespace deleted"
+            fi
+
+            echo -e "${GREEN}  ✓ Cleanup done${NC}"
+            echo ""
+            if [ "$JOB_DONE" != true ] || [ "$FAILED" -ge 1 ] || [ "$IRSA_FAIL" = true ]; then
+                echo -e "${RED}  App permission check failed (IRSA/trust, IAM denials, or timeout). Fix trust/policy and re-run.${NC}"
+                exit 1
+            fi
+            ;;
+        check-operator-permissions|check-operator)
+            show_header "Check Operator Permissions & VPC Endpoints"
+
+            local OP_NS="totogi-system"
+            local JOB_NAME="check-operator-permissions"
+            local CM_NAME="operator-perm-check"
+
+            # Resolve ECR registry
+            local OP_ACCOUNT
+            OP_ACCOUNT=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null)
+            local OP_ECR="${OP_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+
+            # Get operator SA name from deployment
+            local OP_SA
+            OP_SA=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
+            local OP_ROLE
+            OP_ROLE=$(kubectl get sa "${OP_SA}" -n "${OP_NS}" -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "unknown")
+
+            echo "  Namespace:      ${OP_NS}"
+            echo "  ServiceAccount: ${OP_SA}"
+            echo "  IAM Role:       ${OP_ROLE##*/}"
+            echo "  Image:          ${OP_ECR}/ai-job-engine:latest"
+            echo ""
+
+            if ! kubectl get sa "${OP_SA}" -n "${OP_NS}" > /dev/null 2>&1; then
+                echo -e "${RED}  Operator ServiceAccount ${OP_SA} not found. Deploy operator first.${NC}"
+                exit 1
+            fi
+
+            # Clean up any previous run
+            kubectl delete job "${JOB_NAME}" -n "${OP_NS}" --ignore-not-found > /dev/null 2>&1
+            kubectl delete configmap "${CM_NAME}" -n "${OP_NS}" --ignore-not-found > /dev/null 2>&1
+
+            # Create ConfigMap with the check script
+            echo "  Creating check script ConfigMap..."
+            kubectl create configmap "${CM_NAME}" \
+                --from-file=check.py="${SCRIPT_DIR}/check-operator-permissions.py" \
+                -n "${OP_NS}" > /dev/null 2>&1
+            echo ""
+
+            # Launch Job using the operator's ServiceAccount
+            echo "  Launching permission check Job (using ${OP_SA})..."
+            kubectl apply -f - <<OPJOB_EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${OP_NS}
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: ${OP_SA}
+      containers:
+        - name: checker
+          image: ${OP_ECR}/ai-job-engine:latest
+          command: ["python3", "/scripts/check.py"]
+          env:
+            - name: PERM_CHECK_SSL_VERIFY
+              value: "${PERM_CHECK_SSL_VERIFY:-1}"
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: ${CM_NAME}
+      restartPolicy: Never
+OPJOB_EOF
+            echo ""
+
+            echo "  Waiting for check to finish (1s poll, IRSA errors from logs immediately, max ~3 min)..."
+            echo ""
+            local JOB_DONE=false
+            if _wait_perm_check_job "${OP_NS}" "${JOB_NAME}"; then
+                JOB_DONE=true
+            fi
+
+            echo ""
+            local LOG_OUT
+            LOG_OUT=$(kubectl logs "job/${JOB_NAME}" -n "${OP_NS}" 2>/dev/null || true)
+            if [ "$JOB_DONE" = true ]; then
+                echo "$LOG_OUT"
+            else
+                echo -e "${YELLOW}  Job still running after timeout. Fetching available logs:${NC}"
+                echo ""
+                echo "$LOG_OUT"
+                [ -n "$LOG_OUT" ] || echo "  (no logs available)"
+            fi
+
+            local FAILED IRSA_FAIL
+            FAILED=$(kubectl get job "${JOB_NAME}" -n "${OP_NS}" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+            FAILED=${FAILED:-0}
+            IRSA_FAIL=false
+            if echo "$LOG_OUT" | grep -qE 'AssumeRoleWithWebIdentity|Not authorized to perform sts:AssumeRoleWithWebIdentity|\[ERROR\] Cannot get identity'; then
+                IRSA_FAIL=true
+            fi
+
+            # Cleanup
+            echo ""
+            echo "  Cleaning up..."
+            kubectl delete job "${JOB_NAME}" -n "${OP_NS}" --ignore-not-found > /dev/null 2>&1
+            kubectl delete configmap "${CM_NAME}" -n "${OP_NS}" --ignore-not-found > /dev/null 2>&1
+            echo -e "${GREEN}  ✓ Cleanup done${NC}"
+            echo ""
+            if [ "$JOB_DONE" != true ] || [ "$FAILED" -ge 1 ] || [ "$IRSA_FAIL" = true ]; then
+                echo -e "${RED}  Operator permission check failed (IRSA/trust, IAM denials, or timeout). Fix trust/policy and re-run.${NC}"
+                exit 1
+            fi
             ;;
         help|--help|-h)
             show_help

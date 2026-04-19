@@ -7,9 +7,9 @@ Requirements: 4.4
 import logging
 from typing import Dict, List, Optional, Any
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -113,12 +113,33 @@ class DynamoDBProvisioner:
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },
+        "lead-opportunity-tracking": {
+            "KeySchema": [
+                {"AttributeName": "task_id", "KeyType": "HASH"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "task_id", "AttributeType": "S"},
+                {"AttributeName": "tracking_status", "AttributeType": "S"},
+                {"AttributeName": "created_at", "AttributeType": "S"},
+            ],
+            "GlobalSecondaryIndexes": [
+                {
+                    "IndexName": "tracking_status-index",
+                    "KeySchema": [
+                        {"AttributeName": "tracking_status", "KeyType": "HASH"},
+                        {"AttributeName": "created_at", "KeyType": "RANGE"},
+                    ],
+                    "Projection": {"ProjectionType": "ALL"},
+                }
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
     }
     
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("dynamodb", region_name=region)
+        self.client = vpc_boto3_client("dynamodb", region_name=region)
     
     async def provision_all(self) -> List[Dict[str, Any]]:
         """Provision all required DynamoDB tables."""

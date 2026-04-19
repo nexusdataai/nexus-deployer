@@ -12,9 +12,11 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-import boto3
 import kopf
+
+from .utils.aws_vpc_endpoints import vpc_boto3_client
 from aiohttp import web
+from kubernetes.client.rest import ApiException
 
 # Configure logging
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -156,6 +158,100 @@ def _update_step(steps: List[Dict], step_name: str, status: str,
     return steps
 
 
+# ══════════════════════════════════════════════════════════════════════
+# TotogiNetworkConfig handlers -- VPC Endpoint lifecycle
+# ══════════════════════════════════════════════════════════════════════
+
+@kopf.on.create("totogi.com", "v1", "totoginetworkconfigs")
+async def create_network_config(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
+    """Provision VPC Gateway and Interface endpoints for the cluster."""
+    from .resources import VPCEndpointProvisioner
+
+    region = spec.get("region", "ap-southeast-1")
+    cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
+
+    logger.info(f"TotogiNetworkConfig '{name}': provisioning VPC endpoints for cluster {cluster_name}")
+    patch.status["phase"] = "Provisioning"
+    patch.status["message"] = "Creating VPC endpoints..."
+
+    try:
+        vpc_ep = VPCEndpointProvisioner(region, cluster_name=cluster_name)
+        results = await vpc_ep.provision_all()
+
+        endpoints = []
+        for r in results:
+            endpoints.append({
+                "service": r["name"],
+                "endpointId": r.get("endpoint_id", ""),
+                "type": r["type"],
+                "state": r["status"],
+            })
+
+        healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created"))
+        patch.status["endpoints"] = endpoints
+        patch.status["totalEndpoints"] = len(endpoints)
+        patch.status["healthyEndpoints"] = healthy
+        patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
+
+        if healthy == len(endpoints):
+            patch.status["phase"] = "Ready"
+            patch.status["message"] = f"All {healthy} endpoints healthy"
+            logger.info(f"TotogiNetworkConfig '{name}': Ready ({healthy}/{len(endpoints)} endpoints)")
+        else:
+            failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
+            patch.status["phase"] = "Error"
+            patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy: {', '.join(failed[:3])}"
+            logger.warning(f"TotogiNetworkConfig '{name}': {len(failed)} unhealthy endpoints")
+
+    except Exception as e:
+        patch.status["phase"] = "Error"
+        patch.status["message"] = str(e)[:200]
+        logger.error(f"TotogiNetworkConfig '{name}': provisioning failed: {e}")
+
+
+@kopf.on.timer("totogi.com", "v1", "totoginetworkconfigs", interval=300, initial_delay=60)
+async def check_network_health(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
+    """Periodic health check -- re-verify all VPC endpoints every 5 minutes."""
+    from .resources import VPCEndpointProvisioner
+
+    region = spec.get("region", "ap-southeast-1")
+    cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
+
+    try:
+        vpc_ep = VPCEndpointProvisioner(region, cluster_name=cluster_name)
+        results = await vpc_ep.provision_all()
+
+        endpoints = []
+        for r in results:
+            endpoints.append({
+                "service": r["name"],
+                "endpointId": r.get("endpoint_id", ""),
+                "type": r["type"],
+                "state": r["status"],
+            })
+
+        healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created"))
+        patch.status["endpoints"] = endpoints
+        patch.status["totalEndpoints"] = len(endpoints)
+        patch.status["healthyEndpoints"] = healthy
+        patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
+        patch.status["phase"] = "Ready" if healthy == len(endpoints) else "Error"
+
+        if healthy < len(endpoints):
+            failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
+            patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy"
+            logger.warning(f"TotogiNetworkConfig '{name}' health check: {len(failed)} unhealthy")
+        else:
+            patch.status["message"] = f"All {healthy} endpoints healthy"
+
+    except Exception as e:
+        logger.warning(f"TotogiNetworkConfig '{name}' health check failed: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# TotogiCapability handlers
+# ══════════════════════════════════════════════════════════════════════
+
 @kopf.on.create("totogi.com", "v1", "totogicapabilities")
 async def create_capability(spec: dict, name: str, namespace: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
     """
@@ -167,6 +263,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     """
     from .utils.naming import ResourceNaming
     from .resources import (
+        VPCEndpointProvisioner,
         DynamoDBProvisioner,
         S3Provisioner,
         GlueProvisioner,
@@ -187,7 +284,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     logger.info(f"Capability: {capability_name} v{version} ({environment}) in {region}")
     
     # Resolve account ID for globally unique resource names (S3 buckets)
-    sts_client = boto3.client("sts", region_name=region)
+    sts_client = vpc_boto3_client("sts", region_name=region)
     account_id = sts_client.get_caller_identity()["Account"]
     
     # Initialize naming utility
@@ -207,6 +304,43 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     steps: List[Dict[str, Any]] = []
     
     try:
+        # ── Step 0: Verify VPC Endpoints (reads TotogiNetworkConfig status) ──
+        _update_step(steps, "VPCEndpoints", "in_progress")
+        patch.status["steps"] = list(steps)
+
+        try:
+            from kubernetes import client as k8s_client, config as k8s_config
+            try:
+                k8s_config.load_incluster_config()
+            except Exception:
+                k8s_config.load_kube_config()
+            crd_api = k8s_client.CustomObjectsApi()
+            nc = crd_api.get_cluster_custom_object("totogi.com", "v1", "totoginetworkconfigs", "vpc-endpoints")
+            nc_status = nc.get("status", {})
+            nc_phase = nc_status.get("phase", "Unknown")
+            nc_healthy = nc_status.get("healthyEndpoints", 0)
+            nc_total = nc_status.get("totalEndpoints", 0)
+
+            if nc_phase == "Ready":
+                logger.info(f"VPC Endpoints verified via TotogiNetworkConfig: {nc_healthy}/{nc_total} healthy")
+                for ep in nc_status.get("endpoints", []):
+                    state_str = "OK" if ep.get("state") in ("exists", "created") else ep.get("state", "unknown")
+                    logger.info(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {state_str}")
+                _update_step(steps, "VPCEndpoints", "done", resources=[f"{nc_healthy}/{nc_total} healthy"])
+            else:
+                logger.warning(f"VPC Endpoints not ready (phase={nc_phase}). Some services may be unreachable.")
+                for ep in nc_status.get("endpoints", []):
+                    if ep.get("state") not in ("exists", "created", "available"):
+                        logger.warning(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {ep.get('state', 'unknown')}")
+                _update_step(steps, "VPCEndpoints", "done", resources=[f"phase={nc_phase}"])
+
+        except Exception as nc_err:
+            logger.warning(f"TotogiNetworkConfig 'vpc-endpoints' not found — skipping endpoint verification ({nc_err})")
+            logger.warning("Apply examples/network-config.yaml to enable VPC endpoint management")
+            _update_step(steps, "VPCEndpoints", "skipped")
+
+        patch.status["steps"] = list(steps)
+
         # ── Step 1: DynamoDB ──
         data_services = spec.get("dataServices", {})
         
@@ -383,7 +517,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         oidc_provider, cluster_name = get_oidc_provider_for_irsa(region)
         
         if oidc_provider:
-            sts_client = boto3.client("sts", region_name=region)
+            sts_client = vpc_boto3_client("sts", region_name=region)
             account_id = sts_client.get_caller_identity()["Account"]
             if verify_oidc_provider_exists(oidc_provider, account_id, region):
                 logger.info(f"IRSA enabled with OIDC provider: {oidc_provider}")
@@ -420,7 +554,8 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         patch.status["steps"] = list(steps)
         
         role_arn = resources["iamRoles"][0] if resources["iamRoles"] else ""
-        await k8s.create_service_account(naming, role_arn)
+        sa_result = await k8s.create_service_account(naming, role_arn)
+        sa_was_updated = sa_result.get("status") == "updated"
         
         _update_step(steps, "ServiceAccount", "done", resources=[naming.kubernetes_service_account("app")])
         patch.status["steps"] = list(steps)
@@ -429,6 +564,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         ingress_config = spec.get("ingress", {})
         use_ingress = ingress_config.get("enabled", False)
         internal_ingress_config = spec.get("internalIngress", {})
+        use_internal_ingress = internal_ingress_config.get("enabled", False)
         
         backend_spec = spec.get("backend", {})
         backend_image = backend_spec.get("image", "")
@@ -521,9 +657,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 replicas=frontend_spec.get("replicas", 2),
                 resources=frontend_spec.get("resources", {}),
                 ingress_config=ingress_config if use_ingress else None,
-                backend_service=backend_service_name if use_ingress else None,
-                bssmagic_service=bssmagic_service_name if use_ingress else None,
-                internal_ingress_config=internal_ingress_config if use_ingress else None,
+                backend_service=backend_service_name if (use_ingress or use_internal_ingress) else None,
+                bssmagic_service=bssmagic_service_name if (use_ingress or use_internal_ingress) else None,
+                internal_ingress_config=internal_ingress_config if use_internal_ingress else None,
             )
             
             frontend_resources = [
@@ -532,7 +668,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             ]
             if use_ingress:
                 frontend_resources.append(naming.kubernetes_ingress("app"))
-            if use_ingress and internal_ingress_config.get("enabled", False):
+            if use_internal_ingress:
                 frontend_resources.append(naming.kubernetes_ingress("internal"))
             _update_step(steps, "Frontend", "done", resources=frontend_resources)
             patch.status["steps"] = list(steps)
@@ -545,6 +681,25 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         # ── Step 13: Ingress (if applicable) ──
         if use_ingress and frontend_image:
             _update_step(steps, "Ingress", "done", resources=[naming.kubernetes_ingress("app")])
+            patch.status["steps"] = list(steps)
+        
+        # ── Step 14: Restart workloads if SA annotation was updated ──
+        if sa_was_updated:
+            logger.info("ServiceAccount IRSA annotation was updated — restarting workloads for IRSA token injection")
+            restart_annotation = {"kubectl.kubernetes.io/restartedAt": _now_iso()}
+            for dep_component in ["backend", "frontend"]:
+                dep_name = naming.kubernetes_deployment(dep_component)
+                try:
+                    dep = k8s.apps_api.read_namespaced_deployment(name=dep_name, namespace=namespace)
+                    if dep.spec.template.metadata.annotations is None:
+                        dep.spec.template.metadata.annotations = {}
+                    dep.spec.template.metadata.annotations.update(restart_annotation)
+                    k8s.apps_api.patch_namespaced_deployment(name=dep_name, namespace=namespace, body=dep)
+                    logger.info(f"Restarted Deployment {dep_name} for IRSA injection")
+                except ApiException as restart_err:
+                    if restart_err.status != 404:
+                        logger.warning(f"Failed to restart {dep_name}: {restart_err}")
+            _update_step(steps, "IRSARestart", "done", resources=["Workloads restarted for IRSA token injection"])
             patch.status["steps"] = list(steps)
         
         # ── Complete ──
@@ -614,7 +769,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     environment = spec.get("environment", "")
     region = spec.get("region", "us-east-1")
     
-    sts_client = boto3.client("sts", region_name=region)
+    sts_client = vpc_boto3_client("sts", region_name=region)
     account_id = sts_client.get_caller_identity()["Account"]
     naming = ResourceNaming(capability_name, environment, account_id=account_id)
     k8s = KubernetesResourceCreator(namespace)
@@ -623,6 +778,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     ingress_config = spec.get("ingress", {})
     use_ingress = ingress_config.get("enabled", False)
     internal_ingress_config = spec.get("internalIngress", {})
+    use_internal_ingress = internal_ingress_config.get("enabled", False)
     backend_service_name = naming.kubernetes_service("backend")
     
     # Check what changed
@@ -686,9 +842,9 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     replicas=frontend_spec.get("replicas", 2),
                     resources=frontend_spec.get("resources", {}),
                     ingress_config=ingress_config if use_ingress else None,
-                    backend_service=backend_service_name if use_ingress else None,
-                    bssmagic_service=bssmagic_svc if use_ingress else None,
-                    internal_ingress_config=internal_ingress_config if use_ingress else None,
+                    backend_service=backend_service_name if (use_ingress or use_internal_ingress) else None,
+                    bssmagic_service=bssmagic_svc if (use_ingress or use_internal_ingress) else None,
+                    internal_ingress_config=internal_ingress_config if use_internal_ingress else None,
                 )
         
         kopf.event(
@@ -739,7 +895,7 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
     region = spec.get("region", "us-east-1")
     deletion_policy = spec.get("deletionPolicy", "Delete")
     
-    sts_client = boto3.client("sts", region_name=region)
+    sts_client = vpc_boto3_client("sts", region_name=region)
     account_id = sts_client.get_caller_identity()["Account"]
     naming = ResourceNaming(capability_name, environment, account_id=account_id)
     

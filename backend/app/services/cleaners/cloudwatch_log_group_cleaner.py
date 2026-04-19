@@ -6,6 +6,8 @@ import boto3
 from typing import Dict, Optional, Callable
 import logging
 from botocore.exceptions import ClientError
+
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.services.resource_cleanup_registry import ResourceCleanerBase
 from app.models.validation import ResourceDefinition
 
@@ -29,15 +31,17 @@ class CloudWatchLogGroupCleaner(ResourceCleanerBase):
         """
         try:
             if credentials:
-                logs_client = boto3.client(
-                    'logs',
-                    region_name=region,
-                    aws_access_key_id=credentials.get('aws_access_key_id'),
-                    aws_secret_access_key=credentials.get('aws_secret_access_key'),
-                    aws_session_token=credentials.get('aws_session_token')
-                )
+                kw = {
+                    "region_name": region,
+                    "aws_access_key_id": credentials.get("aws_access_key_id"),
+                    "aws_secret_access_key": credentials.get("aws_secret_access_key"),
+                    "aws_session_token": credentials.get("aws_session_token"),
+                }
+                logs_client = boto3.client("logs", **merge_vpc_boto3_kwargs("logs", region, kw))
             else:
-                logs_client = boto3.client('logs', region_name=region)
+                logs_client = boto3.client(
+                    "logs", **merge_vpc_boto3_kwargs("logs", region, {"region_name": region})
+                )
             
             # Try to describe log group
             response = logs_client.describe_log_groups(logGroupNamePrefix=resource_identifier)
@@ -81,15 +85,17 @@ class CloudWatchLogGroupCleaner(ResourceCleanerBase):
         """
         try:
             if credentials:
-                logs_client = boto3.client(
-                    'logs',
-                    region_name=region,
-                    aws_access_key_id=credentials.get('aws_access_key_id'),
-                    aws_secret_access_key=credentials.get('aws_secret_access_key'),
-                    aws_session_token=credentials.get('aws_session_token')
-                )
+                kw = {
+                    "region_name": region,
+                    "aws_access_key_id": credentials.get("aws_access_key_id"),
+                    "aws_secret_access_key": credentials.get("aws_secret_access_key"),
+                    "aws_session_token": credentials.get("aws_session_token"),
+                }
+                logs_client = boto3.client("logs", **merge_vpc_boto3_kwargs("logs", region, kw))
             else:
-                logs_client = boto3.client('logs', region_name=region)
+                logs_client = boto3.client(
+                    "logs", **merge_vpc_boto3_kwargs("logs", region, {"region_name": region})
+                )
             
             if callback:
                 callback(f"Deleting CloudWatch log group: {resource_identifier}")

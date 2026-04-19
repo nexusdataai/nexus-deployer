@@ -25,6 +25,8 @@ from app.services.discovery.models import CloudProvider
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/discovery", tags=["discovery"])
@@ -520,7 +522,10 @@ def _discover_eks_capabilities(
     
     try:
         creds = credentials or {}
-        eks_client = boto3.client("eks", region_name=region, **creds)
+        eks_client = boto3.client(
+            "eks",
+            **merge_vpc_boto3_kwargs("eks", region, {**creds, "region_name": region}),
+        )
         
         # List all EKS clusters
         _add_discovery_log(job_id, "INFO", f"  Listing EKS clusters in {region}...")

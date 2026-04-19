@@ -40,12 +40,17 @@ class ResourceNaming:
         """Get the WXCC task tracking table name."""
         return f"{self.capability}-{self.env}-wxcc-task-tracking"
     
+    def lead_opportunity_tracking_table(self) -> str:
+        """Get the lead/opportunity tracking table name."""
+        return f"{self.capability}-{self.env}-lead-opportunity-tracking"
+    
     def all_dynamodb_tables(self) -> List[str]:
         """Get all DynamoDB table names."""
         return [
             self.transformation_system_table(),
             self.license_table(),
             self.wxcc_task_tracking_table(),
+            self.lead_opportunity_tracking_table(),
         ]
     
     # ==================== S3 Buckets ====================

@@ -2,14 +2,21 @@
 # Totogi Operator RBAC Configuration
 # Feature: pure-eks-deployment
 # Requirements: 3.4
+#
+# IRSA — do NOT `kubectl apply -f` this file without substituting ${ACCOUNT_ID}; that overwrites
+# eks.amazonaws.com/role-arn with a literal template and breaks the operator. Use:
+#   export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+#   sed -e "s|\${ACCOUNT_ID}|${ACCOUNT_ID}|g" manifests/rbac.yaml | kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: totogi-operator
   namespace: totogi-system
   annotations:
-    # IRSA annotation - replace with actual IAM role ARN
-    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/TotogiOperatorRole"
+    # IRSA: do not apply as-is. Substitute ${ACCOUNT_ID} (see permissions/ADMIN-SETUP.md), e.g.:
+    #   export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    #   sed -e "s|\${ACCOUNT_ID}|${ACCOUNT_ID}|g" manifests/rbac.yaml | kubectl apply -f -
+    eks.amazonaws.com/role-arn: "arn:aws:iam::${ACCOUNT_ID}:role/TotogiOperatorRole"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -26,11 +33,22 @@ rules:
   - apiGroups: ["totogi.com"]
     resources: ["totogicapabilities/finalizers"]
     verbs: ["update"]
-  
+
+  # TotogiNetworkConfig CRD (VPC endpoints — kopf watches cluster-scoped resources)
+  - apiGroups: ["totogi.com"]
+    resources: ["totoginetworkconfigs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["totogi.com"]
+    resources: ["totoginetworkconfigs/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["totogi.com"]
+    resources: ["totoginetworkconfigs/finalizers"]
+    verbs: ["update"]
+
   # Core Kubernetes resources
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -44,8 +62,11 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

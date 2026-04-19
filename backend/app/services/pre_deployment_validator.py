@@ -26,6 +26,7 @@ from app.services.cleaners.alb_cleaner import ALBCleaner
 from app.services.cleaners.cloudfront_cleaner import CloudFrontCleaner
 from app.services.cleaners.ecr_repository_cleaner import ECRRepositoryCleaner
 from app.services.cleaners.cloudwatch_log_group_cleaner import CloudWatchLogGroupCleaner
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.utils.resource_resolver import ResourceResolver
 
 logger = logging.getLogger(__name__)
@@ -100,15 +101,16 @@ class PreDeploymentValidator:
     def _get_client(self, service: str, region: str) -> Any:
         """Get boto3 client with credentials"""
         if self.credentials:
-            return boto3.client(
-                service,
-                region_name=region,
-                aws_access_key_id=self.credentials.get('aws_access_key_id'),
-                aws_secret_access_key=self.credentials.get('aws_secret_access_key'),
-                aws_session_token=self.credentials.get('aws_session_token')
-            )
-        else:
-            return boto3.client(service, region_name=region)
+            kw = {
+                "region_name": region,
+                "aws_access_key_id": self.credentials.get("aws_access_key_id"),
+                "aws_secret_access_key": self.credentials.get("aws_secret_access_key"),
+                "aws_session_token": self.credentials.get("aws_session_token"),
+            }
+            return boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
+        return boto3.client(
+            service, **merge_vpc_boto3_kwargs(service, region, {"region_name": region})
+        )
     
     def check_stack_status(self, stack_name: str, region: str) -> StackStatus:
         """

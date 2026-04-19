@@ -411,6 +411,51 @@ Resources:
           Value: wxcc-task-tracking
 
 
+  # Lead & Opportunity Tracking table
+  LeadOpportunityTrackingTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-lead-opportunity-tracking'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: tracking_status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: tracking_status-index
+          KeySchema:
+            - AttributeName: tracking_status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-lead-opportunity-tracking'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: lead-opportunity-tracking
+
+
   # ===== ECR REPOSITORY =====
   
   ECRRepository:
@@ -535,6 +580,18 @@ Outputs:
     Value: !GetAtt WxccTaskTrackingTable.Arn
     Export:
       Name: !Sub '${AWS::StackName}-WxccTaskTrackingTableArn'
+  
+  LeadOpportunityTrackingTableName:
+    Description: Name of the lead/opportunity tracking DynamoDB table
+    Value: !Ref LeadOpportunityTrackingTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LeadOpportunityTrackingTableName'
+  
+  LeadOpportunityTrackingTableArn:
+    Description: ARN of the lead/opportunity tracking DynamoDB table
+    Value: !GetAtt LeadOpportunityTrackingTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LeadOpportunityTrackingTableArn'
   
   # ECR Repository Outputs
   ECRRepositoryUri:

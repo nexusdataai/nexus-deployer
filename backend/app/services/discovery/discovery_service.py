@@ -13,6 +13,8 @@ from typing import List, Dict, Optional, Tuple, Set
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from .models import (
     DiscoveredCapability,
     DiscoveredStack,
@@ -97,10 +99,10 @@ class DiscoveryService:
     def cfn_client(self):
         """Lazy-load CloudFormation client with credentials."""
         if self._cfn_client is None:
+            kw = {"region_name": self.region, **self.credentials}
             self._cfn_client = boto3.client(
                 "cloudformation",
-                region_name=self.region,
-                **self.credentials
+                **merge_vpc_boto3_kwargs("cloudformation", self.region, kw),
             )
         return self._cfn_client
     

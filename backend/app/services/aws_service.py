@@ -3,6 +3,9 @@ import re
 from typing import Dict, Optional, List, Tuple
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
+
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from app.models.aws_config import (
     AWSConfiguration,
     AWSCredentials,
@@ -66,7 +69,9 @@ class AWSService:
         
         try:
             # Create STS client
-            sts_client = boto3.client('sts', region_name=region)
+            sts_client = boto3.client(
+                "sts", **merge_vpc_boto3_kwargs("sts", region, {"region_name": region})
+            )
             
             # Attempt to assume the role
             response = sts_client.assume_role(
@@ -233,21 +238,18 @@ class AWSService:
         
         try:
             # Create IAM client with assumed role credentials
+            iam_kw = {
+                "region_name": region,
+                "aws_access_key_id": credentials.access_key_id,
+                "aws_secret_access_key": credentials.secret_access_key,
+                "aws_session_token": credentials.session_token,
+            }
             iam_client = boto3.client(
-                'iam',
-                region_name=region,
-                aws_access_key_id=credentials.access_key_id,
-                aws_secret_access_key=credentials.secret_access_key,
-                aws_session_token=credentials.session_token
+                "iam", **merge_vpc_boto3_kwargs("iam", region, iam_kw)
             )
-            
-            # Create STS client to get caller identity
+
             sts_client = boto3.client(
-                'sts',
-                region_name=region,
-                aws_access_key_id=credentials.access_key_id,
-                aws_secret_access_key=credentials.secret_access_key,
-                aws_session_token=credentials.session_token
+                "sts", **merge_vpc_boto3_kwargs("sts", region, dict(iam_kw))
             )
             
             # Get the assumed role ARN

@@ -548,6 +548,9 @@ Resources:
             - Name: WXCC_TASK_TABLE
               Value:
                 Fn::ImportValue: !Sub '${StorageStackName}-WxccTaskTrackingTableName'
+            - Name: LEAD_TRACKING_TABLE
+              Value:
+                Fn::ImportValue: !Sub '${StorageStackName}-LeadOpportunityTrackingTableName'
             - Name: PORT
               Value: !Ref ContainerPort
             # WXCC Simulator Configuration (for dev/test environments)

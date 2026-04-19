@@ -1,0 +1,22 @@
+# TotogiNetworkConfig -- VPC Endpoint Setup
+#
+# Apply once per cluster to create/verify VPC Gateway and Interface endpoints.
+# The operator provisions missing endpoints and reports status.
+#
+# Usage:
+#   kubectl apply -f manifests/network-config-crd.yaml   # CRD first
+#   sed 's/__CLUSTER_NAME__/my-cluster/g; s/__REGION__/ap-southeast-1/g' \
+#       examples/network-config.yaml | kubectl apply -f -
+#
+#   kubectl get tnc vpc-endpoints                        # Check status
+#
+# Or use the CLI:
+#   ./operator-starhub-test.sh setup-endpoints
+#
+apiVersion: totogi.com/v1
+kind: TotogiNetworkConfig
+metadata:
+  name: vpc-endpoints
+spec:
+  clusterName: __CLUSTER_NAME__
+  region: __REGION__

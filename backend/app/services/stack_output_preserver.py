@@ -10,6 +10,7 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.models.stack_outputs import PreservedOutputs
 from app.models.cognito_models import CognitoOutputs
 
@@ -60,10 +61,9 @@ class StackOutputPreserver:
         cache_key = f"{service}:{region}"
         
         if cache_key not in self._clients_cache:
+            kw = {"region_name": region, **self.credentials}
             self._clients_cache[cache_key] = boto3.client(
-                service,
-                region_name=region,
-                **self.credentials
+                service, **merge_vpc_boto3_kwargs(service, region, kw)
             )
         
         return self._clients_cache[cache_key]

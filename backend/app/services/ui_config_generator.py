@@ -9,6 +9,8 @@ from typing import Dict, Optional, Any, Callable
 from datetime import datetime
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,8 @@ class UIConfigGenerator:
     
     def _get_client(self, service: str, region: str) -> Any:
         """Get boto3 client with credentials"""
-        return boto3.client(service, region_name=region, **self.credentials)
+        kw = {"region_name": region, **self.credentials}
+        return boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
     
     def get_stack_outputs(self, stack_name: str, region: str) -> Dict[str, str]:
         """

@@ -13,6 +13,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.services.aws_session_manager import aws_session_manager
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -90,17 +91,29 @@ class EKSService:
                     aws_session_token=creds.get("aws_session_token"),
                     region_name=creds.get("region_name") or self.region
                 )
-                self.eks_client = boto_session.client("eks", **client_kwargs)
-                self.sts_client = boto_session.client("sts", **client_kwargs)
+                self.eks_client = boto_session.client(
+                    "eks", **merge_vpc_boto3_kwargs("eks", self.region, dict(client_kwargs))
+                )
+                self.sts_client = boto_session.client(
+                    "sts", **merge_vpc_boto3_kwargs("sts", self.region, dict(client_kwargs))
+                )
                 logger.info(f"Initialized EKS client with session {self.aws_session_id} in region {self.region}")
             else:
                 logger.warning(f"Session {self.aws_session_id} not found, using default credentials")
-                self.eks_client = boto3.client("eks", **client_kwargs)
-                self.sts_client = boto3.client("sts", **client_kwargs)
+                self.eks_client = boto3.client(
+                    "eks", **merge_vpc_boto3_kwargs("eks", self.region, dict(client_kwargs))
+                )
+                self.sts_client = boto3.client(
+                    "sts", **merge_vpc_boto3_kwargs("sts", self.region, dict(client_kwargs))
+                )
         else:
             logger.info(f"No session ID provided, using default credentials for region {self.region}")
-            self.eks_client = boto3.client("eks", **client_kwargs)
-            self.sts_client = boto3.client("sts", **client_kwargs)
+            self.eks_client = boto3.client(
+                "eks", **merge_vpc_boto3_kwargs("eks", self.region, dict(client_kwargs))
+            )
+            self.sts_client = boto3.client(
+                "sts", **merge_vpc_boto3_kwargs("sts", self.region, dict(client_kwargs))
+            )
     
     async def list_clusters(self) -> List[EKSClusterInfo]:
         """

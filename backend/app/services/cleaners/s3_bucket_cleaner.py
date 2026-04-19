@@ -6,6 +6,8 @@ import boto3
 from typing import Dict, Optional, Callable
 import logging
 from botocore.exceptions import ClientError
+
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.services.resource_cleanup_registry import ResourceCleanerBase
 from app.models.validation import ResourceDefinition
 
@@ -29,15 +31,17 @@ class S3BucketCleaner(ResourceCleanerBase):
         """
         try:
             if credentials:
-                s3_client = boto3.client(
-                    's3',
-                    region_name=region,
-                    aws_access_key_id=credentials.get('aws_access_key_id'),
-                    aws_secret_access_key=credentials.get('aws_secret_access_key'),
-                    aws_session_token=credentials.get('aws_session_token')
-                )
+                kw = {
+                    "region_name": region,
+                    "aws_access_key_id": credentials.get("aws_access_key_id"),
+                    "aws_secret_access_key": credentials.get("aws_secret_access_key"),
+                    "aws_session_token": credentials.get("aws_session_token"),
+                }
+                s3_client = boto3.client("s3", **merge_vpc_boto3_kwargs("s3", region, kw))
             else:
-                s3_client = boto3.client('s3', region_name=region)
+                s3_client = boto3.client(
+                    "s3", **merge_vpc_boto3_kwargs("s3", region, {"region_name": region})
+                )
             
             # Try to get bucket location to check if it exists
             s3_client.head_bucket(Bucket=resource_identifier)
@@ -79,23 +83,19 @@ class S3BucketCleaner(ResourceCleanerBase):
         """
         try:
             if credentials:
-                s3_client = boto3.client(
-                    's3',
-                    region_name=region,
-                    aws_access_key_id=credentials.get('aws_access_key_id'),
-                    aws_secret_access_key=credentials.get('aws_secret_access_key'),
-                    aws_session_token=credentials.get('aws_session_token')
-                )
-                s3_resource = boto3.resource(
-                    's3',
-                    region_name=region,
-                    aws_access_key_id=credentials.get('aws_access_key_id'),
-                    aws_secret_access_key=credentials.get('aws_secret_access_key'),
-                    aws_session_token=credentials.get('aws_session_token')
-                )
+                kw = {
+                    "region_name": region,
+                    "aws_access_key_id": credentials.get("aws_access_key_id"),
+                    "aws_secret_access_key": credentials.get("aws_secret_access_key"),
+                    "aws_session_token": credentials.get("aws_session_token"),
+                }
+                merged = merge_vpc_boto3_kwargs("s3", region, kw)
+                s3_client = boto3.client("s3", **merged)
+                s3_resource = boto3.resource("s3", **merged)
             else:
-                s3_client = boto3.client('s3', region_name=region)
-                s3_resource = boto3.resource('s3', region_name=region)
+                merged = merge_vpc_boto3_kwargs("s3", region, {"region_name": region})
+                s3_client = boto3.client("s3", **merged)
+                s3_resource = boto3.resource("s3", **merged)
             
             bucket = s3_resource.Bucket(resource_identifier)
             

@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from botocore.exceptions import ClientError, WaiterError
 from datetime import datetime
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 from app.utils.resource_resolver import ResourceResolver
 
 
@@ -79,7 +80,8 @@ class CloudFormationDeploymentService:
         if not force_new and cache_key in self._clients_cache:
             return self._clients_cache[cache_key]
         
-        client = boto3.client(service, region_name=region, **self.credentials)
+        kw = {"region_name": region, **self.credentials}
+        client = boto3.client(service, **merge_vpc_boto3_kwargs(service, region, kw))
         self._clients_cache[cache_key] = client
         return client
     

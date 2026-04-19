@@ -7,9 +7,9 @@ Requirements: 4.4
 import logging
 from typing import Dict, List, Any
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 class S3Provisioner:
     """Provisions S3 buckets for Totogi capabilities."""
     
-    BUCKET_PURPOSES = ["call-data", "wxcc-simulator", "journey-logs", "journey-reports", "bssmagic-dumps", "oracle-erp-simulator", "sap-simulator"]
+    BUCKET_PURPOSES = ["call-data", "wxcc-simulator", "sfdc-simulator", "journey-logs", "journey-reports", "bssmagic-dumps"]
     
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("s3", region_name=region)
+        self.client = vpc_boto3_client("s3", region_name=region)
     
     async def provision_all(self) -> List[Dict[str, Any]]:
         """Provision all required S3 buckets."""

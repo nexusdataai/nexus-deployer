@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,21 @@ class KubernetesResourceCreator:
         self.namespace = namespace
         self.core_api = client.CoreV1Api()
         self.apps_api = client.AppsV1Api()
-    
+
+    def _read_backend_api_key(self, naming: ResourceNaming) -> str:
+        """Read API_KEY from the existing backend deployment's env vars."""
+        deploy_name = naming.kubernetes_deployment("backend")
+        try:
+            deploy = self.apps_api.read_namespaced_deployment(deploy_name, self.namespace)
+            for container in deploy.spec.template.spec.containers:
+                for env in (container.env or []):
+                    if env.name == "API_KEY" and env.value:
+                        logger.info(f"Read API_KEY from existing deployment {deploy_name}")
+                        return env.value
+        except Exception as e:
+            logger.warning(f"Could not read API_KEY from {deploy_name}: {e}")
+        return ''
+
     async def create_namespace_if_needed(self, naming: ResourceNaming) -> Dict[str, Any]:
         """Create namespace if it doesn't exist."""
         try:
@@ -58,13 +73,30 @@ class KubernetesResourceCreator:
         naming: ResourceNaming, 
         iam_role_arn: str
     ) -> Dict[str, Any]:
-        """Create ServiceAccount with IRSA annotation."""
+        """Create or update ServiceAccount with IRSA annotation."""
         sa_name = naming.kubernetes_service_account()
         
         try:
-            self.core_api.read_namespaced_service_account(name=sa_name, namespace=self.namespace)
-            logger.info(f"ServiceAccount {sa_name} already exists")
-            return {"name": sa_name, "status": "exists", "type": "ServiceAccount"}
+            existing_sa = self.core_api.read_namespaced_service_account(name=sa_name, namespace=self.namespace)
+            existing_annotations = existing_sa.metadata.annotations or {}
+            current_role_arn = existing_annotations.get("eks.amazonaws.com/role-arn", "")
+            
+            if current_role_arn == iam_role_arn:
+                logger.info(f"ServiceAccount {sa_name} already exists with correct IRSA annotation")
+                return {"name": sa_name, "status": "exists", "type": "ServiceAccount"}
+            
+            logger.warning(
+                f"ServiceAccount {sa_name} has stale/missing IRSA annotation "
+                f"(current={current_role_arn!r}, expected={iam_role_arn!r}), patching..."
+            )
+            existing_annotations["eks.amazonaws.com/role-arn"] = iam_role_arn
+            existing_sa.metadata.annotations = existing_annotations
+            existing_sa.metadata.labels = existing_sa.metadata.labels or {}
+            existing_sa.metadata.labels["app.kubernetes.io/managed-by"] = "totogi-operator"
+            existing_sa.metadata.labels["totogi.com/capability"] = naming.capability_name
+            self.core_api.replace_namespaced_service_account(name=sa_name, namespace=self.namespace, body=existing_sa)
+            logger.info(f"Patched ServiceAccount {sa_name} with role ARN: {iam_role_arn}")
+            return {"name": sa_name, "status": "updated", "type": "ServiceAccount"}
         except ApiException as e:
             if e.status != 404:
                 raise
@@ -141,6 +173,10 @@ class KubernetesResourceCreator:
             client.V1EnvVar(name="ENVIRONMENT", value=environment),
             client.V1EnvVar(name="AWS_REGION", value=region),
             client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
+            client.V1EnvVar(
+                name="AWS_CA_BUNDLE",
+                value="/etc/ssl/certs/ca-certificates.crt",
+            ),
             client.V1EnvVar(name="CAPABILITY_NAME", value=naming.capability_name),
             client.V1EnvVar(name="SSM_PARAMETER_PREFIX", value=naming.ssm_parameter_prefix()),
             client.V1EnvVar(name="SECRETS_PREFIX", value=naming.secret_name_prefix()),
@@ -148,6 +184,9 @@ class KubernetesResourceCreator:
             # WXCC Simulator - base URL points to self (backend serves simulator API)
             client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
             client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
+            # SFDC Simulator
+            client.V1EnvVar(name="SFDC_SIMULATOR_ENABLED", value="true"),
+            client.V1EnvVar(name="SFDC_SIMULATOR_BUCKET", value=naming.sfdc_simulator_bucket()),
         ]
         
         # FDW + BSSMagic integration env vars (enables Ontos page and CRM service)
@@ -537,10 +576,9 @@ class KubernetesResourceCreator:
         AXWAY_CONTENT_VERSION_URL, AXWAY_CONTENT_DOCUMENT_LINK_URL,
         AXWAY_ATTACHMENT_URL
         """
-        import boto3
         import json as json_module
         try:
-            sm_client = boto3.client("secretsmanager", region_name=region)
+            sm_client = vpc_boto3_client("secretsmanager", region_name=region)
             response = sm_client.get_secret_value(SecretId=secret_name)
             secret_data = json_module.loads(response["SecretString"])
 
@@ -600,6 +638,8 @@ class KubernetesResourceCreator:
         # nginx proxies /api/* and /health,/stats,/tools to the backend
         import json as json_module
         api_key = getattr(self, '_api_key', '')
+        if not api_key:
+            api_key = self._read_backend_api_key(naming)
         config_json = json_module.dumps({
             "version": "1.0.0",
             "deploymentMode": "eks",
@@ -697,7 +737,8 @@ class KubernetesResourceCreator:
         
         # Determine service type based on ingress config
         use_ingress = ingress_config and ingress_config.get("enabled", False)
-        service_type = "ClusterIP" if use_ingress else "LoadBalancer"
+        use_internal = internal_ingress_config and internal_ingress_config.get("enabled", False)
+        service_type = "ClusterIP" if (use_ingress or use_internal) else "LoadBalancer"
         
         # Create Service
         service = client.V1Service(
@@ -715,7 +756,9 @@ class KubernetesResourceCreator:
         
         await self._apply_service(service_name, service)
         
-        # Create ALB Ingress if enabled
+        ingress_url = ""
+        
+        # Create public ALB Ingress if enabled
         if use_ingress and backend_service:
             logger.info("Creating ALB Ingress for frontend exposure...")
             ingress_url = await self._create_alb_ingress(
@@ -725,23 +768,26 @@ class KubernetesResourceCreator:
                 backend_service=backend_service,
                 bssmagic_service=bssmagic_service,
             )
-            
-            # Create internal ALB Ingress if enabled (VPC-only access)
-            if internal_ingress_config and internal_ingress_config.get("enabled", False):
-                logger.info("Creating internal ALB Ingress for VPC-only access...")
-                await self._create_alb_ingress(
-                    naming=naming,
-                    ingress_config=internal_ingress_config,
-                    frontend_service=service_name,
-                    backend_service=backend_service,
-                    bssmagic_service=bssmagic_service,
-                    component="internal",
-                    scheme_override="internal",
-                )
-            
-            return ingress_url
         elif use_ingress:
             logger.warning("Ingress enabled but backend_service not provided, skipping Ingress creation")
+        
+        # Create internal ALB Ingress if enabled (VPC-only access, independent of public ingress)
+        if use_internal and backend_service:
+            logger.info("Creating internal ALB Ingress for VPC-only access...")
+            internal_url = await self._create_alb_ingress(
+                naming=naming,
+                ingress_config=internal_ingress_config,
+                frontend_service=service_name,
+                backend_service=backend_service,
+                bssmagic_service=bssmagic_service,
+                component="internal",
+                scheme_override="internal",
+            )
+            if not ingress_url:
+                ingress_url = internal_url
+        
+        if ingress_url:
+            return ingress_url
         
         # Return LoadBalancer URL for non-ingress deployments
         return f"{service_name}.{self.namespace}.svc.cluster.local:8080"
@@ -1033,15 +1079,30 @@ http {{
         
         # Configure listeners (HTTP by default, HTTPS if valid certificate provided)
         cert_arn = ingress_config.get("certificateArn", "")
+        https_only = bool(ingress_config.get("httpsOnly"))
         if cert_arn and is_valid_cert_arn(cert_arn):
             annotations["alb.ingress.kubernetes.io/certificate-arn"] = cert_arn
-            annotations["alb.ingress.kubernetes.io/listen-ports"] = '[{"HTTP": 80}, {"HTTPS": 443}]'
-            annotations["alb.ingress.kubernetes.io/ssl-redirect"] = "443"
-            logger.info(f"HTTPS enabled with certificate: {cert_arn}")
+            if https_only:
+                annotations["alb.ingress.kubernetes.io/listen-ports"] = '[{"HTTPS": 443}]'
+                logger.info(f"HTTPS-only listener (443) with certificate: {cert_arn}")
+            else:
+                annotations["alb.ingress.kubernetes.io/listen-ports"] = '[{"HTTP": 80}, {"HTTPS": 443}]'
+                annotations["alb.ingress.kubernetes.io/ssl-redirect"] = "443"
+                logger.info(f"HTTPS enabled with certificate: {cert_arn}")
         else:
+            if https_only and cert_arn:
+                logger.warning("httpsOnly ignored: no valid certificateArn")
             annotations["alb.ingress.kubernetes.io/listen-ports"] = '[{"HTTP": 80}]'
             if cert_arn:
                 logger.warning(f"Invalid or placeholder certificate ARN ignored: {cert_arn}")
+        
+        # Merge spec.ingress.annotations / spec.internalIngress.annotations (applied last; can override defaults)
+        user_ann = ingress_config.get("annotations")
+        if isinstance(user_ann, dict) and user_ann:
+            for key, val in user_ann.items():
+                if key and val is not None:
+                    annotations[str(key)] = str(val)
+            logger.info(f"Merged {len(user_ann)} custom Ingress annotation(s) for {ingress_name}")
         
         # Build path rules: /api -> backend, /bssmagic -> bssmagic (optional), / -> frontend
         paths = [

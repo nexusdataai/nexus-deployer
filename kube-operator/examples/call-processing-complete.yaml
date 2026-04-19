@@ -109,27 +109,31 @@ spec:
     #   - name: MYSALESFORCE_USERNAME
     #     value: "myname@mycompany.com"
 
-  # ALB Ingress Configuration
-  # This creates a single ALB with path-based routing:
+  # ALB Ingress Configuration (public internet-facing ALB)
+  # This creates a public ALB with path-based routing:
   #   / → frontend (port 8080)
   #   /api → backend (port 8000)
   # BSS Magic is internal-only (ClusterIP) — backend calls it via K8s service DNS
-  ingress:
-    enabled: true
-    scheme: internet-facing              # Use "internal" for private ALB
-    # subnets: []                        # Optional: auto-discovers from VPC tags if omitted
-    # certificateArn: "arn:aws:acm:REGION:ACCOUNT:certificate/UUID"  # Enables HTTPS + HTTP->HTTPS redirect
-    healthCheckPath: "/health"
+  # NOTE: internalIngress works independently — no need to enable this for internal-only ALB.
+  # ingress:
+  #   enabled: true
+  #   scheme: internet-facing
+  #   certificateArn: "arn:aws:acm:ap-southeast-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
+  #   healthCheckPath: "/health"
 
-  # Internal ALB Ingress (VPC-only access)
-  # Creates a second ALB with scheme "internal", accessible only from within the VPC.
-  # Routes to the same services as the public ALB.
+  # Internal ALB Ingress (VPC-only access) — works independently of ingress.enabled above.
+  # Creates an ALB with scheme "internal", accessible only from within the VPC.
   internalIngress:
     enabled: true
+    httpsOnly: true   # Internal ALB: HTTPS:443 only (no HTTP:80 listener); requires certificateArn
     healthCheckPath: "/health"
-    # subnets: []                        # Optional: private subnets for internal ALB
-    # certificateArn: "arn:aws:acm:REGION:ACCOUNT:certificate/UUID"  # Enables HTTPS on internal ALB
-  
+    subnets:
+      - subnet-020799a1cd8db3e3c
+      - subnet-073f4c54a4d3ce169
+    annotations:
+      alb.ingress.kubernetes.io/security-groups: sg-0762abe928f161282
+    certificateArn: "arn:aws:acm:ap-southeast-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
+
   # AWS resources (DynamoDB, S3, Glue)
   dataServices:
     dynamodb:

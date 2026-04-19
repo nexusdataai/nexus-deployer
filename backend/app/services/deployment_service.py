@@ -688,6 +688,7 @@ class DeploymentService:
         import boto3
         from botocore.exceptions import ClientError
         from app.services.aws_session_manager import aws_session_manager
+        from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
         
         try:
             # Get AWS credentials from session
@@ -749,7 +750,12 @@ class DeploymentService:
             self.add_log(deployment_id, LogLevel.INFO, "")
             self.add_log(deployment_id, LogLevel.INFO, "1️⃣ Verifying AWS Account Access...")
             try:
-                sts_client = boto3.client('sts', region_name=request.region, **client_creds)
+                sts_client = boto3.client(
+                    "sts",
+                    **merge_vpc_boto3_kwargs(
+                        "sts", request.region, {**client_creds, "region_name": request.region}
+                    ),
+                )
                 identity = sts_client.get_caller_identity()
                 account = identity['Account']
                 arn = identity['Arn']
@@ -776,7 +782,12 @@ class DeploymentService:
                 key = parts[1] if len(parts) > 1 else ""
                 
                 # Check if object exists
-                s3_client = boto3.client('s3', region_name='us-east-1', **client_creds)
+                s3_client = boto3.client(
+                    "s3",
+                    **merge_vpc_boto3_kwargs(
+                        "s3", "us-east-1", {**client_creds, "region_name": "us-east-1"}
+                    ),
+                )
                 try:
                     response = s3_client.head_object(Bucket=bucket, Key=key)
                     size_mb = response['ContentLength'] / (1024 * 1024)
@@ -817,7 +828,12 @@ class DeploymentService:
                 self.add_log(deployment_id, LogLevel.INFO, f"  [TAG]️  Tag: {tag}")
                 
                 # Check if image exists
-                ecr_client = boto3.client('ecr', region_name=ecr_region, **client_creds)
+                ecr_client = boto3.client(
+                    "ecr",
+                    **merge_vpc_boto3_kwargs(
+                        "ecr", ecr_region, {**client_creds, "region_name": ecr_region}
+                    ),
+                )
                 try:
                     response = ecr_client.describe_images(
                         repositoryName=repository,
@@ -876,7 +892,12 @@ class DeploymentService:
             self.add_log(deployment_id, LogLevel.INFO, f"  [LOC] Region: {request.region}")
             
             try:
-                ec2_client = boto3.client('ec2', region_name=request.region, **client_creds)
+                ec2_client = boto3.client(
+                    "ec2",
+                    **merge_vpc_boto3_kwargs(
+                        "ec2", request.region, {**client_creds, "region_name": request.region}
+                    ),
+                )
                 
                 # Check available AZs
                 azs_response = ec2_client.describe_availability_zones(

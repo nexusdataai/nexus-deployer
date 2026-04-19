@@ -145,6 +145,10 @@ class ResourceNaming:
         """Get the WXCC task tracking table name."""
         return self.dynamodb_table("wxcc-task-tracking")
     
+    def lead_opportunity_tracking_table(self) -> str:
+        """Get the lead/opportunity tracking table name."""
+        return self.dynamodb_table("lead-opportunity-tracking")
+    
     # ==================== S3 Buckets ====================
     
     def s3_bucket(self, bucket_purpose: str) -> str:
@@ -171,6 +175,10 @@ class ResourceNaming:
     def wxcc_simulator_bucket(self) -> str:
         """Get the WXCC simulator bucket name."""
         return self.s3_bucket("wxcc-simulator")
+    
+    def sfdc_simulator_bucket(self) -> str:
+        """Get the SFDC simulator bucket name."""
+        return self.s3_bucket("sfdc-simulator")
     
     def journey_logs_bucket(self) -> str:
         """Get the journey logs bucket name."""

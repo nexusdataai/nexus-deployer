@@ -10,9 +10,9 @@ Requirements: Authentication, User Management
 import logging
 from typing import Dict, Any, List
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class CognitoProvisioner:
         """
         self.naming = naming
         self.region = region
-        self.client = boto3.client("cognito-idp", region_name=region)
+        self.client = vpc_boto3_client("cognito-idp", region_name=region)
     
     def _get_user_pool_name(self) -> str:
         """Get Cognito User Pool name."""
@@ -41,7 +41,7 @@ class CognitoProvisioner:
         """Get Cognito domain prefix."""
         # Use account ID if available for uniqueness
         try:
-            sts = boto3.client("sts", region_name=self.region)
+            sts = vpc_boto3_client("sts", region_name=self.region)
             account_id = sts.get_caller_identity()["Account"]
             return f"{self.naming.capability_name}-{self.naming.environment}-{account_id}"
         except:

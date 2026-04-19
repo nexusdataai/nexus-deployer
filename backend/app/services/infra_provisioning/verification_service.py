@@ -12,6 +12,8 @@ from typing import List, Optional
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from .models import (
     ResourceType,
     VerificationResult,
@@ -58,13 +60,17 @@ class VerificationService:
         # Add credentials if provided
         if credentials:
             client_kwargs.update(credentials)
-        
-        self.dynamodb = boto3.client("dynamodb", **client_kwargs)
-        self.s3 = boto3.client("s3", **client_kwargs)
-        self.ssm = boto3.client("ssm", **client_kwargs)
-        self.secretsmanager = boto3.client("secretsmanager", **client_kwargs)
-        self.glue = boto3.client("glue", **client_kwargs)
-        self.logs = boto3.client("logs", **client_kwargs)
+
+        self.dynamodb = boto3.client(
+            "dynamodb", **merge_vpc_boto3_kwargs("dynamodb", region, dict(client_kwargs))
+        )
+        self.s3 = boto3.client("s3", **merge_vpc_boto3_kwargs("s3", region, dict(client_kwargs)))
+        self.ssm = boto3.client("ssm", **merge_vpc_boto3_kwargs("ssm", region, dict(client_kwargs)))
+        self.secretsmanager = boto3.client(
+            "secretsmanager", **merge_vpc_boto3_kwargs("secretsmanager", region, dict(client_kwargs))
+        )
+        self.glue = boto3.client("glue", **merge_vpc_boto3_kwargs("glue", region, dict(client_kwargs)))
+        self.logs = boto3.client("logs", **merge_vpc_boto3_kwargs("logs", region, dict(client_kwargs)))
     
     def verify_all(self) -> VerificationReport:
         """
@@ -108,6 +114,7 @@ class VerificationService:
             self.naming.transformation_system_table(),
             self.naming.license_table(),
             self.naming.wxcc_task_tracking_table(),
+            self.naming.lead_opportunity_tracking_table(),
         ]
         
         for table_name in table_names:

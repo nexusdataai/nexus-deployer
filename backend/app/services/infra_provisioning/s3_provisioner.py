@@ -15,6 +15,8 @@ from typing import List, Optional, Callable
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from .models import (
     ResourceType,
     ResourceStatus,
@@ -60,11 +62,12 @@ class S3Provisioner:
         if endpoint_url:
             client_kwargs["endpoint_url"] = endpoint_url
         
+        merged = merge_vpc_boto3_kwargs("s3", region, dict(client_kwargs))
         # Use provided session or create new one
         if boto3_session:
-            self.client = boto3_session.client("s3", **client_kwargs)
+            self.client = boto3_session.client("s3", **merged)
         else:
-            self.client = boto3.client("s3", **client_kwargs)
+            self.client = boto3.client("s3", **merged)
     
     def _log_progress(self, message: str):
         """Log progress to both logger and callback if available."""

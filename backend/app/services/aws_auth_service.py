@@ -9,6 +9,9 @@ from typing import Dict, Optional, List, Tuple
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
+
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from app.models.aws_config import (
     AWSAuthMethod,
     SourceAuthMethod,
@@ -404,10 +407,16 @@ class AWSAuthService:
                         ]
                     )
                 sts_client = boto3.client(
-                    'sts',
-                    region_name=region,
-                    aws_access_key_id=source_access_key_id,
-                    aws_secret_access_key=source_secret_access_key
+                    "sts",
+                    **merge_vpc_boto3_kwargs(
+                        "sts",
+                        region,
+                        {
+                            "region_name": region,
+                            "aws_access_key_id": source_access_key_id,
+                            "aws_secret_access_key": source_secret_access_key,
+                        },
+                    ),
                 )
                 source_info = f"access key {source_access_key_id[:8]}..."
                 
@@ -424,7 +433,10 @@ class AWSAuthService:
                     )
                 try:
                     session = boto3.Session(profile_name=source_profile_name, region_name=region)
-                    sts_client = session.client('sts')
+                    sts_client = session.client(
+                        "sts",
+                        **merge_vpc_boto3_kwargs("sts", region, {"region_name": region}),
+                    )
                     source_info = f"profile '{source_profile_name}'"
                 except Exception as e:
                     return RoleValidationResponse(
@@ -438,12 +450,18 @@ class AWSAuthService:
                     
             elif source_auth_method == SourceAuthMethod.INSTANCE_PROFILE:
                 # Use instance profile (EC2/ECS metadata)
-                sts_client = boto3.client('sts', region_name=region)
+                sts_client = boto3.client(
+                    "sts",
+                    **merge_vpc_boto3_kwargs("sts", region, {"region_name": region}),
+                )
                 source_info = "instance profile"
-                
+
             else:
                 # Default: use environment variables or default credential chain
-                sts_client = boto3.client('sts', region_name=region)
+                sts_client = boto3.client(
+                    "sts",
+                    **merge_vpc_boto3_kwargs("sts", region, {"region_name": region}),
+                )
                 source_info = "environment/default credentials"
             
             # First, verify source credentials are valid
@@ -559,10 +577,16 @@ class AWSAuthService:
         try:
             # Create STS client with provided credentials
             sts_client = boto3.client(
-                'sts',
-                region_name=region,
-                aws_access_key_id=access_key_id,
-                aws_secret_access_key=secret_access_key
+                "sts",
+                **merge_vpc_boto3_kwargs(
+                    "sts",
+                    region,
+                    {
+                        "region_name": region,
+                        "aws_access_key_id": access_key_id,
+                        "aws_secret_access_key": secret_access_key,
+                    },
+                ),
             )
             
             # Get caller identity to validate credentials
@@ -693,7 +717,10 @@ class AWSAuthService:
         """
         try:
             # Try to use instance metadata
-            sts_client = boto3.client('sts', region_name=region)
+            sts_client = boto3.client(
+                "sts",
+                **merge_vpc_boto3_kwargs("sts", region, {"region_name": region}),
+            )
             
             # Get caller identity
             response = sts_client.get_caller_identity()
@@ -1626,7 +1653,10 @@ class AWSAuthService:
         try:
             # Use AWS STS AssumeRoleWithSAML to get credentials
             # This is the pure Python approach - no aws-adfs.exe needed
-            sts_client = boto3.client('sts', region_name=region)
+            sts_client = boto3.client(
+                "sts",
+                **merge_vpc_boto3_kwargs("sts", region, {"region_name": region}),
+            )
             
             response = sts_client.assume_role_with_saml(
                 RoleArn=role_arn,

@@ -9,9 +9,9 @@ import logging
 import os
 from typing import Dict, List, Any, Optional
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,8 @@ class IAMProvisioner:
     def __init__(self, naming: ResourceNaming, region: str, account_id: Optional[str] = None, oidc_provider: Optional[str] = None):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("iam", region_name=region)
-        self.sts_client = boto3.client("sts", region_name=region)
+        self.client = vpc_boto3_client("iam", region_name=region)
+        self.sts_client = vpc_boto3_client("sts", region_name=region)
         
         # Get account ID if not provided
         if account_id:

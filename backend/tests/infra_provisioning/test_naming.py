@@ -257,7 +257,7 @@ class TestNamingSpecificResources:
         naming = ResourceNaming(env)
         tables = naming.all_dynamodb_tables()
         
-        expected_suffixes = ["transformation-system", "license", "wxcc-task-tracking"]
+        expected_suffixes = ["transformation-system", "license", "wxcc-task-tracking", "lead-opportunity-tracking"]
         for suffix in expected_suffixes:
             expected_name = f"call-processing-{env}-{suffix}"
             assert expected_name in tables, (

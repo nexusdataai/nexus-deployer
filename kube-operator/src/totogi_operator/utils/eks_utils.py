@@ -8,8 +8,9 @@ import logging
 import os
 from typing import Optional, Tuple
 
-import boto3
 from botocore.exceptions import ClientError
+
+from .aws_vpc_endpoints import vpc_boto3_client
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ def discover_oidc_provider(cluster_name: str, region: str) -> Optional[str]:
         or None if discovery fails
     """
     try:
-        eks_client = boto3.client("eks", region_name=region)
+        eks_client = vpc_boto3_client("eks", region_name=region)
         cluster_info = eks_client.describe_cluster(name=cluster_name)
         
         oidc_issuer = cluster_info["cluster"]["identity"]["oidc"]["issuer"]
@@ -65,7 +66,7 @@ def verify_oidc_provider_exists(oidc_provider: str, account_id: str, region: str
         True if the OIDC provider exists in IAM, False otherwise
     """
     try:
-        iam_client = boto3.client("iam", region_name=region)
+        iam_client = vpc_boto3_client("iam", region_name=region)
         oidc_arn = f"arn:aws:iam::{account_id}:oidc-provider/{oidc_provider}"
         
         iam_client.get_open_id_connect_provider(OpenIDConnectProviderArn=oidc_arn)
@@ -168,9 +169,9 @@ def create_iam_oidc_provider(cluster_name: str, region: str) -> Optional[str]:
         ARN of the created/existing OIDC provider, or None on failure
     """
     try:
-        eks_client = boto3.client("eks", region_name=region)
-        iam_client = boto3.client("iam", region_name=region)
-        sts_client = boto3.client("sts", region_name=region)
+        eks_client = vpc_boto3_client("eks", region_name=region)
+        iam_client = vpc_boto3_client("iam", region_name=region)
+        sts_client = vpc_boto3_client("sts", region_name=region)
         
         # Get account ID
         account_id = sts_client.get_caller_identity()["Account"]

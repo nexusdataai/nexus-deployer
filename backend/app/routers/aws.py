@@ -12,6 +12,7 @@ from app.models.aws_config import (
 from app.services.aws_service import get_aws_service
 from app.services.aws_auth_service import get_aws_auth_service
 from app.services.aws_session_manager import aws_session_manager
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 
 
 router = APIRouter(prefix="/api/aws", tags=["aws"])
@@ -147,7 +148,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_s3():
         try:
-            s3 = boto3.client('s3', region_name=region, **client_creds)
+            s3 = boto3.client(
+                "s3",
+                **merge_vpc_boto3_kwargs("s3", region, {**client_creds, "region_name": region}),
+            )
             s3.list_buckets()
             return True, ["ListBuckets"]
         except ClientError as e:
@@ -228,7 +232,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_vpc():
         try:
-            ec2 = boto3.client('ec2', region_name=region, **client_creds)
+            ec2 = boto3.client(
+                "ec2",
+                **merge_vpc_boto3_kwargs("ec2", region, {**client_creds, "region_name": region}),
+            )
             ec2.describe_vpcs(MaxResults=5)
             return True, ["DescribeVpcs"]
         except ClientError as e:
@@ -240,7 +247,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_ec2():
         try:
-            ec2 = boto3.client('ec2', region_name=region, **client_creds)
+            ec2 = boto3.client(
+                "ec2",
+                **merge_vpc_boto3_kwargs("ec2", region, {**client_creds, "region_name": region}),
+            )
             ec2.describe_security_groups(MaxResults=5)
             return True, ["DescribeSecurityGroups"]
         except ClientError as e:
@@ -264,7 +274,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_ecr():
         try:
-            ecr = boto3.client('ecr', region_name=region, **client_creds)
+            ecr = boto3.client(
+                "ecr",
+                **merge_vpc_boto3_kwargs("ecr", region, {**client_creds, "region_name": region}),
+            )
             ecr.describe_repositories(maxResults=1)
             return True, ["DescribeRepositories"]
         except ClientError as e:
@@ -290,7 +303,12 @@ async def verify_permissions_detailed(request: dict):
     def check_iam():
         try:
             # IAM is a global service, use us-east-1
-            iam = boto3.client('iam', region_name='us-east-1', **client_creds)
+            iam = boto3.client(
+                "iam",
+                **merge_vpc_boto3_kwargs(
+                    "iam", "us-east-1", {**client_creds, "region_name": "us-east-1"}
+                ),
+            )
             iam.list_roles(MaxItems=1)
             return True, ["ListRoles"]
         except ClientError as e:
@@ -303,7 +321,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_dynamodb():
         try:
-            ddb = boto3.client('dynamodb', region_name=region, **client_creds)
+            ddb = boto3.client(
+                "dynamodb",
+                **merge_vpc_boto3_kwargs("dynamodb", region, {**client_creds, "region_name": region}),
+            )
             ddb.list_tables(Limit=1)
             return True, ["ListTables"]
         except ClientError as e:
@@ -315,7 +336,12 @@ async def verify_permissions_detailed(request: dict):
     
     def check_secrets_manager():
         try:
-            sm = boto3.client('secretsmanager', region_name=region, **client_creds)
+            sm = boto3.client(
+                "secretsmanager",
+                **merge_vpc_boto3_kwargs(
+                    "secretsmanager", region, {**client_creds, "region_name": region}
+                ),
+            )
             sm.list_secrets(MaxResults=1)
             return True, ["ListSecrets"]
         except ClientError as e:
@@ -339,7 +365,10 @@ async def verify_permissions_detailed(request: dict):
     
     def check_cloudwatch_logs():
         try:
-            logs = boto3.client('logs', region_name=region, **client_creds)
+            logs = boto3.client(
+                "logs",
+                **merge_vpc_boto3_kwargs("logs", region, {**client_creds, "region_name": region}),
+            )
             logs.describe_log_groups(limit=1)
             return True, ["DescribeLogGroups"]
         except ClientError as e:
@@ -665,7 +694,10 @@ async def verify_account(request: dict):
     }
     
     try:
-        sts_client = boto3.client('sts', region_name=region, **client_creds)
+        sts_client = boto3.client(
+            "sts",
+            **merge_vpc_boto3_kwargs("sts", region, {**client_creds, "region_name": region}),
+        )
         identity = sts_client.get_caller_identity()
         
         if identity['Account'] != account_id:
@@ -745,7 +777,12 @@ async def verify_artifact(request: dict):
             key = parts[1] if len(parts) > 1 else ""
             
             # Check if object exists
-            s3_client = boto3.client('s3', region_name='us-east-1', **client_creds)
+            s3_client = boto3.client(
+                "s3",
+                **merge_vpc_boto3_kwargs(
+                    "s3", "us-east-1", {**client_creds, "region_name": "us-east-1"}
+                ),
+            )
             response = s3_client.head_object(Bucket=bucket, Key=key)
             
             return {
@@ -770,7 +807,12 @@ async def verify_artifact(request: dict):
             ecr_region = registry.split('.')[3]
             
             # Check if image exists
-            ecr_client = boto3.client('ecr', region_name=ecr_region, **client_creds)
+            ecr_client = boto3.client(
+                "ecr",
+                **merge_vpc_boto3_kwargs(
+                    "ecr", ecr_region, {**client_creds, "region_name": ecr_region}
+                ),
+            )
             response = ecr_client.describe_images(
                 repositoryName=repository,
                 imageIds=[{'imageTag': tag}]
@@ -856,7 +898,10 @@ async def verify_network(request: dict):
     }
     
     try:
-        ec2_client = boto3.client('ec2', region_name=region, **client_creds)
+        ec2_client = boto3.client(
+            "ec2",
+            **merge_vpc_boto3_kwargs("ec2", region, {**client_creds, "region_name": region}),
+        )
         
         # Check available AZs
         azs_response = ec2_client.describe_availability_zones(
@@ -1031,7 +1076,10 @@ async def verify_permissions_eks(request: dict):
     # EKS-specific service checks
     def check_eks():
         try:
-            eks = boto3.client('eks', region_name=region, **client_creds)
+            eks = boto3.client(
+                "eks",
+                **merge_vpc_boto3_kwargs("eks", region, {**client_creds, "region_name": region}),
+            )
             eks.list_clusters(maxResults=1)
             return True, ["ListClusters", "DescribeCluster"]
         except ClientError as e:
@@ -1043,7 +1091,10 @@ async def verify_permissions_eks(request: dict):
     
     def check_ecr():
         try:
-            ecr = boto3.client('ecr', region_name=region, **client_creds)
+            ecr = boto3.client(
+                "ecr",
+                **merge_vpc_boto3_kwargs("ecr", region, {**client_creds, "region_name": region}),
+            )
             ecr.describe_repositories(maxResults=1)
             return True, ["DescribeRepositories", "GetAuthorizationToken", "BatchGetImage"]
         except ClientError as e:
@@ -1055,7 +1106,10 @@ async def verify_permissions_eks(request: dict):
     
     def check_s3():
         try:
-            s3 = boto3.client('s3', region_name=region, **client_creds)
+            s3 = boto3.client(
+                "s3",
+                **merge_vpc_boto3_kwargs("s3", region, {**client_creds, "region_name": region}),
+            )
             s3.list_buckets()
             return True, ["ListBuckets", "CreateBucket", "PutObject", "GetObject"]
         except ClientError as e:
@@ -1067,7 +1121,10 @@ async def verify_permissions_eks(request: dict):
     
     def check_dynamodb():
         try:
-            ddb = boto3.client('dynamodb', region_name=region, **client_creds)
+            ddb = boto3.client(
+                "dynamodb",
+                **merge_vpc_boto3_kwargs("dynamodb", region, {**client_creds, "region_name": region}),
+            )
             ddb.list_tables(Limit=1)
             return True, ["ListTables", "CreateTable", "PutItem", "GetItem"]
         except ClientError as e:
@@ -1079,7 +1136,12 @@ async def verify_permissions_eks(request: dict):
     
     def check_iam():
         try:
-            iam = boto3.client('iam', region_name='us-east-1', **client_creds)
+            iam = boto3.client(
+                "iam",
+                **merge_vpc_boto3_kwargs(
+                    "iam", "us-east-1", {**client_creds, "region_name": "us-east-1"}
+                ),
+            )
             iam.list_roles(MaxItems=1)
             return True, ["ListRoles", "CreateRole", "AttachRolePolicy", "PassRole"]
         except ClientError as e:
@@ -1091,7 +1153,10 @@ async def verify_permissions_eks(request: dict):
     
     def check_sts():
         try:
-            sts = boto3.client('sts', region_name=region, **client_creds)
+            sts = boto3.client(
+                "sts",
+                **merge_vpc_boto3_kwargs("sts", region, {**client_creds, "region_name": region}),
+            )
             sts.get_caller_identity()
             return True, ["GetCallerIdentity", "AssumeRoleWithWebIdentity"]
         except ClientError as e:
@@ -1103,7 +1168,12 @@ async def verify_permissions_eks(request: dict):
     
     def check_secrets_manager():
         try:
-            sm = boto3.client('secretsmanager', region_name=region, **client_creds)
+            sm = boto3.client(
+                "secretsmanager",
+                **merge_vpc_boto3_kwargs(
+                    "secretsmanager", region, {**client_creds, "region_name": region}
+                ),
+            )
             sm.list_secrets(MaxResults=1)
             return True, ["ListSecrets", "CreateSecret", "GetSecretValue"]
         except ClientError as e:
@@ -1115,7 +1185,10 @@ async def verify_permissions_eks(request: dict):
     
     def check_cloudwatch_logs():
         try:
-            logs = boto3.client('logs', region_name=region, **client_creds)
+            logs = boto3.client(
+                "logs",
+                **merge_vpc_boto3_kwargs("logs", region, {**client_creds, "region_name": region}),
+            )
             logs.describe_log_groups(limit=1)
             return True, ["DescribeLogGroups", "CreateLogGroup", "PutLogEvents"]
         except ClientError as e:

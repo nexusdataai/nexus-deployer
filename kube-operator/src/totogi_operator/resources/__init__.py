@@ -8,8 +8,10 @@ from .secrets import SecretsProvisioner
 from .iam import IAMProvisioner
 from .kubernetes import KubernetesResourceCreator
 from .cognito import CognitoProvisioner
+from .vpc_endpoints import VPCEndpointProvisioner
 
 __all__ = [
+    "VPCEndpointProvisioner",
     "DynamoDBProvisioner",
     "S3Provisioner",
     "GlueProvisioner",

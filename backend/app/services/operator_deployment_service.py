@@ -22,17 +22,20 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.services.aws_session_manager import aws_session_manager
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 
 logger = logging.getLogger(__name__)
 
 # Operator configuration
 OPERATOR_NAMESPACE = "totogi-system"
 OPERATOR_DEPLOYMENT_NAME = "totogi-operator"
-OPERATOR_SERVICE_ACCOUNT = "totogi-operator-sa"
+OPERATOR_SERVICE_ACCOUNT = "totogi-operator"
 OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "totogi-operator")
 CRD_GROUP = "totogi.com"
 CRD_VERSION = "v1"
 CRD_PLURAL = "totogicapabilities"
+# VPC endpoint CRD — kopf watches cluster-scoped TotogiNetworkConfig
+NETWORK_CONFIG_PLURAL = "totoginetworkconfigs"
 
 
 class OperatorDeploymentService:
@@ -72,9 +75,15 @@ class OperatorDeploymentService:
                     aws_session_token=session.get("session_token"),
                     region_name=self.region
                 )
-                self.eks_client = boto_session.client("eks", **client_kwargs)
-                self.iam_client = boto_session.client("iam", **client_kwargs)
-                self.sts_client = boto_session.client("sts", **client_kwargs)
+                self.eks_client = boto_session.client(
+                    "eks", **merge_vpc_boto3_kwargs("eks", self.region, dict(client_kwargs))
+                )
+                self.iam_client = boto_session.client(
+                    "iam", **merge_vpc_boto3_kwargs("iam", self.region, dict(client_kwargs))
+                )
+                self.sts_client = boto_session.client(
+                    "sts", **merge_vpc_boto3_kwargs("sts", self.region, dict(client_kwargs))
+                )
             else:
                 self._use_default_clients(client_kwargs)
         else:
@@ -82,9 +91,10 @@ class OperatorDeploymentService:
     
     def _use_default_clients(self, client_kwargs: Dict):
         """Use default boto3 clients."""
-        self.eks_client = boto3.client("eks", **client_kwargs)
-        self.iam_client = boto3.client("iam", **client_kwargs)
-        self.sts_client = boto3.client("sts", **client_kwargs)
+        r = self.region
+        self.eks_client = boto3.client("eks", **merge_vpc_boto3_kwargs("eks", r, dict(client_kwargs)))
+        self.iam_client = boto3.client("iam", **merge_vpc_boto3_kwargs("iam", r, dict(client_kwargs)))
+        self.sts_client = boto3.client("sts", **merge_vpc_boto3_kwargs("sts", r, dict(client_kwargs)))
     
     async def _get_k8s_clients(self, cluster_name: str):
         """
@@ -827,13 +837,30 @@ class OperatorDeploymentService:
             rules=[
                 k8s_client.V1PolicyRule(
                     api_groups=[CRD_GROUP],
-                    resources=[CRD_PLURAL, f"{CRD_PLURAL}/status"],
-                    verbs=["*"]
+                    resources=[
+                        CRD_PLURAL,
+                        f"{CRD_PLURAL}/status",
+                        f"{CRD_PLURAL}/finalizers",
+                        NETWORK_CONFIG_PLURAL,
+                        f"{NETWORK_CONFIG_PLURAL}/status",
+                        f"{NETWORK_CONFIG_PLURAL}/finalizers",
+                    ],
+                    verbs=["*"],
                 ),
                 k8s_client.V1PolicyRule(
                     api_groups=[""],
                     resources=["namespaces", "serviceaccounts", "services", "configmaps", "secrets", "events"],
                     verbs=["*"]
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["pods", "pods/exec"],
+                    verbs=["get", "list", "watch", "create"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["pods/log"],
+                    verbs=["get"],
                 ),
                 k8s_client.V1PolicyRule(
                     api_groups=["apps"],
@@ -925,7 +952,11 @@ class OperatorDeploymentService:
             k8s_client.V1EnvVar(
                 name="AWS_REGION",
                 value=self.region
-            )
+            ),
+            k8s_client.V1EnvVar(
+                name="AWS_CA_BUNDLE",
+                value="/etc/ssl/certs/ca-certificates.crt",
+            ),
         ]
         
         # Add cluster name for IRSA OIDC provider discovery

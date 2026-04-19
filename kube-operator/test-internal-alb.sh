@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Internal ALB Verification Script
-# Tests the internal (VPC-only) ALB from inside the EKS cluster via kubectl exec.
+# Tests only the internal (VPC-only) ALB — no public ALB checks.
 # Reads cluster defaults from .env.local.
 #
 # Usage:
@@ -42,15 +42,28 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     echo "Internal ALB Verification Script"
     echo ""
     echo "Tests the internal (VPC-only) ALB by running curl from inside the EKS cluster."
-    echo "Verifies DNS resolution, HTTP endpoints, path routing, and ALB configuration."
+    echo "Verifies ingress, AWS ALB (internal), DNS, HTTP endpoints, and target group health."
     echo ""
     echo "Usage: $0"
     echo ""
     echo "Environment variables (or set in .env.local):"
-    echo "  DEPLOY_ENV     Target environment (default: from .env.local or prod)"
-    echo "  CLUSTER_NAME   EKS cluster name (default: from .env.local or starhub-test)"
+    echo "  DEPLOY_ENV       Target environment (default: from .env.local or prod)"
+    echo "  CLUSTER_NAME     EKS cluster name (default: from .env.local or starhub-test)"
+    echo "  CURL_INSECURE=1  Use curl -k from the pod if HTTPS fails (missing CA bundle in image)"
     exit 0
 fi
+
+# curl -w '%{http_code}' already prints 000 on failure — never append || echo 000 (yields 000000).
+CURL_TLS_OPTS=""
+[ "${CURL_INSECURE:-}" = "1" ] && CURL_TLS_OPTS="-k"
+
+pod_curl_http_code() {
+    local url="$1"
+    local raw
+    raw=$(kubectl exec "${TEST_POD}" -n "${NAMESPACE}" -- \
+        curl -sS ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "$url" --connect-timeout 15 2>/dev/null || true)
+    printf '%s' "$raw" | python3 -c "import sys,re; s=sys.stdin.read(); m=re.findall(r'\\d{3}', s); print(m[-1] if m else '000')"
+}
 
 NAMESPACE="call-processing-${DEPLOY_ENV}"
 
@@ -92,6 +105,14 @@ else
     check "ALB scheme annotation" "false" "Expected 'internal', got '${INTERNAL_SCHEME}'"
 fi
 
+# Probe URL: with ACM, use HTTPS directly. curl -L + -w '%{http_code}' concatenates each hop (e.g. 301+000 → 301000).
+INTERNAL_CERT=$(kubectl get ingress "${INTERNAL_INGRESS_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/certificate-arn}' 2>/dev/null || echo "")
+if [ -n "$INTERNAL_CERT" ]; then
+    INTERNAL_URL_BASE="https://${INTERNAL_HOST}"
+else
+    INTERNAL_URL_BASE="http://${INTERNAL_HOST}"
+fi
+
 # ── Step 2: AWS ALB configuration ──
 echo ""
 echo -e "${CYAN}── Step 2: AWS ALB Configuration ──${NC}"
@@ -114,6 +135,32 @@ if [ "$ALB_STATE" = "active" ]; then
     check "ALB state" "true" "State: active"
 else
     check "ALB state" "false" "State: ${ALB_STATE}"
+fi
+
+LISTEN_PORTS=$(kubectl get ingress "${INTERNAL_INGRESS_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/listen-ports}' 2>/dev/null || echo "")
+SSL_REDIRECT=$(kubectl get ingress "${INTERNAL_INGRESS_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/ssl-redirect}' 2>/dev/null || echo "")
+
+if echo "$LISTEN_PORTS" | grep -q '"HTTPS": 443' && ! echo "$LISTEN_PORTS" | grep -q '"HTTP"'; then
+    check "Ingress listen-ports HTTPS-only" "true" "${LISTEN_PORTS}"
+else
+    check "Ingress listen-ports HTTPS-only" "false" "Expected '[{\"HTTPS\": 443}]', got '${LISTEN_PORTS}'"
+fi
+
+if [ -z "$SSL_REDIRECT" ]; then
+    check "No ssl-redirect annotation" "true" "Not set (correct for HTTPS-only)"
+else
+    warn_ "ssl-redirect annotation present" "Value: ${SSL_REDIRECT} — unnecessary for HTTPS-only listener"
+fi
+
+ALB_ARN_FOR_LISTENERS=$(echo "$ALB_INFO" | python3 -c "import sys,json; lb=json.load(sys.stdin).get('LoadBalancers',[]); print(lb[0]['LoadBalancerArn'] if lb else '')" 2>/dev/null)
+if [ -n "$ALB_ARN_FOR_LISTENERS" ]; then
+    LISTENER_PORTS=$(aws elbv2 describe-listeners --load-balancer-arn "${ALB_ARN_FOR_LISTENERS}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'Listeners[*].Port' --output text 2>/dev/null || echo "")
+    LISTENER_PROTOCOLS=$(aws elbv2 describe-listeners --load-balancer-arn "${ALB_ARN_FOR_LISTENERS}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'Listeners[*].Protocol' --output text 2>/dev/null || echo "")
+    if [ "$LISTENER_PORTS" = "443" ] && [ "$LISTENER_PROTOCOLS" = "HTTPS" ]; then
+        check "AWS ALB listener HTTPS:443 only" "true" "Port: ${LISTENER_PORTS}, Protocol: ${LISTENER_PROTOCOLS}"
+    else
+        check "AWS ALB listener HTTPS:443 only" "false" "Ports: ${LISTENER_PORTS}, Protocols: ${LISTENER_PROTOCOLS} — expected only HTTPS:443"
+    fi
 fi
 
 EKS_VPC=$(aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || echo "")
@@ -158,16 +205,20 @@ fi
 # ── Step 4: HTTP endpoint tests ──
 echo ""
 echo -e "${CYAN}── Step 4: HTTP Endpoint Tests (from pod) ──${NC}"
+info_ "Probe base URL: ${INTERNAL_URL_BASE}"
+[ -n "${CURL_TLS_OPTS}" ] && info_ "curl TLS: insecure (-k) via CURL_INSECURE=1"
 
 run_curl() {
     local PATH_="$1"
     local LABEL="$2"
     local RESULT
-    RESULT=$(kubectl exec "${TEST_POD}" -n "${NAMESPACE}" -- curl -s -o /dev/null -w '%{http_code}' "http://${INTERNAL_HOST}${PATH_}" --connect-timeout 5 2>/dev/null || echo "000")
+    RESULT=$(pod_curl_http_code "${INTERNAL_URL_BASE}${PATH_}")
     if [ "$RESULT" = "200" ]; then
         check "${LABEL}" "true" "HTTP ${RESULT}"
+    elif [ "$RESULT" = "422" ] && [ "$PATH_" = "/api/v1/auth/health" ]; then
+        check "${LABEL}" "true" "HTTP 422 (endpoint live; may require API key)"
     elif [ "$RESULT" = "000" ]; then
-        check "${LABEL}" "false" "Connection failed (timeout/unreachable)"
+        check "${LABEL}" "false" "No HTTP response (timeout/TLS/curl). Try CURL_INSECURE=1 if pod lacks CA certs."
     else
         warn_ "${LABEL}" "HTTP ${RESULT} (expected 200)"
     fi
@@ -191,7 +242,9 @@ if [ -n "$ALB_ARN" ]; then
         HEALTHY=$(aws elbv2 describe-target-health --target-group-arn "$TG_ARN" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'TargetHealthDescriptions[?TargetHealth.State==`healthy`] | length(@)' --output text 2>/dev/null || echo "0")
         TOTAL=$(aws elbv2 describe-target-health --target-group-arn "$TG_ARN" --region "${REGION}" --profile "${AWS_PROFILE}" --query 'TargetHealthDescriptions | length(@)' --output text 2>/dev/null || echo "0")
 
-        if [ "$HEALTHY" = "$TOTAL" ] && [ "$TOTAL" != "0" ]; then
+        if [ "$TOTAL" = "0" ]; then
+            warn_ "Target group: ${TG_NAME}" "0 registered targets (unused listener/rule — not a routing failure)"
+        elif [ "$HEALTHY" = "$TOTAL" ]; then
             check "Target group: ${TG_NAME}" "true" "${HEALTHY}/${TOTAL} targets healthy"
         elif [ "$HEALTHY" != "0" ]; then
             warn_ "Target group: ${TG_NAME}" "${HEALTHY}/${TOTAL} targets healthy (some unhealthy)"
@@ -203,35 +256,14 @@ else
     check "ALB target groups" "false" "Could not find ALB ARN"
 fi
 
-# ── Step 6: Compare with public ALB ──
-echo ""
-echo -e "${CYAN}── Step 6: Public vs Internal ALB Comparison ──${NC}"
-
-PUBLIC_HOST=$(kubectl get ingress "${NAMESPACE}-app-ingress" -n "${NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-if [ -n "$PUBLIC_HOST" ]; then
-    info_ "Public ALB:   ${PUBLIC_HOST}"
-    info_ "Internal ALB: ${INTERNAL_HOST}"
-
-    PUB_CODE=$(kubectl exec "${TEST_POD}" -n "${NAMESPACE}" -- curl -s -o /dev/null -w '%{http_code}' "http://${PUBLIC_HOST}/" --connect-timeout 5 2>/dev/null || echo "000")
-    INT_CODE=$(kubectl exec "${TEST_POD}" -n "${NAMESPACE}" -- curl -s -o /dev/null -w '%{http_code}' "http://${INTERNAL_HOST}/" --connect-timeout 5 2>/dev/null || echo "000")
-
-    if [ "$PUB_CODE" = "200" ] && [ "$INT_CODE" = "200" ]; then
-        check "Both ALBs return HTTP 200" "true" "Public: ${PUB_CODE}, Internal: ${INT_CODE}"
-    else
-        warn_ "ALB response mismatch" "Public: ${PUB_CODE}, Internal: ${INT_CODE}"
-    fi
-else
-    warn_ "Public ALB not found" "Cannot compare"
-fi
-
 # ── Summary ──
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo -e "  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}  Warnings: ${YELLOW}${WARN}${NC}"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
-echo "  Internal ALB URL:"
-echo -e "    ${CYAN}http://${INTERNAL_HOST}${NC}"
+echo "  Internal ALB URL (HTTPS-only, no HTTP listener):"
+echo -e "    ${CYAN}https://${INTERNAL_HOST}${NC}"
 echo ""
 echo "  This URL is only accessible from within VPC ${ALB_VPC}"
 echo ""

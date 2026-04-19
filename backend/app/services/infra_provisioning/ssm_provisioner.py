@@ -19,6 +19,8 @@ from typing import Dict, List, Optional, Tuple, Callable
 import boto3
 from botocore.exceptions import ClientError
 
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
+
 from .models import (
     ResourceType,
     ResourceStatus,
@@ -64,11 +66,12 @@ class SSMProvisioner:
         if endpoint_url:
             client_kwargs["endpoint_url"] = endpoint_url
         
+        merged = merge_vpc_boto3_kwargs("ssm", region, dict(client_kwargs))
         # Use provided session or create new one
         if boto3_session:
-            self.client = boto3_session.client("ssm", **client_kwargs)
+            self.client = boto3_session.client("ssm", **merged)
         else:
-            self.client = boto3.client("ssm", **client_kwargs)
+            self.client = boto3.client("ssm", **merged)
     
     def _log_progress(self, message: str):
         """Log progress to both logger and callback if available."""
@@ -361,6 +364,10 @@ class SSMProvisioner:
             self.naming.ssm_parameter("dynamodb", "wxcc-task-table"): (
                 self.naming.wxcc_task_tracking_table(),
                 "DynamoDB WXCC task tracking table",
+            ),
+            self.naming.ssm_parameter("dynamodb", "lead-tracking-table"): (
+                self.naming.lead_opportunity_tracking_table(),
+                "DynamoDB lead/opportunity tracking table",
             ),
         }
     

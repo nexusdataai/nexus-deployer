@@ -60,6 +60,8 @@ spec:
                   fieldPath: metadata.name
             - name: AWS_REGION
               value: "us-east-1"  # Override via ConfigMap or env
+            - name: AWS_CA_BUNDLE
+              value: "/etc/ssl/certs/ca-certificates.crt"
             - name: EKS_CLUSTER_NAME
               value: ""  # REQUIRED: Set to your EKS cluster name for IRSA
             - name: LOG_LEVEL

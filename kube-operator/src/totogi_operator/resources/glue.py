@@ -7,9 +7,9 @@ Requirements: 4.4
 import logging
 from typing import Dict, List, Any
 
-import boto3
 from botocore.exceptions import ClientError
 
+from ..utils.aws_vpc_endpoints import vpc_boto3_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,9 @@ class GlueProvisioner:
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming
         self.region = region
-        self.client = boto3.client("glue", region_name=region)
-        self.athena_client = boto3.client("athena", region_name=region)
-        self.s3_client = boto3.client("s3", region_name=region)
+        self.client = vpc_boto3_client("glue", region_name=region)
+        self.athena_client = vpc_boto3_client("athena", region_name=region)
+        self.s3_client = vpc_boto3_client("s3", region_name=region)
     
     async def provision_all(self, s3_location: str = None) -> List[Dict[str, Any]]:
         """
@@ -127,7 +127,7 @@ class GlueProvisioner:
         bucket = self.naming.call_data_bucket()
         
         try:
-            s3 = boto3.client("s3", region_name=self.region)
+            s3 = vpc_boto3_client("s3", region_name=self.region)
             
             # Get table storage descriptor for partition template
             table = self.client.get_table(DatabaseName=database_name, Name=table_name)
@@ -207,7 +207,7 @@ class GlueProvisioner:
                 }
             )
             try:
-                account_id = boto3.client("sts", region_name=self.region).get_caller_identity()["Account"]
+                account_id = vpc_boto3_client("sts", region_name=self.region).get_caller_identity()["Account"]
                 db_arn = f"arn:aws:glue:{self.region}:{account_id}:database/{database_name}"
                 self.client.tag_resource(ResourceArn=db_arn, TagsToAdd=self.naming.aws_tags_dict())
             except Exception as tag_err:
@@ -270,7 +270,7 @@ class GlueProvisioner:
                 }
             )
             try:
-                account_id = boto3.client("sts", region_name=self.region).get_caller_identity()["Account"]
+                account_id = vpc_boto3_client("sts", region_name=self.region).get_caller_identity()["Account"]
                 table_arn = f"arn:aws:glue:{self.region}:{account_id}:table/{database_name}/{table_name}"
                 self.client.tag_resource(ResourceArn=table_arn, TagsToAdd=self.naming.aws_tags_dict())
             except Exception as tag_err:

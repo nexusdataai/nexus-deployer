@@ -12,6 +12,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.models.cognito_models import CognitoOutputs
+from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,10 @@ class CognitoSSMIntegration:
         
         # Create SSM client
         self.ssm_client = boto3.client(
-            'ssm',
-            region_name=region,
-            **self.credentials
+            "ssm",
+            **merge_vpc_boto3_kwargs(
+                "ssm", region, {**self.credentials, "region_name": region}
+            ),
         )
     
     def _get_ssm_path(self, parameter_name: str) -> str:
