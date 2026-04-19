@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Frontend Cognito User Pool Stack - Authentication with RBAC Groups
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+
+  FrontendDomainName:
+    Type: String
+    Description: Frontend domain name for OAuth callback URLs (e.g., app.example.com)
+
+Resources:
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${CapabilityName}-${Environment}"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      EmailVerificationMessage: 'Your ${CapabilityName} verification code is {####}'
+      EmailVerificationSubject: '${CapabilityName} - Email Verification'
+      
+      # Password Policy
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+          
+      # Custom Attributes for RBAC
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: department
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: manager_id
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: employee_id
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: team_ids
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+          
+      # Account Recovery
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+            
+      # Admin Create User Config - Suppress email since we use local addresses
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+        InviteMessageTemplate:
+          EmailMessage: "Your username is {username} and temporary password is {####}."
+          EmailSubject: !Sub "${CapabilityName} - Your temporary password"
+
+  # User Pool App Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub "${CapabilityName}-client-${Environment}"
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !Sub "https://${FrontendDomainName}/auth/callback"
+        - http://localhost:5173/auth/callback
+      LogoutURLs:
+        - !Sub "https://${FrontendDomainName}/login"
+        - http://localhost:5173/login
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+        - aws.cognito.signin.user.admin
+      AllowedOAuthFlowsUserPoolClient: true
+      PreventUserExistenceErrors: ENABLED
+      
+      # Token Validity
+      AccessTokenValidity: 8  # 8 hours
+      IdTokenValidity: 8      # 8 hours  
+      RefreshTokenValidity: 30 # 30 days
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # User Pool Domain
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub "${CapabilityName}-${Environment}-${AWS::AccountId}"
+
+  # RBAC Groups
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: Admin
+      Description: System administrators with full access to all features
+      Precedence: 0
+
+  ExecutiveGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: Executive
+      Description: Executive users with full system access
+      Precedence: 1
+
+  SalesManagerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: SalesManager
+      Description: Sales managers with team access and individual call analysis
+      Precedence: 2
+
+  RepGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: Rep
+      Description: Sales representatives with individual access only
+      Precedence: 3
+
+  # Default Admin User (created in all environments)
+  # Using MessageAction: SUPPRESS to prevent email being sent to non-existent address
+  # Note: TemporaryPassword removed as it's not allowed on stack updates
+  # Users will need to use "Forgot Password" flow or be reset via AWS Console/CLI
+  DefaultAdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Sub "admin@${CapabilityName}.local"
+      DesiredDeliveryMediums:
+        - EMAIL
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: email
+          Value: !Sub "admin@${CapabilityName}.local"
+        - Name: email_verified
+          Value: "true"
+        - Name: name
+          Value: System Administrator
+        - Name: custom:role
+          Value: Admin
+        - Name: custom:department
+          Value: IT
+
+  # Add default admin to Admin group
+  DefaultAdminGroupMembership:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref DefaultAdminUser
+      GroupName: !Ref AdminGroup
+
+  # Test Users (dev and prod only)
+  # Note: TemporaryPassword removed as it's not allowed on stack updates
+  ExecutiveTestUser:
+    Type: AWS::Cognito::UserPoolUser
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Sub "executive@${CapabilityName}.test"
+      DesiredDeliveryMediums:
+        - EMAIL
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: email
+          Value: !Sub "executive@${CapabilityName}.test"
+        - Name: email_verified
+          Value: "true"
+        - Name: name
+          Value: Test Executive
+        - Name: custom:role
+          Value: Executive
+        - Name: custom:department
+          Value: Management
+
+  SalesManagerTestUser:
+    Type: AWS::Cognito::UserPoolUser
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Sub "salesmanager@${CapabilityName}.test"
+      DesiredDeliveryMediums:
+        - EMAIL
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: email
+          Value: !Sub "salesmanager@${CapabilityName}.test"
+        - Name: email_verified
+          Value: "true"
+        - Name: name
+          Value: Test Sales Manager
+        - Name: custom:role
+          Value: SalesManager
+        - Name: custom:department
+          Value: Sales
+
+  RepTestUser:
+    Type: AWS::Cognito::UserPoolUser
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Sub "rep@${CapabilityName}.test"
+      DesiredDeliveryMediums:
+        - EMAIL
+      MessageAction: SUPPRESS
+      UserAttributes:
+        - Name: email
+          Value: !Sub "rep@${CapabilityName}.test"
+        - Name: email_verified
+          Value: "true"
+        - Name: name
+          Value: Test Sales Rep
+        - Name: custom:role
+          Value: Rep
+        - Name: custom:department
+          Value: Sales
+        - Name: custom:manager_id
+          Value: !Sub "salesmanager@${CapabilityName}.test"
+
+  # Add test users to groups
+  ExecutiveGroupMembership:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref ExecutiveTestUser
+      GroupName: !Ref ExecutiveGroup
+
+  SalesManagerGroupMembership:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref SalesManagerTestUser
+      GroupName: !Ref SalesManagerGroup
+
+  RepGroupMembership:
+    Type: AWS::Cognito::UserPoolUserToGroupAttachment
+    Condition: CreateTestUsers
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref RepTestUser
+      GroupName: !Ref RepGroup
+
+Conditions:
+  CreateTestUsers: !Or
+    - !Equals [!Ref Environment, dev]
+    - !Equals [!Ref Environment, prod]
+
+Outputs:
+  UserPoolId:
+    Description: User Pool ID for the application
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+      
+  UserPoolClientId:
+    Description: User Pool Client ID for the application
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+      
+  UserPoolDomain:
+    Description: User Pool Domain for OAuth
+    Value: !Sub "${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolDomain"
+      
+  Region:
+    Description: AWS Region
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-Region"
+      
+  CallbackURL:
+    Description: Configured callback URL
+    Value: !Sub "https://${FrontendDomainName}/auth/callback"
+    Export:
+      Name: !Sub "${AWS::StackName}-CallbackURL"
+
+  # Environment variables for frontend application
+  EnvVarUserPoolId:
+    Description: Environment variable for User Pool ID
+    Value: !Sub "VITE_COGNITO_USER_POOL_ID=${UserPool}"
+    
+  EnvVarClientId:
+    Description: Environment variable for Client ID  
+    Value: !Sub "VITE_COGNITO_CLIENT_ID=${UserPoolClient}"
+    
+  EnvVarRegion:
+    Description: Environment variable for AWS Region
+    Value: !Sub "VITE_AWS_REGION=${AWS::Region}"
+    
+  EnvVarDomain:
+    Description: Environment variable for Cognito Domain
+    Value: !Sub "VITE_COGNITO_DOMAIN=${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+    
+  # Default Admin User Email
+  AdminUserEmail:
+    Description: Default admin user email
+    Value: !Sub "admin@${CapabilityName}.local"
+    Export:
+      Name: !Sub "${AWS::StackName}-AdminUserEmail"
+
+  # Test User Credentials (if created)
+  TestUsersInfo:
+    Condition: CreateTestUsers
+    Description: Test user emails (use AWS Console or CLI to set passwords)
+    Value: !Sub |
+      Executive: executive@${CapabilityName}.test
+      Sales Manager: salesmanager@${CapabilityName}.test
+      Sales Rep: rep@${CapabilityName}.test
+      Note: Use AWS Cognito Console or CLI to set user passwords
+

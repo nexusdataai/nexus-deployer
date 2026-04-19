@@ -1,0 +1,84 @@
+{
+  "infrastructure": {
+    "domain": {
+      "base": "totogicore.com",
+      "frontend_subdomain": "call-test",
+      "backend_subdomain": "call-api-test",
+      "hosted_zone_id": "Z084501638STQ2EKKSIA"
+    },
+    "frontend": {
+      "cloudfront": {
+        "enabled": true,
+        "price_class": "PriceClass_100",
+        "waf_enabled": false,
+        "cache_ttl": 86400,
+        "enable_logging": false,
+        "enable_ipv6": true,
+        "rate_limit": 2000
+      }
+    },
+    "backend": {
+      "vpc": {
+        "create_new": false,
+        "vpc_cidr": "10.0.0.0/16",
+        "enable_nat_gateway": false,
+        "enable_flow_logs": false,
+        "vpc_id": "vpc-0890d9cbaac5fef06",
+        "public_subnets": null,
+        "private_subnets": null,
+        "public_subnet_1": "subnet-095d9d5dd592936c9",
+        "public_subnet_2": "subnet-03e07946082ca5c52",
+        "private_subnet_1": "subnet-083a753b534384209",
+        "private_subnet_2": "subnet-0c0745c3a5bb92084"
+      },
+      "ecs": {
+        "cluster_name": null,
+        "container_port": 8000,
+        "task_cpu": 256,
+        "task_memory": 512,
+        "desired_count": 1,
+        "health_check_path": "/health"
+      },
+      "autoscaling": {
+        "enabled": false,
+        "min_capacity": 1,
+        "max_capacity": 3,
+        "target_cpu": 70,
+        "target_memory": 70
+      },
+      "storage": {
+        "dynamodb_billing_mode": "PAY_PER_REQUEST",
+        "dynamodb_read_capacity": null,
+        "dynamodb_write_capacity": null,
+        "enable_backup": false,
+        "enable_point_in_time_recovery": false,
+        "ecr_image_scan_on_push": true,
+        "ecr_image_retention_days": 7
+      },
+      "certificate": {
+        "create_in_foundation": true
+      },
+      "alb": {
+        "enable_access_logs": false,
+        "deregistration_delay": 30,
+        "health_check_interval": 30,
+        "health_check_timeout": 5,
+        "healthy_threshold": 2,
+        "unhealthy_threshold": 3
+      }
+    },
+    "monitoring": {
+      "cloudwatch": {
+        "log_retention_days": 7,
+        "container_insights": false
+      }
+    },
+    "tags": {
+      "common": {
+        "Environment": "test",
+        "Project": "",
+        "CostCenter": ""
+      }
+    }
+  }
+}

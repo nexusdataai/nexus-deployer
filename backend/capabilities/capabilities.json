@@ -1,0 +1,198 @@
+{
+  "capabilities": [
+    {
+      "id": "call-processing",
+      "name": "Call Processing",
+      "version": "1.2.0",
+      "description": "AI-powered voice call routing and processing system with real-time analytics",
+      "icon": "phone-call.svg",
+      "category": "Voice Services",
+      "supported_clouds": ["aws"],
+      "supported_environments": ["dev", "test", "stage", "prod"],
+      "requirements": {
+        "frontend": true,
+        "backend": true,
+        "database": true,
+        "authentication": true
+      },
+      "artifacts": {
+        "frontend": {
+          "s3_uri": "s3://starhub-ui-delivery-ps/starhub-ui-1.0.0.zip",
+          "size_mb": 15
+        },
+        "backend": {
+          "ecr_uri": "764119721991.dkr.ecr.us-east-1.amazonaws.com/ai-job-engine:latest",
+          "size_mb": 250
+        }
+      },
+      "eks_artifacts": {
+        "frontend_ecr_uri": "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/starhub-ui:dev",
+        "backend_ecr_uri": "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/ai-job-engine:dev"
+      },
+      "aws_options": {
+        "frontend": ["cloudfront-s3", "eks"],
+        "backend": ["ecs-fargate", "eks"]
+      },
+      "estimated_deployment_time": 20,
+      "documentation_url": "https://docs.totogi.com/call-processing",
+      "required_iam_permissions": [
+        "cloudformation:CreateStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "s3:CreateBucket",
+        "s3:PutObject",
+        "s3:GetObject",
+        "cloudfront:CreateDistribution",
+        "cloudfront:UpdateDistribution",
+        "ecs:CreateCluster",
+        "ecs:CreateService",
+        "ecs:RegisterTaskDefinition",
+        "ec2:CreateVpc",
+        "ec2:CreateSubnet",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "route53:ChangeResourceRecordSets",
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:CreateUserPoolClient"
+      ],
+      "eks_iam_permissions": [
+        "eks:DescribeCluster",
+        "eks:ListClusters",
+        "eks:AccessKubernetesApi",
+        "eks:ListNodegroups",
+        "eks:DescribeNodegroup",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "s3:CreateBucket",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:PassRole",
+        "sts:AssumeRoleWithWebIdentity"
+      ],
+      "prerequisites": [
+        "AWS account with appropriate permissions",
+        "Route53 hosted zone configured",
+        "Domain name for deployment"
+      ]
+    },
+    {
+      "id": "billing-engine",
+      "name": "Billing Engine",
+      "version": "2.0.1",
+      "description": "Real-time billing and charging system with usage tracking and invoice generation",
+      "icon": "billing.svg",
+      "category": "Billing",
+      "status": "coming_soon",
+      "status_message": "Coming Soon",
+      "supported_clouds": ["aws"],
+      "supported_environments": ["dev", "test", "stage", "prod"],
+      "requirements": {
+        "frontend": true,
+        "backend": true,
+        "database": true,
+        "authentication": true
+      },
+      "artifacts": {
+        "frontend": {
+          "s3_uri": "s3://totogi-artifacts/billing-engine/frontend-v2.0.1.zip",
+          "size_mb": 12
+        },
+        "backend": {
+          "ecr_uri": "764119721991.dkr.ecr.us-east-1.amazonaws.com/billing-engine:v2.0.1",
+          "size_mb": 180
+        }
+      },
+      "aws_options": {
+        "frontend": ["cloudfront-s3"],
+        "backend": ["ecs-fargate"]
+      },
+      "estimated_deployment_time": 18,
+      "documentation_url": "https://docs.totogi.com/billing-engine",
+      "required_iam_permissions": [
+        "cloudformation:CreateStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "s3:CreateBucket",
+        "s3:PutObject",
+        "s3:GetObject",
+        "cloudfront:CreateDistribution",
+        "cloudfront:UpdateDistribution",
+        "ecs:CreateCluster",
+        "ecs:CreateService",
+        "ecs:RegisterTaskDefinition",
+        "ec2:CreateVpc",
+        "ec2:CreateSubnet",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:CreateUserPoolClient"
+      ],
+      "prerequisites": [
+        "AWS account with appropriate permissions",
+        "DynamoDB service limits sufficient for deployment"
+      ]
+    },
+    {
+      "id": "customer-portal",
+      "name": "Customer Portal",
+      "version": "1.0.5",
+      "description": "Self-service customer portal for account management and service configuration",
+      "icon": "portal.svg",
+      "category": "Customer Experience",
+      "status": "coming_soon",
+      "status_message": "Coming Soon",
+      "supported_clouds": ["aws"],
+      "supported_environments": ["dev", "test", "stage", "prod"],
+      "requirements": {
+        "frontend": true,
+        "backend": true,
+        "database": true,
+        "authentication": true
+      },
+      "artifacts": {
+        "frontend": {
+          "s3_uri": "s3://totogi-artifacts/customer-portal/frontend-v1.0.5.zip",
+          "size_mb": 18
+        },
+        "backend": {
+          "ecr_uri": "764119721991.dkr.ecr.us-east-1.amazonaws.com/customer-portal:v1.0.5",
+          "size_mb": 200
+        }
+      },
+      "aws_options": {
+        "frontend": ["cloudfront-s3"],
+        "backend": ["ecs-fargate"]
+      },
+      "estimated_deployment_time": 15,
+      "documentation_url": "https://docs.totogi.com/customer-portal",
+      "required_iam_permissions": [
+        "cloudformation:CreateStack",
+        "cloudformation:DescribeStacks",
+        "s3:CreateBucket",
+        "s3:PutObject",
+        "cloudfront:CreateDistribution",
+        "ecs:CreateCluster",
+        "ecs:CreateService",
+        "cognito-idp:CreateUserPool"
+      ],
+      "prerequisites": [
+        "AWS account with appropriate permissions"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,235 @@
+---
+# Complete Call Processing Deployment with ALB Ingress
+#
+# This example shows TWO deployment options:
+#
+# OPTION 1: ALB Ingress (RECOMMENDED for production)
+#   - Single ALB handles both frontend and backend
+#   - Path-based routing: / → frontend, /api → backend
+#   - HTTPS support with ACM certificate
+#   - Cost-effective: 1 ALB instead of 2 LoadBalancers
+#
+# OPTION 2: Dual LoadBalancer Services (legacy)
+#   - Separate LoadBalancer for frontend and backend
+#   - Additional internal ClusterIP for UI → backend
+#
+# Prerequisites for ALB Ingress:
+#   - AWS Load Balancer Controller installed
+#   - Subnets tagged (see AWS-ALB-SETUP.md)
+#   - (Optional) ACM certificate for HTTPS
+#
+# Deploy:
+#   kubectl create namespace call-processing-__ENV__
+#   kubectl apply -f call-processing-complete.yaml
+
+---
+# ============================================================
+# OPTION 1: TotogiCapability with ALB Ingress (RECOMMENDED)
+# ============================================================
+apiVersion: totogi.com/v1
+kind: TotogiCapability
+metadata:
+  name: call-processing-__ENV__
+  namespace: call-processing-__ENV__
+  labels:
+    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/version: "2.5.0"
+    totogi.com/environment: __ENV__
+    totogi.com/criticality: high
+spec:
+  # Capability identification
+  capabilityName: call-processing
+  version: "2.5.0"
+  environment: __ENV__
+  region: ap-southeast-1
+  enableCognito: true
+  adminEmail: "admin@totogi.com"     # Initial admin user (password change required on first login)
+  
+  # Frontend - Must listen on port 8080
+  frontend:
+    replicas: 3
+    image: "__ECR_REGISTRY__/starhub-ui:latest"
+  
+  # Backend - Must listen on port 8000 with /health endpoint
+  backend:
+    replicas: 3
+    image: "__ECR_REGISTRY__/ai-job-engine:latest"
+  
+  # BSS Magic Runtime — All-in-one StatefulSet with embedded PostgreSQL
+  #
+  # Architecture:
+  #   Single container running PostgreSQL + TMF Server + Controller + FDW (Axway) + TMF REST API
+  #   No separate PostgreSQL pod needed — PVC provides data persistence
+  #   Internal only — called by backend via K8s service DNS, NOT exposed through ALB
+  #
+  # Ports (internal):
+  #   5432 - PostgreSQL
+  #   8000 - Built-in TMF Server
+  #   3000 - Controller health/metrics
+  #   9000 - Custom TMF REST API
+  #
+  # Init containers:
+  #   1. fetch-dump: pulls pg_dump from S3 (schema restore on first boot)
+  #   2. fetch-credentials: pulls credentials.zip from Secrets Manager
+  #
+  # Secrets (auto-created by operator on first deploy):
+  #   {capability}/{env}/bssmagic-credentials   — credentials.zip binary (upload manually)
+  #   {capability}/{env}/bssmagic-axway-config  — Axway endpoints + auth (UAT defaults)
+  bssmagic:
+    enabled: true
+    image: "__ECR_REGISTRY__/bssmagic-starhub-k8s:latest"
+    replicas: 1
+    # Credentials: upload via CLI after operator creates the placeholder secret:
+    #   aws secretsmanager put-secret-value \
+    #     --secret-id "call-processing/__ENV__/bssmagic-credentials" \
+    #     --secret-binary fileb://credentials.zip --region ap-southeast-1
+    credentialsSecretName: "call-processing/__ENV__/bssmagic-credentials"
+    # Axway config: operator auto-creates with UAT endpoint defaults.
+    # Update CLIENT_ID, CLIENT_SECRET, KEY_ID, PROVIDER_ORG for your environment:
+    #   aws secretsmanager put-secret-value \
+    #     --secret-id "call-processing/__ENV__/bssmagic-axway-config" \
+    #     --secret-string '{"AXWAY_CLIENT_ID":"...","AXWAY_CLIENT_SECRET":"..."}' \
+    #     --region ap-southeast-1
+    axwaySecretName: "call-processing/__ENV__/bssmagic-axway-config"
+    # S3 dump: operator auto-creates bucket. Upload dump for faster first boot:
+    #   aws s3 cp bssmagic-dump.sql.gz s3://call-processing-__ENV__-bssmagic-dumps-ACCOUNT_ID/
+    # If S3 dump not found, falls back to baked-in dump in the Docker image.
+    dumpS3Bucket: ""                    # Set to bucket name after creation (operator logs it)
+    dumpS3Key: "bssmagic-dump.sql.gz"
+    storageSize: "20Gi"
+    storageClass: "gp2"                 # EKS default StorageClass (EBS)
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    # env:                              # Optional: source configuration overrides
+    #   - name: MYSALESFORCE_USERNAME
+    #     value: "myname@mycompany.com"
+
+  # ALB Ingress Configuration
+  # This creates a single ALB with path-based routing:
+  #   / → frontend (port 8080)
+  #   /api → backend (port 8000)
+  # BSS Magic is internal-only (ClusterIP) — backend calls it via K8s service DNS
+  ingress:
+    enabled: true
+    scheme: internet-facing              # Use "internal" for private ALB
+    # subnets: []                        # Optional: auto-discovers from VPC tags if omitted
+    # certificateArn: "arn:aws:acm:REGION:ACCOUNT:certificate/UUID"  # Enables HTTPS + HTTP->HTTPS redirect
+    healthCheckPath: "/health"
+
+  # Internal ALB Ingress (VPC-only access)
+  # Creates a second ALB with scheme "internal", accessible only from within the VPC.
+  # Routes to the same services as the public ALB.
+  internalIngress:
+    enabled: true
+    healthCheckPath: "/health"
+    # subnets: []                        # Optional: private subnets for internal ALB
+    # certificateArn: "arn:aws:acm:REGION:ACCOUNT:certificate/UUID"  # Enables HTTPS on internal ALB
+  
+  # AWS resources (DynamoDB, S3, Glue)
+  dataServices:
+    dynamodb:
+      enabled: true
+    s3:
+      enabled: true
+    glue:
+      enabled: true
+  
+  # Cleanup policy
+  deletionPolicy: Delete
+
+---
+# ============================================================
+# OPTION 2: Additional Services (only if NOT using ALB Ingress)
+# ============================================================
+# If you disable ingress (ingress.enabled: false), the operator
+# creates LoadBalancer services. You can add these additional
+# services for dual-access patterns.
+
+# Internal ClusterIP Service - For fast UI → backend access
+# Only needed if NOT using ALB Ingress
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: call-processing-__ENV__-backend-svc-internal
+#   namespace: call-processing-__ENV__
+#   labels:
+#     app.kubernetes.io/name: call-processing
+#     app.kubernetes.io/component: backend
+#     totogi.com/service-type: internal
+# spec:
+#   type: ClusterIP
+#   selector:
+#     app: call-processing-__ENV__-backend
+#   ports:
+#     - name: http
+#       port: 8000
+#       targetPort: 8000
+#       protocol: TCP
+
+---
+# ============================================================
+# Usage Notes
+# ============================================================
+#
+# WITH ALB INGRESS (RECOMMENDED):
+#   Access URL: http://<ALB_DNS_NAME>
+#   
+#   Frontend:   http://<ALB_DNS_NAME>/
+#   Backend:    http://<ALB_DNS_NAME>/api/...
+#   BSS Magic:  http://<ALB_DNS_NAME>/bssmagic/... (TMF API proxy, for future product UI)
+#               Also reachable internally: http://{capability}-{env}-bssmagic-svc.{ns}.svc.cluster.local:8000
+#   
+#   Get ALB DNS:
+#     kubectl get ingress call-processing-__ENV__-app-ingress \
+#       -n call-processing-__ENV__ \
+#       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+#
+# WITHOUT ALB INGRESS (LoadBalancer services):
+#   Frontend: http://<FRONTEND_LB>:8080
+#   Backend:  http://<BACKEND_LB>:8000
+#
+# Architecture with ALB:
+#   ┌────────────────────────────────────────────────────────────┐
+#   │                           ALB                              │
+#   │            (internet-facing, HTTPS optional)               │
+#   └────────┬──────────────┬──────────────┬─────────────────────┘
+#            │              │              │
+#      path: /        path: /api     path: /bssmagic
+#            │              │              │
+#            ▼              ▼              ▼
+#   ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐
+#   │ Frontend SVC │  │ Backend SVC  │  │ BSS Magic SVC     │
+#   │ (ClusterIP)  │  │ (ClusterIP)  │  │ (ClusterIP)       │
+#   │ port: 8080   │  │ port: 8000   │  │ :8000 :3000       │
+#   └──────┬───────┘  └──────┬───────┘  └────────┬──────────┘
+#          │                 │  internal DNS      │
+#          ▼                 ▼◄────────────────────┘
+#   ┌──────────────┐  ┌──────────────┐
+#   │ Frontend     │  │ Backend      │
+#   │ Pods (3)     │  │ Pods (3)     │
+#   └──────────────┘  └──────────────┘
+#                                                       │
+#                                              ┌────────▼──────────┐
+#                                              │ bssmagic-runtime  │
+#                                              │ StatefulSet (1)   │
+#                                              │ + PVC (PG data)   │
+#                                              │                   │
+#                                              │ InitC 1: S3 dump  │
+#                                              │ InitC 2: creds.zip│
+#                                              │                   │
+#                                              │ Embedded PG +     │
+#                                              │ TMF Server + FDW  │
+#                                              │ + TMF REST API    │
+#                                              └───────────────────┘
+#
+# Benefits of ALB Ingress:
+#   - Single entry point for frontend, backend, and BSS Magic
+#   - Cost: 1 ALB vs multiple LoadBalancers
+#   - HTTPS with ACM certificate
+#   - Path-based routing built-in
+#   - HTTP/2 and WebSocket support

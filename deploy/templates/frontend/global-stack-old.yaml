@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Frontend Global Resources Stack - S3, WAF, Certificate, Route53 (us-east-1 only)
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - stage
+      - prod
+    Default: dev
+  
+  BaseDomain:
+    Type: String
+    Description: Base domain name (e.g., example.com)
+    AllowedPattern: ^[a-z0-9][a-z0-9-\.]*\.[a-z]{2,}$
+    ConstraintDescription: Must be a valid domain name
+  
+  FrontendSubdomain:
+    Type: String
+    Description: Frontend subdomain (e.g., app)
+    Default: app
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+  
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for the base domain
+    AllowedPattern: ^Z[0-9A-Z]+$
+  
+  EnableWAF:
+    Type: String
+    Description: Enable WAF protection for CloudFront
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  RateLimitPerIP:
+    Type: Number
+    Description: Rate limit per IP address (requests per 5 minutes)
+    Default: 2000
+    MinValue: 100
+    MaxValue: 10000
+
+Conditions:
+  CreateWAF: !Equals [!Ref EnableWAF, 'true']
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # S3 Bucket for Frontend Static Content
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub '${CapabilityName}-${Environment}-frontend'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: !If [IsProd, 90, 30]
+          - Id: TransitionOldVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-frontend'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+  # S3 Bucket Policy for CloudFront Origin Access Identity
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontOAI
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}'
+            Action:
+              - s3:GetObject
+            Resource: !Sub '${S3Bucket.Arn}/*'
+          - Sid: AllowCloudFrontListBucket
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}'
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt S3Bucket.Arn
+
+  # CloudFront Origin Access Identity
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${CapabilityName}-${Environment}'
+
+  # ACM Certificate (must be in us-east-1 for CloudFront)
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${FrontendSubdomain}.${BaseDomain}'
+      SubjectAlternativeNames:
+        - !Sub '${FrontendSubdomain}.${BaseDomain}'
+        - !If
+          - IsProd
+          - !Sub '*.${FrontendSubdomain}.${BaseDomain}'
+          - !Ref AWS::NoValue
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${FrontendSubdomain}.${BaseDomain}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-frontend-cert'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WAF WebACL for CloudFront
+  WAFWebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: CreateWAF
+    Properties:
+      Name: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+      Scope: CLOUDFRONT
+      Description: !Sub 'WAF for ${CapabilityName} ${Environment} frontend'
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+      Rules:
+        # Rate limiting rule
+        - Name: RateLimitRule
+          Priority: 1
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref RateLimitPerIP
+              AggregateKeyType: IP
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 429
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRule
+        
+        # AWS Managed Core Rule Set
+        - Name: AWSManagedRulesCoreRuleSet
+          Priority: 2
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: SizeRestrictions_BODY
+                - Name: GenericRFI_BODY
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CoreRuleSet
+        
+        # Known Bad Inputs Rule Set
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 3
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputs
+        
+        # SQL injection protection
+        - Name: SQLiProtection
+          Priority: 4
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLiProtection
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group for WAF
+  # Note: WAFv2 logging requires log group names to start with 'aws-waf-logs-'
+  WAFLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateWAF
+    Properties:
+      LogGroupName: !Sub 'aws-waf-logs-${CapabilityName}-${Environment}-frontend'
+      RetentionInDays: !If [IsProd, 30, 7]
+
+  # WAF Logging Configuration
+  WAFLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Condition: CreateWAF
+    Properties:
+      ResourceArn: !GetAtt WAFWebACL.Arn
+      LogDestinationConfigs:
+        - !GetAtt WAFLogGroup.Arn
+
+  # Note: Route53 record is created by the regional stack with CloudFront alias
+
+Outputs:
+  S3BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+  
+  S3BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt S3Bucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketArn'
+  
+  S3BucketDomainName:
+    Description: |
+      Regional domain name of the S3 bucket (bucket.s3.region.amazonaws.com).
+      IMPORTANT: Use this regional endpoint for CloudFront origins to ensure
+      proper connectivity when the bucket is not in us-east-1.
+    Value: !GetAtt S3Bucket.RegionalDomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketDomainName'
+  
+  CloudFrontOAI:
+    Description: CloudFront Origin Access Identity ID
+    Value: !Ref CloudFrontOriginAccessIdentity
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontOAI'
+  
+  CertificateArn:
+    Description: ARN of the ACM certificate
+    Value: !Ref Certificate
+    Export:
+      Name: !Sub '${AWS::StackName}-CertificateArn'
+  
+  WAFWebACLArn:
+    Description: ARN of the WAF WebACL
+    Condition: CreateWAF
+    Value: !GetAtt WAFWebACL.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFWebACLArn'
+  
+  FrontendDomainName:
+    Description: Frontend domain name
+    Value: !Sub '${FrontendSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendDomainName'
+  
+  HostedZoneId:
+    Description: Route53 Hosted Zone ID
+    Value: !Ref HostedZoneId
+    Export:
+      Name: !Sub '${AWS::StackName}-HostedZoneId'

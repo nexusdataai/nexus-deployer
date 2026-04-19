@@ -1,0 +1,133 @@
+openapi: 3.0.3
+info:
+  title: Document Management - ContentVersion
+  version: 1.0.0
+  description: StarHub custom spec for ContentVersion (file upload) via BSS Magic mapping views.
+servers:
+  - url: /tmf-api/documentManagement/v1
+paths:
+  /contentVersion:
+    get:
+      operationId: listContentVersion
+      summary: List content versions
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: fields
+          in: query
+          schema:
+            type: string
+        - name: title
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentVersion'
+    post:
+      operationId: createContentVersion
+      summary: Upload a content version (file)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentVersion_Create'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentVersion'
+  /contentVersion/{id}:
+    get:
+      operationId: retrieveContentVersion
+      summary: Retrieve a content version by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentVersion'
+        '404':
+          description: Not found
+components:
+  schemas:
+    ContentVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        pathOnClient:
+          type: string
+        versionData:
+          type: string
+        firstPublishLocationId:
+          type: string
+        contentDocumentId:
+          type: string
+        contentSize:
+          type: integer
+        mimeType:
+          type: string
+        fileExtension:
+          type: string
+        versionNumber:
+          type: string
+        publishStatus:
+          type: string
+        contentLocation:
+          type: string
+        fileType:
+          type: string
+        contentNumber:
+          type: string
+        ownerId:
+          type: string
+        createdDate:
+          type: string
+        lastModifiedDate:
+          type: string
+    ContentVersion_Create:
+      type: object
+      required:
+        - title
+        - pathOnClient
+        - versionData
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        pathOnClient:
+          type: string
+        versionData:
+          type: string
+        firstPublishLocationId:
+          type: string
+        fileType:
+          type: string

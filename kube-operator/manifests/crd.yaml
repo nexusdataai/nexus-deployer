@@ -1,0 +1,437 @@
+---
+# TotogiCapability Custom Resource Definition
+# Feature: pure-eks-deployment
+# Requirements: 4.1, 4.2, 12.3
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: totogicapabilities.totogi.com
+  annotations:
+    description: "Manages Totogi capability deployments including AWS resources and Kubernetes workloads"
+spec:
+  group: totogi.com
+  names:
+    kind: TotogiCapability
+    listKind: TotogiCapabilityList
+    plural: totogicapabilities
+    singular: totogicapability
+    shortNames:
+      - tc
+      - tcap
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            spec:
+              type: object
+              required:
+                - capabilityName
+                - version
+                - environment
+                - region
+              properties:
+                capabilityName:
+                  type: string
+                  description: "Name of the Totogi capability to deploy"
+                  pattern: "^[a-z0-9-]+$"
+                  minLength: 1
+                  maxLength: 63
+                version:
+                  type: string
+                  description: "Version of the capability"
+                  pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+.*$"
+                environment:
+                  type: string
+                  description: "Target environment (dev, staging, prod)"
+                  enum:
+                    - dev
+                    - staging
+                    - prod
+                    - test
+                region:
+                  type: string
+                  description: "AWS region for data services"
+                  pattern: "^[a-z]{2}-[a-z]+-[0-9]+$"
+                enableCognito:
+                  type: boolean
+                  description: "Enable Cognito authentication for the capability"
+                  default: false
+                adminEmail:
+                  type: string
+                  description: "Email for the initial admin user (created with temporary password)"
+                  format: email
+                frontend:
+                  type: object
+                  description: "Frontend deployment configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    replicas:
+                      type: integer
+                      minimum: 1
+                      maximum: 20
+                      default: 2
+                    image:
+                      type: string
+                      description: "Container image for frontend"
+                    resources:
+                      type: object
+                      properties:
+                        requests:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "100m"
+                            memory:
+                              type: string
+                              default: "128Mi"
+                        limits:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "500m"
+                            memory:
+                              type: string
+                              default: "512Mi"
+                backend:
+                  type: object
+                  description: "Backend deployment configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    replicas:
+                      type: integer
+                      minimum: 1
+                      maximum: 20
+                      default: 2
+                    image:
+                      type: string
+                      description: "Container image for backend"
+                    resources:
+                      type: object
+                      properties:
+                        requests:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "250m"
+                            memory:
+                              type: string
+                              default: "512Mi"
+                        limits:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "500m"
+                            memory:
+                              type: string
+                              default: "2Gi"
+                bssmagic:
+                  type: object
+                  description: "BSS Magic runtime — all-in-one StatefulSet with embedded PostgreSQL, FDW, and TMF API"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: "Enable BSS Magic runtime deployment"
+                    image:
+                      type: string
+                      description: "bssmagic-runtime container image (Phase 2 all-in-one with embedded PostgreSQL)"
+                    replicas:
+                      type: integer
+                      minimum: 1
+                      maximum: 5
+                      default: 1
+                      description: "Number of bssmagic-runtime replicas (typically 1 due to embedded PostgreSQL)"
+                    credentialsSecretName:
+                      type: string
+                      description: "AWS Secrets Manager secret name containing credentials.zip binary"
+                    axwaySecretName:
+                      type: string
+                      description: "AWS Secrets Manager secret name for Axway config JSON (AXWAY_TOKEN_URL, AXWAY_CLIENT_ID, AXWAY_CLIENT_SECRET, AXWAY_KEY_ID, AXWAY_PROVIDER_ORG, AXWAY_QUERY_URL, AXWAY_LEAD_CREATE_URL, AXWAY_CONTENT_VERSION_URL, AXWAY_CONTENT_DOCUMENT_LINK_URL, AXWAY_ATTACHMENT_URL)"
+                    dumpS3Bucket:
+                      type: string
+                      description: "S3 bucket containing bssmagic-dump.sql.gz for schema restore"
+                    dumpS3Key:
+                      type: string
+                      default: "bssmagic-dump.sql.gz"
+                      description: "S3 object key for the dump file"
+                    storageSize:
+                      type: string
+                      default: "10Gi"
+                      description: "PVC storage size for PostgreSQL data persistence"
+                    storageClass:
+                      type: string
+                      description: "Kubernetes StorageClass name (uses cluster default if omitted)"
+                    resources:
+                      type: object
+                      properties:
+                        requests:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "500m"
+                            memory:
+                              type: string
+                              default: "1Gi"
+                        limits:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                              default: "2000m"
+                            memory:
+                              type: string
+                              default: "4Gi"
+                    env:
+                      type: array
+                      description: "Additional environment variables for source config overrides"
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - value
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                dataServices:
+                  type: object
+                  description: "AWS data services to provision"
+                  properties:
+                    dynamodb:
+                      type: object
+                      description: "DynamoDB configuration"
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                    s3:
+                      type: object
+                      description: "S3 configuration"
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                    glue:
+                      type: object
+                      description: "Glue configuration"
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                deletionPolicy:
+                  type: string
+                  description: "What to do with AWS resources on CR deletion"
+                  enum:
+                    - Delete
+                    - Retain
+                  default: Delete
+                ingress:
+                  type: object
+                  description: "ALB Ingress configuration for frontend exposure"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: "Enable ALB Ingress instead of LoadBalancer services"
+                    scheme:
+                      type: string
+                      description: "ALB scheme: internet-facing or internal"
+                      enum:
+                        - internet-facing
+                        - internal
+                      default: "internet-facing"
+                    subnets:
+                      type: array
+                      description: "List of subnet IDs for ALB placement"
+                      items:
+                        type: string
+                        pattern: "^subnet-[a-z0-9]+$"
+                    certificateArn:
+                      type: string
+                      description: "ACM certificate ARN for HTTPS"
+                      pattern: "^arn:aws:acm:[a-z0-9-]+:[0-9]+:certificate/.*$"
+                    healthCheckPath:
+                      type: string
+                      description: "Health check path for ALB target group"
+                      default: "/"
+                    className:
+                      type: string
+                      default: "alb"
+                    annotations:
+                      type: object
+                      description: "Additional ALB annotations"
+                      additionalProperties:
+                        type: string
+                    customDomain:
+                      type: string
+                      description: "Custom domain for Ingress host"
+                internalIngress:
+                  type: object
+                  description: "Internal ALB Ingress for VPC-only access (separate from public ALB)"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: "Enable internal ALB Ingress for VPC-only access"
+                    subnets:
+                      type: array
+                      description: "List of private subnet IDs for internal ALB placement"
+                      items:
+                        type: string
+                        pattern: "^subnet-[a-z0-9]+$"
+                    certificateArn:
+                      type: string
+                      description: "ACM certificate ARN for HTTPS on internal ALB"
+                      pattern: "^arn:aws:acm:[a-z0-9-]+:[0-9]+:certificate/.*$"
+                    healthCheckPath:
+                      type: string
+                      description: "Health check path for internal ALB target group"
+                      default: "/health"
+                    annotations:
+                      type: object
+                      description: "Additional ALB annotations for internal ingress"
+                      additionalProperties:
+                        type: string
+                hpa:
+                  type: object
+                  description: "Horizontal Pod Autoscaler configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    minReplicas:
+                      type: integer
+                      minimum: 1
+                      default: 2
+                    maxReplicas:
+                      type: integer
+                      minimum: 1
+                      default: 10
+                    targetCPUUtilization:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                      default: 70
+                pdb:
+                  type: object
+                  description: "Pod Disruption Budget configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    minAvailable:
+                      type: integer
+                      minimum: 0
+                    maxUnavailable:
+                      type: integer
+                      minimum: 0
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  description: "Current deployment phase"
+                  enum:
+                    - Pending
+                    - Provisioning
+                    - ProvisioningDataServices
+                    - ProvisioningSSM
+                    - ProvisioningSecrets
+                    - ProvisioningIAM
+                    - Deploying
+                    - DeployingBackend
+                    - DeployingBssMagic
+                    - DeployingFrontend
+                    - CreatingServices
+                    - Running
+                    - Ready
+                    - Failed
+                    - Deleting
+                message:
+                  type: string
+                  description: "Human-readable status message"
+                frontendUrl:
+                  type: string
+                  description: "URL to access the frontend"
+                backendUrl:
+                  type: string
+                  description: "URL to access the backend API"
+                bssmagicUrl:
+                  type: string
+                  description: "URL to access the BSS Magic TMF API"
+                resources:
+                  type: object
+                  description: "Provisioned resources"
+                  x-kubernetes-preserve-unknown-fields: true
+                  properties:
+                    dynamodbTables:
+                      type: array
+                      items:
+                        type: string
+                    s3Buckets:
+                      type: array
+                      items:
+                        type: string
+                    glueDatabase:
+                      type: string
+                      nullable: true
+                    ssmParameters:
+                      type: array
+                      items:
+                        type: string
+                    secrets:
+                      type: array
+                      items:
+                        type: string
+                    iamRoles:
+                      type: array
+                      items:
+                        type: string
+                steps:
+                  type: array
+                  description: "Granular deployment step tracking"
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                lastReconcileTime:
+                  type: string
+                  format: date-time
+                  description: "Timestamp of last reconciliation"
+                observedGeneration:
+                  type: integer
+                  description: "Generation observed by the operator"
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Capability
+          type: string
+          jsonPath: .spec.capabilityName
+        - name: Version
+          type: string
+          jsonPath: .spec.version
+        - name: Environment
+          type: string
+          jsonPath: .spec.environment
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

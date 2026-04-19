@@ -1,0 +1,46 @@
+---
+# Example TotogiCapability for testing operator deployment
+# This creates a minimal deployment for call-processing capability
+#
+# Apply with:
+#   kubectl apply -f test-capability.yaml
+#
+# Check status:
+#   kubectl get totogicapabilities -A
+#   kubectl describe totogicapability test-capability
+
+apiVersion: totogi.com/v1
+kind: TotogiCapability
+metadata:
+  name: call-processing-dev
+  namespace: call-processing-dev  # Dedicated namespace - operator will create it
+  labels:
+    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/version: "1.0.0"
+    totogi.com/environment: dev
+spec:
+  # Basic capability info
+  capabilityName: call-processing
+  version: "1.0.0"
+  environment: dev
+  region: ap-southeast-1
+  
+  # Frontend deployment (optional)
+  frontend:
+    replicas: 1
+    image: "nginx:latest"  # Replace with actual frontend image
+  
+  # Backend deployment (optional)
+  backend:
+    replicas: 1
+    image: "nginx:latest"  # Replace with actual backend image
+  
+  # AWS data services to provision
+  dataServices:
+    dynamodb: {}
+    s3: {}
+    glue: {}
+  
+  # What to do with AWS resources when CR is deleted
+  # Options: Delete (remove all resources) or Retain (keep AWS resources)
+  deletionPolicy: Delete

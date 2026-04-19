@@ -1,0 +1,92 @@
+---
+# Totogi Operator RBAC Configuration
+# Feature: pure-eks-deployment
+# Requirements: 3.4
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: totogi-operator
+  namespace: totogi-system
+  annotations:
+    # IRSA annotation - replace with actual IAM role ARN
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/TotogiOperatorRole"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: totogi-operator
+rules:
+  # TotogiCapability CRD management
+  - apiGroups: ["totogi.com"]
+    resources: ["totogicapabilities"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["totogi.com"]
+    resources: ["totogicapabilities/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["totogi.com"]
+    resources: ["totogicapabilities/finalizers"]
+    verbs: ["update"]
+  
+  # Core Kubernetes resources
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  
+  # Deployments and StatefulSets
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/status", "statefulsets/status"]
+    verbs: ["get"]
+  
+  # Autoscaling
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Pod Disruption Budgets
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Ingress
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Coordination for leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: totogi-operator
+subjects:
+  - kind: ServiceAccount
+    name: totogi-operator
+    namespace: totogi-system
+roleRef:
+  kind: ClusterRole
+  name: totogi-operator
+  apiGroup: rbac.authorization.k8s.io

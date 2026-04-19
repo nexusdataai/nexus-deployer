@@ -1,0 +1,115 @@
+openapi: 3.0.3
+info:
+  title: Document Management - Attachment
+  version: 1.0.0
+  description: StarHub custom spec for Attachment (legacy file attachment) via BSS Magic mapping views.
+servers:
+  - url: /tmf-api/documentManagement/v1
+paths:
+  /attachment:
+    get:
+      operationId: listAttachment
+      summary: List attachments
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: parentId
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attachment'
+    post:
+      operationId: createAttachment
+      summary: Create an attachment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Attachment_Create'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+  /attachment/{id}:
+    get:
+      operationId: retrieveAttachment
+      summary: Retrieve an attachment by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        '404':
+          description: Not found
+components:
+  schemas:
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+        parentId:
+          type: string
+        name:
+          type: string
+        contentType:
+          type: string
+        body:
+          type: string
+        bodyLength:
+          type: integer
+        description:
+          type: string
+        isPrivate:
+          type: boolean
+        ownerId:
+          type: string
+        createdDate:
+          type: string
+        lastModifiedDate:
+          type: string
+    Attachment_Create:
+      type: object
+      required:
+        - parentId
+        - name
+        - body
+      properties:
+        parentId:
+          type: string
+        name:
+          type: string
+        contentType:
+          type: string
+        body:
+          type: string

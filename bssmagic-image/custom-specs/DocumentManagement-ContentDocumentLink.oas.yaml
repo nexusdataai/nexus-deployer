@@ -1,0 +1,104 @@
+openapi: 3.0.3
+info:
+  title: Document Management - ContentDocumentLink
+  version: 1.0.0
+  description: StarHub custom spec for ContentDocumentLink (link file to record) via BSS Magic mapping views.
+servers:
+  - url: /tmf-api/documentManagement/v1
+paths:
+  /contentDocumentLink:
+    get:
+      operationId: listContentDocumentLink
+      summary: List content document links
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: linkedEntityId
+          in: query
+          schema:
+            type: string
+        - name: contentDocumentId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentDocumentLink'
+    post:
+      operationId: createContentDocumentLink
+      summary: Link a content document to a record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentDocumentLink_Create'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentDocumentLink'
+  /contentDocumentLink/{id}:
+    get:
+      operationId: retrieveContentDocumentLink
+      summary: Retrieve a content document link by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentDocumentLink'
+        '404':
+          description: Not found
+components:
+  schemas:
+    ContentDocumentLink:
+      type: object
+      properties:
+        id:
+          type: string
+        contentDocumentId:
+          type: string
+        linkedEntityId:
+          type: string
+        shareType:
+          type: string
+        visibility:
+          type: string
+        lastModifiedDate:
+          type: string
+    ContentDocumentLink_Create:
+      type: object
+      required:
+        - contentDocumentId
+        - linkedEntityId
+      properties:
+        contentDocumentId:
+          type: string
+        linkedEntityId:
+          type: string
+        shareType:
+          type: string
+        visibility:
+          type: string

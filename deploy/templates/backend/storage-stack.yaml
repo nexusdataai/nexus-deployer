@@ -1,0 +1,550 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend Storage Resources - S3 Buckets and DynamoDB Tables for Call Processing
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+  
+  EnableBackup:
+    Type: String
+    Description: Enable automated backups (creates backup bucket)
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  
+  EnablePointInTimeRecovery:
+    Type: String
+    Description: Enable point-in-time recovery for DynamoDB
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  
+  DynamoDBBillingMode:
+    Type: String
+    Description: DynamoDB billing mode
+    AllowedValues:
+      - PAY_PER_REQUEST
+      - PROVISIONED
+    Default: PAY_PER_REQUEST
+  
+  DynamoDBReadCapacity:
+    Type: Number
+    Description: Read capacity units (only for PROVISIONED mode)
+    Default: 5
+    MinValue: 1
+    MaxValue: 40000
+  
+  DynamoDBWriteCapacity:
+    Type: Number
+    Description: Write capacity units (only for PROVISIONED mode)
+    Default: 5
+    MinValue: 1
+    MaxValue: 40000
+  
+  ECRImageScanOnPush:
+    Type: String
+    Description: Enable image scanning on push to ECR
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  ECRImageRetentionDays:
+    Type: Number
+    Description: Number of days to retain untagged images
+    Default: 7
+    MinValue: 1
+    MaxValue: 365
+  
+  FoundationStackName:
+    Type: String
+    Description: Name of the foundation stack (for KMS permissions)
+  
+  IAMRolesStackName:
+    Type: String
+    Description: Name of the IAM roles stack (for KMS permissions)
+    Default: ''
+
+Conditions:
+  EnableBackups: !Equals [!Ref EnableBackup, 'true']
+  EnablePITR: !Equals [!Ref EnablePointInTimeRecovery, 'true']
+  UseProvisionedBilling: !Equals [!Ref DynamoDBBillingMode, 'PROVISIONED']
+  EnableImageScanning: !Equals [!Ref ECRImageScanOnPush, 'true']
+  IsProd: !Equals [!Ref Environment, 'prod']
+  HasIAMRolesStack: !Not [!Equals [!Ref IAMRolesStackName, '']]
+
+Resources:
+  # ===== S3 BUCKETS =====
+  # Based on INFRASTRUCTURE_REQUIREMENTS.md
+
+  # S3 Bucket for call data & Glue tables
+  CallDataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${CapabilityName}-${Environment}-call-data'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionOldVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            # Expiration must be > last transition (90 days to GLACIER)
+            # Prod: 365 days, Non-prod: 120 days
+            NoncurrentVersionExpirationInDays: !If [IsProd, 365, 120]
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-call-data'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: call-data-glue-tables
+
+  # S3 Bucket for WXCC simulator data
+  WxccSimulatorBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${CapabilityName}-${Environment}-wxcc-simulator'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-wxcc-simulator'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: wxcc-simulator
+
+  # S3 Bucket for journey logs
+  JourneyLogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${CapabilityName}-${Environment}-journey-logs'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireLogs
+            Status: Enabled
+            ExpirationInDays: !If [IsProd, 365, 30]
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-journey-logs'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: journey-logs
+
+  # S3 Bucket for journey reports
+  JourneyReportsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${CapabilityName}-${Environment}-journey-reports'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-journey-reports'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: journey-reports
+
+
+  # ===== DYNAMODB TABLES =====
+  # Based on INFRASTRUCTURE_REQUIREMENTS.md
+  
+  # Transformation System table - Journey/Stage/Job state management
+  TransformationSystemTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-transformation-system'
+      BillingMode: !Ref DynamoDBBillingMode
+      ProvisionedThroughput: !If
+        - UseProvisionedBilling
+        - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+          WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - UseProvisionedBilling
+            - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+              WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+            - !Ref AWS::NoValue
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-transformation-system'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: transformation-system
+
+  # License table - License records + audit logs
+  LicenseTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-license'
+      BillingMode: !Ref DynamoDBBillingMode
+      ProvisionedThroughput: !If
+        - UseProvisionedBilling
+        - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+          WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: holder
+          AttributeType: S
+        - AttributeName: license_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - UseProvisionedBilling
+            - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+              WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+            - !Ref AWS::NoValue
+        - IndexName: holder-index
+          KeySchema:
+            - AttributeName: holder
+              KeyType: HASH
+            - AttributeName: SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - UseProvisionedBilling
+            - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+              WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+            - !Ref AWS::NoValue
+        - IndexName: license-index
+          KeySchema:
+            - AttributeName: license_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - UseProvisionedBilling
+            - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+              WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+            - !Ref AWS::NoValue
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-license'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: license-management
+
+  # WXCC Task Tracking table
+  WxccTaskTrackingTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: wxcc-task-tracking
+
+
+  # ===== ECR REPOSITORY =====
+  
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${CapabilityName}-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: !If [EnableImageScanning, true, false]
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Remove untagged images after ${ECRImageRetentionDays} days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": ${ECRImageRetentionDays}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+Outputs:
+  # S3 Bucket Outputs
+  CallDataBucketName:
+    Description: Name of the call data S3 bucket
+    Value: !Ref CallDataBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-CallDataBucketName'
+  
+  CallDataBucketArn:
+    Description: ARN of the call data S3 bucket
+    Value: !GetAtt CallDataBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CallDataBucketArn'
+  
+  WxccSimulatorBucketName:
+    Description: Name of the WXCC simulator S3 bucket
+    Value: !Ref WxccSimulatorBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-WxccSimulatorBucketName'
+  
+  JourneyLogsBucketName:
+    Description: Name of the journey logs S3 bucket
+    Value: !Ref JourneyLogsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-JourneyLogsBucketName'
+  
+  JourneyReportsBucketName:
+    Description: Name of the journey reports S3 bucket
+    Value: !Ref JourneyReportsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-JourneyReportsBucketName'
+  
+  # DynamoDB Table Outputs
+  TransformationSystemTableName:
+    Description: Name of the transformation system DynamoDB table
+    Value: !Ref TransformationSystemTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TransformationSystemTableName'
+  
+  TransformationSystemTableArn:
+    Description: ARN of the transformation system DynamoDB table
+    Value: !GetAtt TransformationSystemTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TransformationSystemTableArn'
+  
+  TransformationSystemTableStreamArn:
+    Description: ARN of the transformation system DynamoDB table stream
+    Value: !GetAtt TransformationSystemTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-TransformationSystemTableStreamArn'
+  
+  LicenseTableName:
+    Description: Name of the license DynamoDB table
+    Value: !Ref LicenseTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LicenseTableName'
+  
+  LicenseTableArn:
+    Description: ARN of the license DynamoDB table
+    Value: !GetAtt LicenseTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LicenseTableArn'
+  
+  WxccTaskTrackingTableName:
+    Description: Name of the WXCC task tracking DynamoDB table
+    Value: !Ref WxccTaskTrackingTable
+    Export:
+      Name: !Sub '${AWS::StackName}-WxccTaskTrackingTableName'
+  
+  WxccTaskTrackingTableArn:
+    Description: ARN of the WXCC task tracking DynamoDB table
+    Value: !GetAtt WxccTaskTrackingTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WxccTaskTrackingTableArn'
+  
+  # ECR Repository Outputs
+  ECRRepositoryUri:
+    Description: URI of the ECR repository
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryUri'
+  
+  ECRRepositoryArn:
+    Description: ARN of the ECR repository
+    Value: !GetAtt ECRRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryArn'

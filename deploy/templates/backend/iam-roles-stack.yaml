@@ -1,0 +1,404 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend IAM Roles - Task Execution, Task, and Auto Scaling Roles
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+
+Resources:
+  # ===== IAM ROLES =====
+  
+  # ECS Task Execution Role (used by ECS to pull images and write logs)
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CapabilityName}-${Environment}-task-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: AdditionalExecutionPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Pull from any ECR repository in the account
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+              # Read secrets from Secrets Manager (both naming conventions)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  # Secrets with hyphen naming: call-processing-dev-*
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${CapabilityName}-${Environment}-*'
+                  # Secrets with slash naming: call-processing/dev/* (ARN uses path format)
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${CapabilityName}/${Environment}/*'
+              # Read from Parameter Store
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:GetParameterHistory
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${CapabilityName}/${Environment}/*'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${CapabilityName}-${Environment}/*'
+              # Write logs to CloudWatch
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${CapabilityName}-${Environment}*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-task-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+  # ECS Task Role (used by the application itself)
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CapabilityName}-${Environment}-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ApplicationPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 access for data bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-data'
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-data/*'
+              # S3 access for WXCC simulator bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-wxcc-simulator'
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-wxcc-simulator/*'
+              # S3 access for journey logs bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-logs'
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-logs/*'
+              # S3 access for journey reports bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-reports'
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-reports/*'
+              # S3 access for call data/recordings bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-call-data'
+                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-call-data/*'
+              # DynamoDB access - Full CRUD operations for all capability tables
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:DescribeTable
+                  - dynamodb:DescribeStream
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:ListStreams
+                  - dynamodb:ConditionCheckItem
+                  - dynamodb:TransactGetItems
+                  - dynamodb:TransactWriteItems
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:PartiQLSelect
+                  - dynamodb:PartiQLInsert
+                  - dynamodb:PartiQLUpdate
+                  - dynamodb:PartiQLDelete
+                Resource:
+                  # Main tables (state, sessions, wxcc-task-tracking, etc.)
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}-${Environment}-*'
+                  # Global Secondary Indexes
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}-${Environment}-*/index/*'
+                  # DynamoDB Streams
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}-${Environment}-*/stream/*'
+              # DynamoDB ListTables permission (needed for discovery)
+              - Effect: Allow
+                Action:
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeLimits
+                Resource: '*'
+              # Glue access for data catalog (call analytics)
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                  - glue:CreateTable
+                  - glue:UpdateTable
+                  - glue:DeleteTable
+                  - glue:BatchCreatePartition
+                  - glue:CreatePartition
+                  - glue:UpdatePartition
+                  - glue:DeletePartition
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                Resource:
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${CapabilityName}-*'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}-*/*'
+              # CloudWatch metrics
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: '*'
+              # X-Ray tracing
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
+              # SQS access (if needed for async processing)
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${CapabilityName}-${Environment}-*'
+              # SNS access (if needed for notifications)
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                Resource: !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${CapabilityName}-${Environment}-*'
+              # EventBridge access (if needed for events)
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
+              # KMS access for encryption
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                Resource: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    'kms:ViaService':
+                      - !Sub 's3.${AWS::Region}.amazonaws.com'
+                      - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
+              # =============================================================================
+              # WXCC Call Processing Permissions
+              # =============================================================================
+              # AWS Glue - Data Catalog access for WXCC call data
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:UpdateTable
+                  - glue:DeleteTable
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                  - glue:CreatePartition
+                  - glue:BatchCreatePartition
+                  - glue:UpdatePartition
+                  - glue:DeletePartition
+                Resource:
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${CapabilityName}_${Environment}_*'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}_${Environment}_*/*'
+              # Athena - Query execution for WXCC data analysis
+              - Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:StopQueryExecution
+                  - athena:GetWorkGroup
+                  - athena:ListQueryExecutions
+                Resource:
+                  - !Sub 'arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/primary'
+                  - !Sub 'arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${CapabilityName}-${Environment}-*'
+              # SSM Parameter Store - All capability parameters (read + write for runtime config)
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                  - ssm:PutParameter
+                  - ssm:DescribeParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${CapabilityName}/${Environment}/*'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${CapabilityName}-${Environment}-*'
+              # Secrets Manager - Full access for all application secrets (both naming conventions)
+              # Includes: OpenAI keys, API keys, License keys, Webex tokens, etc.
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                Resource:
+                  # Secrets with hyphen naming: call-processing-dev-*
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${CapabilityName}-${Environment}-*'
+                  # Secrets with slash naming: call-processing/dev/* (for openai, api-keys, license, etc.)
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${CapabilityName}/${Environment}/*'
+              # Secrets Manager - List secrets (for discovery in UI)
+              - Effect: Allow
+                Action:
+                  - secretsmanager:ListSecrets
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    'secretsmanager:Name':
+                      - !Sub '${CapabilityName}-${Environment}-*'
+                      - !Sub '${CapabilityName}/${Environment}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-task-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+  # Auto Scaling Role for ECS Service
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CapabilityName}-${Environment}-autoscaling-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: application-autoscaling.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-autoscaling-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+Outputs:
+  TaskExecutionRoleArn:
+    Description: ARN of the task execution role
+    Value: !GetAtt TaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskExecutionRoleArn'
+  
+  TaskExecutionRoleName:
+    Description: Name of the task execution role
+    Value: !Ref TaskExecutionRole
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskExecutionRoleName'
+  
+  TaskRoleArn:
+    Description: ARN of the task role
+    Value: !GetAtt TaskRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskRoleArn'
+  
+  TaskRoleName:
+    Description: Name of the task role
+    Value: !Ref TaskRole
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskRoleName'
+  
+  AutoScalingRoleArn:
+    Description: ARN of the auto scaling role
+    Value: !GetAtt AutoScalingRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AutoScalingRoleArn'

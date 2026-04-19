@@ -1,0 +1,87 @@
+{
+  "name": "totogi-installer",
+  "version": "1.0.0",
+  "description": "Totogi Capability Installation Wizard",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.totogi.installer",
+    "productName": "Totogi Installer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "startup/**/*",
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist",
+        "filter": ["**/*"]
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/",
+        "to": "backend/",
+        "filter": ["totogi-backend.exe"]
+      },
+      {
+        "from": "../backend/capabilities",
+        "to": "capabilities",
+        "filter": ["capabilities.json"]
+      },
+      {
+        "from": "../deploy/templates",
+        "to": "templates",
+        "filter": ["**/*.yaml", "**/*.yml", "template-manifest.json"]
+      },
+      {
+        "from": "scripts/",
+        "to": "scripts/",
+        "filter": ["*.ps1"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "sign": null,
+      "signingHashAlgorithms": null,
+      "signDlls": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "installer.nsh",
+      "uninstallDisplayName": "Totogi Installer"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}

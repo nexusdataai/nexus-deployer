@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cross-Account Deployment Role for Business Capability Deployment
+
+Parameters:
+  RoleName:
+    Type: String
+    Description: Name for the deployment role
+    Default: BusinessCapabilityDeploymentRole
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: '[\w+=,.@-]+'
+    ConstraintDescription: Must be a valid IAM role name
+  
+  TrustedAccountId:
+    Type: String
+    Description: AWS Account ID that will assume this role (source account)
+    AllowedPattern: '[0-9]{12}'
+    ConstraintDescription: Must be a valid 12-digit AWS account ID
+  
+  TrustedPrincipalArn:
+    Type: String
+    Description: Optional - Specific IAM principal ARN that can assume this role (leave empty to allow root account)
+    Default: ''
+    
+  RequireExternalId:
+    Type: String
+    Description: Require external ID for additional security
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  ExternalId:
+    Type: String
+    Description: External ID for secure cross-account access (required if RequireExternalId is true)
+    Default: ''
+    NoEcho: true
+  
+  MaxSessionDuration:
+    Type: Number
+    Description: Maximum session duration in seconds (1-12 hours)
+    Default: 3600
+    MinValue: 3600
+    MaxValue: 43200
+  
+  EnvironmentRestriction:
+    Type: String
+    Description: Optional - Restrict deployments to specific environment (dev/stage/prod)
+    Default: '*'
+    AllowedValues:
+      - '*'
+      - 'dev'
+      - 'stage'
+      - 'prod'
+  
+  CapabilityNameRestriction:
+    Type: String
+    Description: Optional - Restrict deployments to specific capability name pattern (e.g., 'my-app-*')
+    Default: '*'
+
+Conditions:
+  UseExternalId: !Equals [!Ref RequireExternalId, 'true']
+  UseSpecificPrincipal: !Not [!Equals [!Ref TrustedPrincipalArn, '']]
+  RestrictEnvironment: !Not [!Equals [!Ref EnvironmentRestriction, '*']]
+  RestrictCapability: !Not [!Equals [!Ref CapabilityNameRestriction, '*']]
+
+Resources:
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      MaxSessionDuration: !Ref MaxSessionDuration
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !If
+                - UseSpecificPrincipal
+                - !Ref TrustedPrincipalArn
+                - !Sub 'arn:aws:iam::${TrustedAccountId}:root'
+            Action: sts:AssumeRole
+            Condition: !If
+              - UseExternalId
+              - StringEquals:
+                  'sts:ExternalId': !Ref ExternalId
+              - !Ref AWS::NoValue
+      ManagedPolicyArns:
+        # AWS Managed Policies that provide some of the needed permissions
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Tags:
+        - Key: Purpose
+          Value: BusinessCapabilityDeployment
+        - Key: TrustedAccount
+          Value: !Ref TrustedAccountId
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Main deployment policy
+  DeploymentPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: BusinessCapabilityDeploymentPolicy
+      Roles:
+        - !Ref DeploymentRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudFormation permissions with resource restrictions
+          - Sid: CloudFormationStackOperations
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ValidateTemplate
+              - cloudformation:CreateChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+            Resource: !If
+              - RestrictCapability
+              - !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/${CapabilityNameRestriction}*/*'
+              - !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/*/*'
+          
+          # S3 permissions with bucket name restrictions
+          - Sid: S3BucketOperations
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:GetBucket*
+              - s3:PutBucket*
+              - s3:ListBucket*
+            Resource: !If
+              - RestrictCapability
+              - !Sub 'arn:aws:s3:::${CapabilityNameRestriction}*'
+              - 'arn:aws:s3:::*'
+          
+          - Sid: S3ObjectOperations
+            Effect: Allow
+            Action:
+              - s3:GetObject*
+              - s3:PutObject*
+              - s3:DeleteObject*
+            Resource: !If
+              - RestrictCapability
+              - !Sub 'arn:aws:s3:::${CapabilityNameRestriction}*/*'
+              - 'arn:aws:s3:::*/*'
+          
+          # IAM permissions with role name restrictions
+          - Sid: IAMRoleOperations
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:PassRole
+              - iam:TagRole
+              - iam:UntagRole
+            Resource: !If
+              - RestrictCapability
+              - 
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${CapabilityNameRestriction}*'
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/*-${CapabilityNameRestriction}*'
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/*'
+          
+          # Global services (no resource restrictions needed)
+          - Sid: GlobalServiceOperations
+            Effect: Allow
+            Action:
+              - cloudfront:*
+              - wafv2:*
+              - route53:*
+              - acm:*
+              - elasticloadbalancing:*
+              - application-autoscaling:*
+              - events:*
+              - xray:*
+              - cloudwatch:*
+              - sts:GetCallerIdentity
+            Resource: '*'
+          
+          # VPC and networking
+          - Sid: NetworkingOperations
+            Effect: Allow
+            Action:
+              - ec2:*
+            Resource: '*'
+          
+          # Container services
+          - Sid: ContainerOperations
+            Effect: Allow
+            Action:
+              - ecs:*
+              - ecr:*
+            Resource: '*'
+          
+          # Database and storage
+          - Sid: DatabaseOperations
+            Effect: Allow
+            Action:
+              - dynamodb:*
+            Resource: !If
+              - RestrictCapability
+              - !Sub 'arn:aws:dynamodb:*:${AWS::AccountId}:table/${CapabilityNameRestriction}*'
+              - '*'
+          
+          # Secrets and parameters
+          - Sid: SecretsOperations
+            Effect: Allow
+            Action:
+              - secretsmanager:*
+              - ssm:*
+            Resource: !If
+              - RestrictCapability
+              - 
+                - !Sub 'arn:aws:secretsmanager:*:${AWS::AccountId}:secret:${CapabilityNameRestriction}*'
+                - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/${CapabilityNameRestriction}*'
+              - '*'
+          
+          # KMS operations
+          - Sid: KMSOperations
+            Effect: Allow
+            Action:
+              - kms:CreateKey
+              - kms:CreateAlias
+              - kms:Describe*
+              - kms:Get*
+              - kms:List*
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+              - kms:CreateGrant
+              - kms:TagResource
+              - kms:UntagResource
+            Resource: '*'
+          
+          # CloudWatch Logs
+          - Sid: LoggingOperations
+            Effect: Allow
+            Action:
+              - logs:*
+            Resource: '*'
+
+  # Additional restrictive policy for environment-specific deployments
+  EnvironmentRestrictionPolicy:
+    Type: AWS::IAM::Policy
+    Condition: RestrictEnvironment
+    Properties:
+      PolicyName: EnvironmentRestrictionPolicy
+      Roles:
+        - !Ref DeploymentRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyNonEnvironmentStacks
+            Effect: Deny
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+            Resource: '*'
+            Condition:
+              StringNotLike:
+                'aws:RequestTag/Environment': !Ref EnvironmentRestriction
+
+Outputs:
+  RoleArn:
+    Description: ARN of the deployment role
+    Value: !GetAtt DeploymentRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+  
+  RoleName:
+    Description: Name of the deployment role
+    Value: !Ref DeploymentRole
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleName'
+  
+  TrustPolicy:
+    Description: Trust relationship configuration
+    Value: !Sub |
+      Trusted Account: ${TrustedAccountId}
+      Requires External ID: ${RequireExternalId}
+      Max Session Duration: ${MaxSessionDuration} seconds
+  
+  AssumeRoleCommand:
+    Description: Command to assume this role
+    Value: !If
+      - UseExternalId
+      - !Sub |
+          aws sts assume-role \
+            --role-arn ${DeploymentRole.Arn} \
+            --role-session-name deployment-session \
+            --external-id ${ExternalId}
+      - !Sub |
+          aws sts assume-role \
+            --role-arn ${DeploymentRole.Arn} \
+            --role-session-name deployment-session
+  
+  DeploymentCommand:
+    Description: Example deployment command using this role
+    Value: !Sub |
+      ./deploy-capability-layered.sh \
+        -c config/prod-config.yaml \
+        --role-arn ${DeploymentRole.Arn}

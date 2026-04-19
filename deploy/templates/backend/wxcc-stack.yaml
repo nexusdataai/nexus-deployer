@@ -1,0 +1,505 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: WXCC Call Processing Resources - SSM Parameters, Secrets, DynamoDB, and Glue Catalog
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - stage
+      - prod
+    Default: dev
+  
+  StorageStackName:
+    Type: String
+    Description: Name of the storage stack (for S3 bucket reference)
+  
+  GlueDatabaseName:
+    Type: String
+    Description: Glue database name suffix
+    Default: wxcc_calls_db
+  
+  GlueTableName:
+    Type: String
+    Description: Glue table name for call records
+    Default: calls
+  
+  TaskTrackingTTLDays:
+    Type: Number
+    Description: Days to retain task tracking records before TTL expiration
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+  
+  WebexBaseUrl:
+    Type: String
+    Description: Webex Contact Center API base URL
+    Default: https://api.wxcc-us1.cisco.com/v1
+    AllowedValues:
+      - https://api.wxcc-us1.cisco.com/v1
+      - https://api.wxcc-eu1.cisco.com/v1
+      - https://api.wxcc-anz1.cisco.com/v1
+  
+  WebexRedirectUri:
+    Type: String
+    Description: OAuth redirect URI
+    Default: https://trilogy.com
+  
+  DynamoDBBillingMode:
+    Type: String
+    Description: DynamoDB billing mode
+    AllowedValues:
+      - PAY_PER_REQUEST
+      - PROVISIONED
+    Default: PAY_PER_REQUEST
+  
+  DynamoDBReadCapacity:
+    Type: Number
+    Description: Read capacity units (only for PROVISIONED mode)
+    Default: 5
+    MinValue: 1
+    MaxValue: 40000
+  
+  DynamoDBWriteCapacity:
+    Type: Number
+    Description: Write capacity units (only for PROVISIONED mode)
+    Default: 5
+    MinValue: 1
+    MaxValue: 40000
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+  UseProvisionedBilling: !Equals [!Ref DynamoDBBillingMode, 'PROVISIONED']
+
+Resources:
+  # =============================================================================
+  # SSM PARAMETER STORE - Webex Configuration
+  # =============================================================================
+  
+  # Webex OAuth Client ID
+  WebexClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${CapabilityName}/${Environment}/webex/client_id'
+      Description: Webex OAuth Client ID
+      Type: String
+      Value: 'PLACEHOLDER_UPDATE_AFTER_DEPLOY'
+      Tags:
+        Name: !Sub '${CapabilityName}-${Environment}-webex-client-id'
+        Environment: !Ref Environment
+        Capability: !Ref CapabilityName
+        Service: WXCC
+  
+  # Webex Organization ID
+  WebexOrgIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${CapabilityName}/${Environment}/webex/org_id'
+      Description: Webex Contact Center Organization ID
+      Type: String
+      Value: 'PLACEHOLDER_UPDATE_AFTER_DEPLOY'
+      Tags:
+        Name: !Sub '${CapabilityName}-${Environment}-webex-org-id'
+        Environment: !Ref Environment
+        Capability: !Ref CapabilityName
+        Service: WXCC
+  
+  # Webex OAuth Redirect URI
+  WebexRedirectUriParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${CapabilityName}/${Environment}/webex/redirect_uri'
+      Description: Webex OAuth Redirect URI
+      Type: String
+      Value: !Ref WebexRedirectUri
+      Tags:
+        Name: !Sub '${CapabilityName}-${Environment}-webex-redirect-uri'
+        Environment: !Ref Environment
+        Capability: !Ref CapabilityName
+        Service: WXCC
+  
+  # Webex API Base URL
+  WebexBaseUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${CapabilityName}/${Environment}/webex/base_url'
+      Description: Webex Contact Center API Base URL
+      Type: String
+      Value: !Ref WebexBaseUrl
+      Tags:
+        Name: !Sub '${CapabilityName}-${Environment}-webex-base-url'
+        Environment: !Ref Environment
+        Capability: !Ref CapabilityName
+        Service: WXCC
+
+  # =============================================================================
+  # SECRETS MANAGER - Webex Credentials and Tokens
+  # =============================================================================
+  
+  # KMS Key for WXCC Secrets (Production only)
+  WXCCSecretsKMSKey:
+    Type: AWS::KMS::Key
+    Condition: IsProd
+    Properties:
+      Description: !Sub 'KMS key for ${CapabilityName} ${Environment} WXCC secrets'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow Secrets Manager
+            Effect: Allow
+            Principal:
+              Service: secretsmanager.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:GenerateDataKey
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-wxcc-secrets-kms'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # KMS Key Alias
+  WXCCSecretsKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsProd
+    Properties:
+      AliasName: !Sub 'alias/${CapabilityName}-${Environment}-wxcc-secrets'
+      TargetKeyId: !Ref WXCCSecretsKMSKey
+  
+  # Webex OAuth Credentials (client_secret)
+  WebexCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${CapabilityName}-${Environment}-webex-credentials'
+      Description: !Sub 'Webex OAuth credentials for ${CapabilityName} ${Environment}'
+      SecretString: !Sub |
+        {
+          "client_secret": "PLACEHOLDER_UPDATE_AFTER_DEPLOY"
+        }
+      KmsKeyId: !If
+        - IsProd
+        - !Ref WXCCSecretsKMSKey
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-webex-credentials'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Service
+          Value: WXCC
+  
+  # Webex OAuth Tokens (access_token, refresh_token, expires_at)
+  WebexTokensSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${CapabilityName}-${Environment}-webex-tokens'
+      Description: !Sub 'Webex OAuth tokens for ${CapabilityName} ${Environment}'
+      SecretString: !Sub |
+        {
+          "access_token": "PLACEHOLDER_UPDATE_AFTER_DEPLOY",
+          "refresh_token": "PLACEHOLDER_UPDATE_AFTER_DEPLOY",
+          "expires_at": 0
+        }
+      KmsKeyId: !If
+        - IsProd
+        - !Ref WXCCSecretsKMSKey
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-webex-tokens'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Service
+          Value: WXCC
+
+  # =============================================================================
+  # DYNAMODB - Task Tracking Table (Deduplication and DLQ)
+  # =============================================================================
+  
+  WXCCTaskTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
+      BillingMode: !Ref DynamoDBBillingMode
+      ProvisionedThroughput:
+        !If
+          - UseProvisionedBilling
+          - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+            WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+          - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: task_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            !If
+              - UseProvisionedBilling
+              - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+                WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+              - !Ref AWS::NoValue
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: expires_at
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Service
+          Value: WXCC
+        - Key: Purpose
+          Value: TaskDeduplicationAndDLQ
+
+  # =============================================================================
+  # AWS GLUE - Data Catalog for Athena Queries
+  # =============================================================================
+  
+  # Glue Database
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub '${CapabilityName}_${Environment}_${GlueDatabaseName}'
+        Description: !Sub 'WXCC Call Data Database for ${CapabilityName} ${Environment}'
+        Parameters:
+          classification: json
+  
+  # Glue Table for Call Records
+  GlueCallsTable:
+    Type: AWS::Glue::Table
+    DependsOn: GlueDatabase
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Sub '${CapabilityName}_${Environment}_${GlueDatabaseName}'
+      TableInput:
+        Name: !Ref GlueTableName
+        Description: Webex Contact Center Call Records
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          EXTERNAL: 'TRUE'
+          'json.serialization.format': '1'
+        StorageDescriptor:
+          Columns:
+            - Name: task_id
+              Type: string
+              Comment: Unique task identifier
+            - Name: org_id
+              Type: string
+              Comment: Organization ID
+            - Name: created_at
+              Type: timestamp
+              Comment: Call creation timestamp
+            - Name: status
+              Type: string
+              Comment: Call status (completed, abandoned, etc.)
+            - Name: direction
+              Type: string
+              Comment: Call direction (inbound, outbound)
+            - Name: origin_phone
+              Type: string
+              Comment: Caller phone number
+            - Name: destination_phone
+              Type: string
+              Comment: Destination phone number
+            - Name: queue_name
+              Type: string
+              Comment: Queue name
+            - Name: queue_id
+              Type: string
+              Comment: Queue ID
+            - Name: agent_name
+              Type: string
+              Comment: Agent name
+            - Name: agent_id
+              Type: string
+              Comment: Agent ID
+            - Name: duration_seconds
+              Type: int
+              Comment: Call duration in seconds
+            - Name: recording_file
+              Type: string
+              Comment: S3 path to recording file
+            - Name: transcript_file
+              Type: string
+              Comment: S3 path to transcript file
+            - Name: transcript_text
+              Type: string
+              Comment: Full transcript text for search
+            - Name: sentiment
+              Type: string
+              Comment: Sentiment analysis result
+            - Name: summary
+              Type: string
+              Comment: Call summary
+          Location: !Sub
+            - 's3://${BucketName}/wxcc-data/'
+            - BucketName:
+                Fn::ImportValue: !Sub '${StorageStackName}-DataBucketName'
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              'serialization.format': '1'
+              'ignore.malformed.json': 'true'
+              'case.insensitive': 'true'
+          Compressed: false
+        PartitionKeys:
+          - Name: year
+            Type: int
+            Comment: Year partition
+          - Name: month
+            Type: int
+            Comment: Month partition
+          - Name: day
+            Type: int
+            Comment: Day partition
+          - Name: hour
+            Type: int
+            Comment: Hour partition
+
+Outputs:
+  # SSM Parameters
+  WebexClientIdParameterName:
+    Description: SSM Parameter name for Webex Client ID
+    Value: !Ref WebexClientIdParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexClientIdParameterName'
+  
+  WebexOrgIdParameterName:
+    Description: SSM Parameter name for Webex Org ID
+    Value: !Ref WebexOrgIdParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexOrgIdParameterName'
+  
+  WebexRedirectUriParameterName:
+    Description: SSM Parameter name for Webex Redirect URI
+    Value: !Ref WebexRedirectUriParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexRedirectUriParameterName'
+  
+  WebexBaseUrlParameterName:
+    Description: SSM Parameter name for Webex Base URL
+    Value: !Ref WebexBaseUrlParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexBaseUrlParameterName'
+  
+  SSMParameterPrefix:
+    Description: SSM Parameter prefix for all Webex parameters
+    Value: !Sub '/${CapabilityName}/${Environment}/webex'
+    Export:
+      Name: !Sub '${AWS::StackName}-SSMParameterPrefix'
+  
+  # Secrets Manager
+  WebexCredentialsSecretArn:
+    Description: ARN of the Webex credentials secret
+    Value: !Ref WebexCredentialsSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexCredentialsSecretArn'
+  
+  WebexCredentialsSecretName:
+    Description: Name of the Webex credentials secret
+    Value: !Sub '${CapabilityName}-${Environment}-webex-credentials'
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexCredentialsSecretName'
+  
+  WebexTokensSecretArn:
+    Description: ARN of the Webex tokens secret
+    Value: !Ref WebexTokensSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexTokensSecretArn'
+  
+  WebexTokensSecretName:
+    Description: Name of the Webex tokens secret
+    Value: !Sub '${CapabilityName}-${Environment}-webex-tokens'
+    Export:
+      Name: !Sub '${AWS::StackName}-WebexTokensSecretName'
+  
+  # DynamoDB
+  TaskTrackingTableName:
+    Description: Name of the WXCC task tracking DynamoDB table
+    Value: !Ref WXCCTaskTrackingTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskTrackingTableName'
+  
+  TaskTrackingTableArn:
+    Description: ARN of the WXCC task tracking DynamoDB table
+    Value: !GetAtt WXCCTaskTrackingTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskTrackingTableArn'
+  
+  # Glue
+  GlueDatabaseName:
+    Description: Name of the Glue database
+    Value: !Sub '${CapabilityName}_${Environment}_${GlueDatabaseName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-GlueDatabaseName'
+  
+  GlueTableName:
+    Description: Name of the Glue calls table
+    Value: !Ref GlueTableName
+    Export:
+      Name: !Sub '${AWS::StackName}-GlueTableName'
+  
+  GlueTableLocation:
+    Description: S3 location of the Glue table
+    Value: !Sub
+      - 's3://${BucketName}/wxcc-data/'
+      - BucketName:
+          Fn::ImportValue: !Sub '${StorageStackName}-DataBucketName'
+    Export:
+      Name: !Sub '${AWS::StackName}-GlueTableLocation'
+  
+  # KMS (Production only)
+  WXCCSecretsKMSKeyId:
+    Description: ID of the KMS key for WXCC secrets
+    Condition: IsProd
+    Value: !Ref WXCCSecretsKMSKey
+    Export:
+      Name: !Sub '${AWS::StackName}-WXCCSecretsKMSKeyId'
+  
+  WXCCSecretsKMSKeyArn:
+    Description: ARN of the KMS key for WXCC secrets
+    Condition: IsProd
+    Value: !GetAtt WXCCSecretsKMSKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WXCCSecretsKMSKeyArn'
+

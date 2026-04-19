@@ -1,0 +1,120 @@
+# Business Capability Deployment Configuration
+# This is an example configuration file for deploying a business capability
+# Copy this file and customize for your specific deployment
+
+capability:
+  name: my-capability          # Name of your business capability (lowercase, hyphens allowed)
+  version: 1.2.3               # Version to deploy
+  description: Example business capability for demonstration
+
+source:
+  frontend:
+    s3_uri: s3://my-artifacts-bucket/frontend/dist-v1.2.3.zip  # Frontend build artifact
+    s3_region: us-east-1                                       # Region of source bucket
+  backend:
+    ecr_uri: 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-backend:v1.2.3  # Backend container
+    ecr_region: us-east-1                                                     # Region of source ECR
+
+target:
+  account_id: "987654321098"   # Target AWS account ID
+  region: us-west-2             # Target deployment region
+  environment: prod             # Environment: dev, stage, or prod
+  role_arn: ""                  # Optional: Cross-account role ARN for deployment
+
+infrastructure:
+  domain:
+    base: example.com           # Your base domain
+    frontend_subdomain: app     # Frontend will be: app.example.com
+    backend_subdomain: api      # Backend API will be: api.example.com
+    hosted_zone_id: Z1234567890ABC  # Route53 Hosted Zone ID
+  
+  frontend:
+    cloudfront:
+      enabled: true             # Enable CloudFront CDN
+      price_class: PriceClass_100  # PriceClass_100, PriceClass_200, or PriceClass_All
+      waf_enabled: true         # Enable WAF protection
+      cache_ttl: 86400         # Default cache TTL in seconds
+      enable_logging: true      # Enable CloudFront access logs
+      enable_ipv6: true        # Enable IPv6 support
+      rate_limit: 2000         # Rate limit per IP (requests per 5 minutes)
+  
+  backend:
+    # VPC Configuration - Option 1: Create new VPC
+    vpc:
+      create_new: true          # Create a new VPC
+      vpc_cidr: 10.0.0.0/16    # CIDR for new VPC
+      enable_nat_gateway: true  # Enable NAT Gateway (costs apply)
+      enable_flow_logs: false   # Enable VPC Flow Logs
+    
+    # VPC Configuration - Option 2: Use existing VPC (uncomment and fill if create_new: false)
+    # vpc:
+    #   create_new: false
+    #   vpc_id: vpc-12345678
+    #   subnets:
+    #     public: 
+    #       - subnet-1234abcd    # Public subnet 1
+    #       - subnet-5678efgh    # Public subnet 2
+    #     private:
+    #       - subnet-9012ijkl    # Private subnet 1
+    #       - subnet-3456mnop    # Private subnet 2
+    
+    # ECS Configuration
+    ecs:
+      cluster_name: my-capability-prod-cluster
+      container_port: 8080      # Port your container listens on
+      task_cpu: 1024           # CPU units (256, 512, 1024, 2048, 4096)
+      task_memory: 2048        # Memory in MiB
+      desired_count: 2         # Number of tasks to run
+      health_check_path: /health  # Health check endpoint
+      
+    # Auto-scaling Configuration
+    autoscaling:
+      enabled: true            # Enable auto-scaling
+      min_capacity: 1          # Minimum number of tasks
+      max_capacity: 4          # Maximum number of tasks
+      target_cpu: 70           # Target CPU utilization %
+      target_memory: 80        # Target memory utilization %
+    
+    # Storage Configuration
+    storage:
+      dynamodb_billing_mode: PAY_PER_REQUEST  # or PROVISIONED
+      # If PROVISIONED mode:
+      # dynamodb_read_capacity: 5
+      # dynamodb_write_capacity: 5
+      enable_backup: true               # Enable automated backups
+      enable_point_in_time_recovery: true  # Enable DynamoDB PITR
+      ecr_image_scan_on_push: true     # Scan images for vulnerabilities
+      ecr_image_retention_days: 7      # Days to keep untagged images
+
+    # Certificate Configuration
+    certificate:
+      create_in_foundation: true  # Create cert in foundation stack
+      # If deploying to non-us-east-1 region and create_in_foundation is false,
+      # a regional certificate will be created automatically
+    
+    # ALB Configuration
+    alb:
+      enable_access_logs: false        # Enable ALB access logs
+      deregistration_delay: 30        # Seconds to wait before deregistering
+      health_check_interval: 30       # Health check interval in seconds
+      health_check_timeout: 10        # Health check timeout in seconds
+      healthy_threshold: 2            # Consecutive successful checks
+      unhealthy_threshold: 3          # Consecutive failed checks
+
+monitoring:
+  cloudwatch:
+    log_retention_days: 7        # Log retention period (1,3,5,7,14,30,60,90,120,150,180,365)
+    container_insights: true     # Enable Container Insights for ECS
+  
+tags:
+  # Common tags applied to all resources
+  common:
+    Project: MyProject
+    Owner: DevOps
+    CostCenter: Engineering
+    ManagedBy: Terraform
+  
+  # Additional custom tags (optional)
+  custom:
+    CustomTag1: Value1
+    CustomTag2: Value2

@@ -1,0 +1,193 @@
+  # Amplify Branch
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: !Ref GitHubBranch
+      EnableAutoBuild: true
+      EnablePullRequestPreview: true
+      
+      EnvironmentVariables:
+        - Name: ENVIRONMENT
+          Value: !Ref Environment
+        - Name: REGION
+          Value: !Ref AWS::Region
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: AmplifyUIStack
+
+  # Amplify Domain Association
+  AmplifyDomain:
+    Type: AWS::Amplify::Domain
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      DomainName: !Ref DomainName
+      SubDomainSettings:
+        - Prefix: ''
+          BranchName: !GetAtt AmplifyBranch.BranchName
+        - Prefix: 'www'
+          BranchName: !GetAtt AmplifyBranch.BranchName
+      
+      EnableAutoSubDomain: false
+
+  # Route 53 Records for CloudFront
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront hosted zone ID
+        EvaluateTargetHealth: false
+
+  DNSRecordWWW:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'www.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront hosted zone ID
+        EvaluateTargetHealth: false
+
+  # CloudWatch Dashboard
+  CloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${AWS::StackName}-Dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/CloudFront", "Requests", "DistributionId", "${CloudFrontDistribution}" ],
+                  [ ".", "BytesDownloaded", ".", "." ],
+                  [ ".", "BytesUploaded", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1",
+                "title": "CloudFront Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/WAFV2", "AllowedRequests", "WebACL", "${WebACL}", "Rule", "ALL", "Region", "CloudFront" ],
+                  [ ".", "BlockedRequests", ".", ".", ".", ".", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1",
+                "title": "WAF Metrics"
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarms
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-HighErrorRate'
+      AlarmDescription: 'High error rate detected on CloudFront distribution'
+      MetricName: 4xxErrorRate
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref CloudFrontDistribution
+      TreatMissingData: notBreaching
+
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-HighLatency'
+      AlarmDescription: 'High latency detected on CloudFront distribution'
+      MetricName: OriginLatency
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref CloudFrontDistribution
+      TreatMissingData: notBreaching
+
+Outputs:
+  AmplifyAppId:
+    Description: 'Amplify App ID'
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyAppId'
+
+  AmplifyAppURL:
+    Description: 'Amplify App URL'
+    Value: !Sub 'https://${AmplifyBranch.BranchName}.${AmplifyApp.AppId}.amplifyapp.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyAppURL'
+
+  CloudFrontDistributionId:
+    Description: 'CloudFront Distribution ID'
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDistributionId'
+
+  CloudFrontDomainName:
+    Description: 'CloudFront Distribution Domain Name'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDomainName'
+
+  CustomDomainURL:
+    Description: 'Custom Domain URL'
+    Value: !Sub 'https://${DomainName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-CustomDomainURL'
+
+  HostedZoneId:
+    Description: 'Route 53 Hosted Zone ID'
+    Value: !Ref HostedZone
+    Export:
+      Name: !Sub '${AWS::StackName}-HostedZoneId'
+
+  SSLCertificateArn:
+    Description: 'SSL Certificate ARN'
+    Value: !Ref SSLCertificate
+    Export:
+      Name: !Sub '${AWS::StackName}-SSLCertificateArn'
+
+  WebACLArn:
+    Description: 'WAF Web ACL ARN'
+    Value: !GetAtt WebACL.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACLArn'
+
+  DashboardURL:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${AWS::StackName}-Dashboard'
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardURL'

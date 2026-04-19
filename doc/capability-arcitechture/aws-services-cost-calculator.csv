@@ -1,0 +1,58 @@
+Category,Service,Purpose,Pricing Model,Dev Environment,Stage Environment,Prod Environment,Notes
+,,,,,,,
+UI/Frontend,Amazon Route 53,DNS management and health checks,Per hosted zone ($0.50/month) + per query ($0.40/million),1 hosted zone,1 hosted zone,1 hosted zone + health checks,Intelligent routing and failover
+UI/Frontend,AWS WAF,Web Application Firewall - OWASP protection,Per Web ACL ($5/month) + per rule ($1/month) + per million requests ($0.60),1 Web ACL + 2 managed rules,1 Web ACL + 2 managed rules,1 Web ACL + 2 managed rules,Rate limiting 2000 req/5min per IP
+UI/Frontend,AWS Shield Standard,DDoS protection at network/application layers,Free (included with WAF),Included,Included,Included,Standard tier - no additional cost
+UI/Frontend,Amazon CloudFront,CDN with 400+ edge locations,Per GB data transfer out + per request,Low traffic,Medium traffic,High traffic,HTTP/2 HTTP/3 Brotli/Gzip compression
+UI/Frontend,AWS Certificate Manager (ACM),SSL/TLS certificates with auto-renewal,Free for public certificates,1 certificate,1 certificate,1 certificate,TLS 1.2+ enforced
+UI/Frontend,Amazon S3 (UI Hosting),Static website hosting for React PWA,Per GB storage ($0.023/GB) + per request,~100MB,~100MB,~100MB,Versioning enabled AES-256 encryption
+,,,,,,,
+,,,,,,,
+Backend/Compute,Amazon VPC,Virtual Private Cloud with subnets,Free (VPC itself),1 VPC 2 public subnets,1 VPC 2 public + 2 private subnets,1 VPC 2 public + 2 private subnets,Multi-AZ design
+Backend/Compute,NAT Gateway,Outbound internet for private subnets,Per hour ($0.045) + per GB processed ($0.045),0 NAT Gateways,1 NAT Gateway,2 NAT Gateways,Cost optimization for dev
+Backend/Compute,Elastic IP,Static IPs for NAT Gateways,Per hour when not attached ($0.005),0,1,2,Associated with NAT Gateways
+Backend/Compute,Application Load Balancer (ALB),HTTPS termination path-based routing,Per hour ($0.0225) + per LCU ($0.008),1 ALB,1 ALB,1 ALB,Health checks WebSocket support
+Backend/Compute,Amazon ECS (Fargate),Serverless container orchestration,Per vCPU-hour ($0.04048) + per GB-hour ($0.004445),1024 CPU / 8GB RAM,1024 CPU / 8GB RAM,2048 CPU / 16GB RAM,Auto-scaling enabled
+Backend/Compute,Amazon ECS (Fargate Spot),Spot capacity for cost savings,Up to 70% discount vs on-demand,Available,Available,Not recommended,For non-critical workloads
+Backend/Compute,Amazon ECR,Container image registry,Per GB storage ($0.10) + per GB data transfer,~500MB,~500MB,~500MB,Vulnerability scanning enabled
+Backend/Compute,AWS Secrets Manager,Database credentials API keys OAuth tokens,Per secret ($0.40/month) + per 10K API calls ($0.05),2-5 secrets,2-5 secrets,5-10 secrets,Automatic rotation policies
+Backend/Compute,AWS Systems Manager Parameter Store,Application configs feature flags,Free (standard) / $0.05 per advanced parameter,10-20 parameters,10-20 parameters,20-50 parameters,Environment variables
+Backend/Compute,Amazon Cognito,User authentication SSO MFA,Per MAU - Free tier 50K MAU then $0.0055/MAU,<1000 MAU,<1000 MAU,1000-10000 MAU,ADFS/SAML SSO integration
+Backend/Compute,AWS Certificate Manager (ACM) - Backend,SSL certificates for ALB,Free for public certificates,1 certificate,1 certificate,1 certificate,HTTPS only
+Backend/Compute,Amazon EventBridge,Event-driven orchestration scheduled tasks,Per million events ($1),Low volume,Medium volume,High volume,System integrations
+,,,,,,,
+,,,,,,,
+Data/Storage,Amazon DynamoDB,Session management user profiles licenses,On-demand: per RCU ($0.25/million) per WCU ($1.25/million),On-demand mode,On-demand mode,Provisioned or on-demand,Point-in-time recovery enabled
+Data/Storage,Amazon S3 (Data),Call Records + Metadata+ Transcription +CloudFormation templates deployment artifacts,Per GB storage ($0.023/GB) + per request,~1GB,~10GB,~10GB,Lifecycle policies for cost optimization
+Data/Storage,Amazon Athena,Serverless SQL queries on S3 data,Per TB scanned ($5/TB),As needed,As needed,Regular queries,Data lake analytics
+Data/Storage,AWS Glue,ETL jobs for data transformation,Per DPU-hour ($0.44),As needed,As needed,Scheduled jobs,Data transformation
+,,,,,,,
+,,,,,,,
+Monitoring,Amazon CloudWatch,Metrics logs dashboards alarms,Per metric ($0.30) + per GB logs ($0.50 ingested),7-day retention,7-day retention,30-day retention,Container Insights enabled
+Monitoring,Amazon CloudWatch Logs Insights,Log analysis and queries,Per GB scanned ($0.005),As needed,As needed,Regular queries,Custom dashboards
+Monitoring,AWS X-Ray,Distributed tracing performance analysis,Per trace recorded ($5/million) + retrieved ($0.50/million),Sampling enabled,Sampling enabled,Full tracing,Service dependency mapping
+Monitoring,AWS CloudTrail,API audit logging compliance,Per trail + per 100K data events ($2),1 trail,1 trail,1 trail + data events,Security analysis
+Monitoring,Amazon GuardDuty,Continuous threat detection,Per GB analyzed - varies by source,Enabled,Enabled,Enabled,CloudTrail VPC Flow DNS analysis
+,,,,,,,
+Deployment / Update,AWS CloudFormation,Infrastructure as Code orchestration,Free (pay for resources created),Multiple stacks,Multiple stacks,Multiple stacks,Blue-green deployments
+Deployment / Update,Amazon SNS,Deployment notifications,Per million requests ($0.50) + per SMS/email,Low volume,Low volume,Medium volume,Alert notifications
+Deployment / Update,Amazon SES,Email notifications,Per 1000 emails ($0.10),Low volume,Low volume,Medium volume,Verification emails
+,,,,,,,
+Security,AWS IAM,Roles policies least privilege access,Free,Multiple roles,Multiple roles,Multiple roles,Task execution and task roles
+Security,AWS KMS,Encryption key management,Per key ($1/month) + per 10K requests ($0.03),1-2 keys,1-2 keys,2-5 keys,S3 DynamoDB encryption
+,,,,,,,
+,,,,,,,
+Storage Retention ,30 Days,,,,,,
+,,,,,,,
+Key Cost Driver --,,,,,,,
+,,,,,,,
+,"ECS Compute -2048 Unit CPU , 16 GB Ram",200 -600$(1-3)scaling,,,,,
+,Dynamo Read Write Ops,200-500$,,,,,
+,Athena Queries ,200$,,,,,
+,Cloudwatch Logs,200$,,,,,
+,Cloudfront Data Transfer ,300$,,,,,
+,,,,,,,
+,,,,,,,
+,,,,,,,
+,,,,,,,
+AI- TCO -,Per Call - 1$,,,,,,

@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Frontend Global Resources Stack - ONLY resources that MUST be in us-east-1 (Certificate and WAF)
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+  
+  BaseDomain:
+    Type: String
+    Description: Base domain name (e.g., example.com)
+    AllowedPattern: ^[a-z0-9][a-z0-9-\.]*\.[a-z]{2,}$
+    ConstraintDescription: Must be a valid domain name
+  
+  FrontendSubdomain:
+    Type: String
+    Description: Frontend subdomain (e.g., app)
+    Default: app
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+  
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for the base domain
+    AllowedPattern: ^Z[0-9A-Z]+$
+  
+  EnableWAF:
+    Type: String
+    Description: Enable WAF protection for CloudFront
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  RateLimitPerIP:
+    Type: Number
+    Description: Rate limit per IP address (requests per 5 minutes)
+    Default: 2000
+    MinValue: 100
+    MaxValue: 10000
+
+Conditions:
+  CreateWAF: !Equals [!Ref EnableWAF, 'true']
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ACM Certificate (MUST be in us-east-1 for CloudFront)
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${FrontendSubdomain}.${BaseDomain}'
+      SubjectAlternativeNames:
+        - !Sub '${FrontendSubdomain}.${BaseDomain}'
+        - !If
+          - IsProd
+          - !Sub '*.${FrontendSubdomain}.${BaseDomain}'
+          - !Ref AWS::NoValue
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${FrontendSubdomain}.${BaseDomain}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-frontend-cert'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WAF WebACL for CloudFront (MUST be in us-east-1 with Scope: CLOUDFRONT)
+  WAFWebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: CreateWAF
+    Properties:
+      Name: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+      Scope: CLOUDFRONT
+      Description: !Sub 'WAF for ${CapabilityName} ${Environment} frontend'
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+      Rules:
+        # Rate limiting rule
+        - Name: RateLimitRule
+          Priority: 1
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref RateLimitPerIP
+              AggregateKeyType: IP
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 429
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRule
+        
+        # AWS Managed Core Rule Set
+        - Name: AWSManagedRulesCoreRuleSet
+          Priority: 2
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: SizeRestrictions_BODY
+                - Name: GenericRFI_BODY
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CoreRuleSet
+        
+        # Known Bad Inputs Rule Set
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 3
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputs
+        
+        # SQL injection protection
+        - Name: SQLiProtection
+          Priority: 4
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLiProtection
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-frontend-waf'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group for WAF (in us-east-1 with WAF)
+  # Note: WAFv2 logging requires log group names to start with 'aws-waf-logs-'
+  WAFLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateWAF
+    Properties:
+      LogGroupName: !Sub 'aws-waf-logs-${CapabilityName}-${Environment}-frontend'
+      RetentionInDays: !If [IsProd, 30, 7]
+
+  # WAF Logging Configuration
+  WAFLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Condition: CreateWAF
+    Properties:
+      ResourceArn: !GetAtt WAFWebACL.Arn
+      LogDestinationConfigs:
+        - !GetAtt WAFLogGroup.Arn
+
+Outputs:
+  CertificateArn:
+    Description: ARN of the ACM certificate (for CloudFront)
+    Value: !Ref Certificate
+    Export:
+      Name: !Sub '${AWS::StackName}-CertificateArn'
+  
+  WAFWebACLArn:
+    Description: ARN of the WAF WebACL (for CloudFront)
+    Condition: CreateWAF
+    Value: !GetAtt WAFWebACL.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFWebACLArn'
+  
+  FrontendDomainName:
+    Description: Frontend domain name
+    Value: !Sub '${FrontendSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendDomainName'
+  
+  HostedZoneId:
+    Description: Route53 Hosted Zone ID
+    Value: !Ref HostedZoneId
+    Export:
+      Name: !Sub '${AWS::StackName}-HostedZoneId'

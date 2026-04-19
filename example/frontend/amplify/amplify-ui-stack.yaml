@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Amplify UI Deployment Stack with Best Practices - Complete deployment in ap-southeast-1'
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: 'Domain name for the application (e.g., myapp.example.com)'
+    Default: 'myapp.example.com'
+  
+  GitHubRepository:
+    Type: String
+    Description: 'GitHub repository URL for the frontend application'
+    Default: 'https://github.com/username/my-frontend-app'
+  
+  GitHubBranch:
+    Type: String
+    Description: 'GitHub branch to deploy from'
+    Default: 'main'
+  
+  GitHubToken:
+    Type: String
+    Description: 'GitHub personal access token for repository access'
+    NoEcho: true
+  
+  Environment:
+    Type: String
+    Description: 'Environment name (dev, staging, prod)'
+    Default: 'prod'
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # Route 53 Hosted Zone
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: !Sub 'Hosted zone for ${DomainName}'
+      HostedZoneTags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: AmplifyUIStack
+
+  # SSL Certificate from ACM
+  SSLCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub 'www.${DomainName}'
+        - !Sub '*.${DomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZone
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: AmplifyUIStack
+
+  # WAF Web ACL
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub '${AWS::StackName}-WebACL'
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      Rules:
+        # AWS Managed Rules - Core Rule Set
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSetMetric
+        
+        # AWS Managed Rules - Known Bad Inputs
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputsRuleSetMetric
+        
+        # Rate Limiting Rule
+        - Name: RateLimitRule
+          Priority: 3
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRuleMetric
+      
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${AWS::StackName}-WebACL'
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: AmplifyUIStack

@@ -1,0 +1,85 @@
+{
+  "generated_at": "2026-01-21T14:10:33.457348Z",
+  "templates_dir": "C:\\mycode\\trilogy\\starhub-deployer\\deploy\\templates",
+  "template_count": 13,
+  "templates": [
+    {
+      "relative_path": "backend/domain-stack.yaml",
+      "filename": "domain-stack.yaml",
+      "size_bytes": 6785,
+      "sha256": "c789693686edfb3b11642b5331bffadabea9581f056794c8f08dbcc82fe080de"
+    },
+    {
+      "relative_path": "backend/foundation-stack.yaml",
+      "filename": "foundation-stack.yaml",
+      "size_bytes": 5327,
+      "sha256": "0f77d4a98528d223cb2f489c15b31b44c8df2efbff5dae3b7863c9341df17bc6"
+    },
+    {
+      "relative_path": "backend/iam-roles-stack.yaml",
+      "filename": "iam-roles-stack.yaml",
+      "size_bytes": 16444,
+      "sha256": "99f6b0092bdb4836f713ca81d4600b0b23c2d390b8361ee4a964bec6a84fc8dc"
+    },
+    {
+      "relative_path": "backend/network-stack.yaml",
+      "filename": "network-stack.yaml",
+      "size_bytes": 19652,
+      "sha256": "60a9ac71daafbb5c2fe54d75856eda5a113de63eca609215b3d8793c501fccf8"
+    },
+    {
+      "relative_path": "backend/regional-cert-stack.yaml",
+      "filename": "regional-cert-stack.yaml",
+      "size_bytes": 2682,
+      "sha256": "de359f5ef9db8876acb1dfdcf19f54433b64cc883a5d17a4d6ac7453aafd3fc4"
+    },
+    {
+      "relative_path": "backend/service-stack.yaml",
+      "filename": "service-stack.yaml",
+      "size_bytes": 24380,
+      "sha256": "7c882166ede92e91e252807f5c8e282614548554237c7eaea9405e5f891b0972"
+    },
+    {
+      "relative_path": "backend/storage-stack.yaml",
+      "filename": "storage-stack.yaml",
+      "size_bytes": 17635,
+      "sha256": "6cd65aeb0b444971f0aadadec220e88ef83d656ce8ec5bfe8dd483977616b645"
+    },
+    {
+      "relative_path": "backend/wxcc-stack.yaml",
+      "filename": "wxcc-stack.yaml",
+      "size_bytes": 16164,
+      "sha256": "9c501d7c79c0b768494adb2f28fecde3ce8a65140f89cfa68cd8dbed7de9fd85"
+    },
+    {
+      "relative_path": "frontend/cognito-stack.yaml",
+      "filename": "cognito-stack.yaml",
+      "size_bytes": 11376,
+      "sha256": "0f6e9a421c1a0a51c990875bf3b4930d26e6402c7dc41bb7561229642218b843"
+    },
+    {
+      "relative_path": "frontend/global-stack-old.yaml",
+      "filename": "global-stack-old.yaml",
+      "size_bytes": 9754,
+      "sha256": "fa695b88b8d63ab237a5089ea54504ae60ad4d9cd5b9e7c59b2eb2bc8a93ddf8"
+    },
+    {
+      "relative_path": "frontend/global-stack.yaml",
+      "filename": "global-stack.yaml",
+      "size_bytes": 6366,
+      "sha256": "95bc6d04a06ebb9a1b72b7f31cefa43beee2914b24facaa3f9df9d3c4237f084"
+    },
+    {
+      "relative_path": "frontend/regional-stack-old.yaml",
+      "filename": "regional-stack-old.yaml",
+      "size_bytes": 5924,
+      "sha256": "23e9a7fb0826ec45868f6c85cf64055414e13fb4e8640a50c97268d88035c4a9"
+    },
+    {
+      "relative_path": "frontend/regional-stack.yaml",
+      "filename": "regional-stack.yaml",
+      "size_bytes": 10311,
+      "sha256": "d4718ebae929c1dc9ba5838d255c98e953471ca9c74608369e43015982f253ad"
+    }
+  ]
+}

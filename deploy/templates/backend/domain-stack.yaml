@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend Domain Infrastructure - Route53 Records, SSL Certificates, and Health Checks
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+  
+  BaseDomain:
+    Type: String
+    Description: Base domain name (e.g., example.com)
+    AllowedPattern: ^[a-z0-9][a-z0-9-\.]*\.[a-z]{2,}$
+    ConstraintDescription: Must be a valid domain name
+  
+  ApiSubdomain:
+    Type: String
+    Description: API subdomain (e.g., api)
+    Default: api
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+  
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for the base domain
+    AllowedPattern: ^Z[0-9A-Z]+$
+  
+  # External stack dependencies - REMOVED to break circular dependency
+  # The LoadBalancerDns and LoadBalancerArn are now passed directly as parameters
+  # instead of importing from ServiceStackName
+  
+  LoadBalancerDns:
+    Type: String
+    Description: ALB DNS name (required - pass from service stack output)
+    MinLength: 1
+  
+  LoadBalancerHostedZoneId:
+    Type: String
+    Description: ALB Hosted Zone ID (required - pass from service stack output)
+    MinLength: 1
+  
+  # Certificate Configuration
+  CreateCertificate:
+    Type: String
+    Description: Create ACM certificate in this stack
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  # Route53 Configuration
+  CreateRoute53Record:
+    Type: String
+    Description: Create Route53 DNS record
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  CreateHealthCheck:
+    Type: String
+    Description: Create Route53 health check for the domain (requires route53:CreateHealthCheck permission)
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  
+  HealthCheckPath:
+    Type: String
+    Description: Path for health check endpoint
+    Default: /health
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+  CreateCert: !Equals [!Ref CreateCertificate, 'true']
+  ShouldCreateRoute53Record: !Equals [!Ref CreateRoute53Record, 'true']
+  ShouldCreateHealthCheck: !Equals [!Ref CreateHealthCheck, 'true']
+
+Resources:
+  # ===== SSL CERTIFICATE =====
+  
+  # ACM Certificate for ALB
+  BackendCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: CreateCert
+    Properties:
+      DomainName: !Sub '${ApiSubdomain}.${BaseDomain}'
+      SubjectAlternativeNames:
+        - !Sub '${ApiSubdomain}.${BaseDomain}'
+        - !If
+          - IsProd
+          - !Sub '*.${ApiSubdomain}.${BaseDomain}'
+          - !Ref AWS::NoValue
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${ApiSubdomain}.${BaseDomain}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-backend-cert'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+
+  # ===== ROUTE53 RECORDS =====
+  
+  # Route53 Record Set for API
+  ApiDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: ShouldCreateRoute53Record
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '${ApiSubdomain}.${BaseDomain}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref LoadBalancerDns
+        HostedZoneId: !Ref LoadBalancerHostedZoneId
+        EvaluateTargetHealth: true
+      Comment: !Sub 'API endpoint for ${CapabilityName} ${Environment} environment'
+
+  # Health check record (optional)
+  HealthCheckRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: ShouldCreateHealthCheck
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'health.${ApiSubdomain}.${BaseDomain}'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref LoadBalancerDns
+        HostedZoneId: !Ref LoadBalancerHostedZoneId
+        EvaluateTargetHealth: true
+      Comment: !Sub 'Health check endpoint for ${CapabilityName} ${Environment} environment'
+
+  # Route53 Health Check (for production environments)
+  HealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: ShouldCreateHealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        ResourcePath: !Ref HealthCheckPath
+        FullyQualifiedDomainName: !Sub '${ApiSubdomain}.${BaseDomain}'
+        Port: 443
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-health-check'
+        - Key: Project
+          Value: !Ref CapabilityName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  StackName:
+    Description: Domain stack name
+    Value: !Ref 'AWS::StackName'
+  
+  BackendCertificateArn:
+    Description: ARN of the backend SSL certificate
+    Condition: CreateCert
+    Value: !Ref BackendCertificate
+    Export:
+      Name: !Sub '${AWS::StackName}-BackendCertificateArn'
+  
+  ApiDomainName:
+    Description: API domain name
+    Value: !Sub '${ApiSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiDomainName'
+  
+  ApiUrl:
+    Description: Full API URL
+    Value: !Sub 'https://${ApiSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+  
+  HostedZoneId:
+    Description: Route53 Hosted Zone ID
+    Value: !Ref HostedZoneId
+    Export:
+      Name: !Sub '${AWS::StackName}-HostedZoneId'
+  
+  HealthCheckDomain:
+    Condition: ShouldCreateHealthCheck
+    Description: Health check domain name
+    Value: !Sub 'health.${ApiSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-HealthCheckDomain'
+  
+  HealthCheckUrl:
+    Condition: ShouldCreateHealthCheck
+    Description: Health check URL
+    Value: !Sub 'https://health.${ApiSubdomain}.${BaseDomain}${HealthCheckPath}'
+    Export:
+      Name: !Sub '${AWS::StackName}-HealthCheckUrl'
+  
+  HealthCheckId:
+    Condition: ShouldCreateHealthCheck
+    Description: Route53 Health Check ID
+    Value: !Ref HealthCheck
+    Export:
+      Name: !Sub '${AWS::StackName}-HealthCheckId'
+  
+  Route53RecordName:
+    Condition: ShouldCreateRoute53Record
+    Description: Route53 record name for the API
+    Value: !Ref ApiDNSRecord
+    Export:
+      Name: !Sub '${AWS::StackName}-Route53RecordName'

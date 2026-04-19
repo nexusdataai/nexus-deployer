@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "DomainName",
+    "ParameterValue": "myapp.example.com"
+  },
+  {
+    "ParameterKey": "GitHubRepository", 
+    "ParameterValue": "https://github.com/username/my-frontend-app"
+  },
+  {
+    "ParameterKey": "GitHubBranch",
+    "ParameterValue": "main"
+  },
+  {
+    "ParameterKey": "GitHubToken",
+    "ParameterValue": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  }
+]

@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../starhub-backend"
+		},
+		{
+			"path": "../starhub-ui"
+		},
+		{
+			"path": "../starhub-docs"
+		}
+	],
+	"settings": {
+		"typescript.autoClosingTags": false
+	}
+}

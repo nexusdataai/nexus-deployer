@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend Foundation Resources - CloudWatch Log Groups and KMS Keys
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+  
+  LogRetentionDays:
+    Type: Number
+    Description: CloudWatch log retention in days
+    Default: 7
+    AllowedValues:
+      - 1
+      - 3
+      - 5
+      - 7
+      - 14
+      - 30
+      - 60
+      - 90
+      - 120
+      - 150
+      - 180
+      - 365
+  
+  EnableCostAnomalyDetection:
+    Type: String
+    Description: Enable AWS Cost Anomaly Detection alerts
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  
+  CostAnomalyThreshold:
+    Type: Number
+    Description: Cost anomaly threshold in USD (alert when daily cost exceeds this)
+    Default: 50
+    MinValue: 10
+    MaxValue: 10000
+  
+  AlertEmail:
+    Type: String
+    Description: Email address for cost anomaly alerts
+    Default: ''
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+  EnableCostAlerts: !And
+    - !Equals [!Ref EnableCostAnomalyDetection, 'true']
+    - !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ===== CLOUDWATCH LOG GROUPS =====
+  
+  # Log Group for ECS Tasks
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${CapabilityName}-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # Application Log Group
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/application/${CapabilityName}-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ===== COST ANOMALY DETECTION =====
+  
+  CostAnomalyMonitor:
+    Type: AWS::CE::AnomalyMonitor
+    Condition: EnableCostAlerts
+    Properties:
+      MonitorName: !Sub '${CapabilityName}-${Environment}-cost-monitor'
+      MonitorType: DIMENSIONAL
+      MonitorDimension: SERVICE
+
+  CostAnomalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Condition: EnableCostAlerts
+    Properties:
+      SubscriptionName: !Sub '${CapabilityName}-${Environment}-cost-alerts'
+      MonitorArnList:
+        - !GetAtt CostAnomalyMonitor.MonitorArn
+      Frequency: DAILY
+      Threshold: !Ref CostAnomalyThreshold
+      ThresholdExpression:
+        Dimensions:
+          Key: ANOMALY_TOTAL_IMPACT_ABSOLUTE
+          Values:
+            - !Ref CostAnomalyThreshold
+          MatchOptions:
+            - GREATER_THAN_OR_EQUAL
+      Subscribers:
+        - Type: EMAIL
+          Address: !Ref AlertEmail
+
+  # ===== BILLING ALARM =====
+  
+  BillingAlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: EnableCostAlerts
+    Properties:
+      TopicName: !Sub '${CapabilityName}-${Environment}-billing-alerts'
+      DisplayName: !Sub '${CapabilityName} ${Environment} Billing Alerts'
+
+  BillingAlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: EnableCostAlerts
+    Properties:
+      TopicArn: !Ref BillingAlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  DailyBillingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: EnableCostAlerts
+    Properties:
+      AlarmName: !Sub '${CapabilityName}-${Environment}-daily-billing-alarm'
+      AlarmDescription: !Sub 'Daily billing alarm for ${CapabilityName} ${Environment} - triggers when estimated charges exceed threshold'
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref CostAnomalyThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Currency
+          Value: USD
+      AlarmActions:
+        - !Ref BillingAlarmTopic
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-billing-alarm'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ECSLogGroupName:
+    Description: ECS CloudWatch Log Group name
+    Value: !Ref ECSLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSLogGroupName'
+  
+  ECSLogGroupArn:
+    Description: ECS CloudWatch Log Group ARN
+    Value: !GetAtt ECSLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSLogGroupArn'
+  
+  ApplicationLogGroupName:
+    Description: Application CloudWatch Log Group name
+    Value: !Ref ApplicationLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationLogGroupName'
+  
+  ApplicationLogGroupArn:
+    Description: Application CloudWatch Log Group ARN
+    Value: !GetAtt ApplicationLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationLogGroupArn'
+  
+  CostAnomalyMonitorArn:
+    Description: Cost Anomaly Monitor ARN
+    Condition: EnableCostAlerts
+    Value: !GetAtt CostAnomalyMonitor.MonitorArn
+    Export:
+      Name: !Sub '${AWS::StackName}-CostAnomalyMonitorArn'
+  
+  BillingAlarmTopicArn:
+    Description: Billing Alert SNS Topic ARN
+    Condition: EnableCostAlerts
+    Value: !Ref BillingAlarmTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-BillingAlarmTopicArn'

@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend Regional Certificate Stack - ACM certificate for ALB in non-us-east-1 regions
+
+Parameters:
+  CapabilityName:
+    Type: String
+    Description: Name of the business capability
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+    ConstraintDescription: Must start with lowercase letter or number, and contain only lowercase letters, numbers, and hyphens
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Default: dev
+  
+  ApiSubdomain:
+    Type: String
+    Description: API subdomain (e.g., api)
+    Default: api
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*$
+  
+  BaseDomain:
+    Type: String
+    Description: Base domain name (e.g., example.com)
+    AllowedPattern: ^[a-z0-9][a-z0-9-\.]*\.[a-z]{2,}$
+    ConstraintDescription: Must be a valid domain name
+  
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for the base domain
+    AllowedPattern: ^Z[0-9A-Z]+$
+  
+  IncludeWildcard:
+    Type: String
+    Description: Include wildcard subdomain in certificate
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+
+Conditions:
+  IncludeWildcardDomain: !Equals [!Ref IncludeWildcard, 'true']
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ACM Certificate for ALB in regional deployment
+  RegionalBackendCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${ApiSubdomain}.${BaseDomain}'
+      SubjectAlternativeNames:
+        - !Sub '${ApiSubdomain}.${BaseDomain}'
+        - !If
+          - IncludeWildcardDomain
+          - !Sub '*.${ApiSubdomain}.${BaseDomain}'
+          - !Ref AWS::NoValue
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${ApiSubdomain}.${BaseDomain}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-backend-regional-cert'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Region
+          Value: !Ref AWS::Region
+
+Outputs:
+  CertificateArn:
+    Description: ARN of the regional backend certificate
+    Value: !Ref RegionalBackendCertificate
+    Export:
+      Name: !Sub '${AWS::StackName}-CertificateArn'
+  
+  CertificateDomain:
+    Description: Primary domain name for the certificate
+    Value: !Sub '${ApiSubdomain}.${BaseDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-CertificateDomain'

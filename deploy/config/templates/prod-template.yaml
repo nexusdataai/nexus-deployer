@@ -1,0 +1,89 @@
+infrastructure:
+  domain:
+    base: example.com
+    frontend_subdomain: app
+    backend_subdomain: api
+    hosted_zone_id: ""
+  
+  frontend:
+    cloudfront:
+      enabled: true
+      price_class: PriceClass_All
+      waf_enabled: true
+      cache_ttl: 86400
+      enable_logging: true
+      enable_ipv6: true
+      rate_limit: 2000
+  
+  backend:
+    vpc:
+      create_new: true
+      vpc_cidr: 10.0.0.0/16
+      enable_nat_gateway: true
+      enable_flow_logs: true  # Security: VPC traffic logging enabled for prod
+    
+    waf:
+      enabled: true  # Security: WAF protection enabled for prod
+      rate_limit: 2000
+    
+    ecs:
+      cluster_name: null
+      container_port: 8000
+      task_cpu: 2048
+      task_memory: 4096
+      desired_count: 3
+      health_check_path: /health
+    
+    autoscaling:
+      enabled: true
+      min_capacity: 2
+      max_capacity: 5
+      target_cpu: 70
+      target_memory: 80
+    
+    storage:
+      dynamodb_billing_mode: PAY_PER_REQUEST
+      enable_backup: true
+      enable_point_in_time_recovery: true
+      ecr_image_scan_on_push: true
+      ecr_image_retention_days: 30
+    
+    certificate:
+      create_in_foundation: true
+    
+    alb:
+      enable_access_logs: true
+      deregistration_delay: 60
+      health_check_interval: 30
+      health_check_timeout: 10
+      healthy_threshold: 2
+      unhealthy_threshold: 3
+  
+  monitoring:
+    cloudwatch:
+      log_retention_days: 30
+      container_insights: true
+    cost_alerts:
+      enabled: true  # Cost: Enable anomaly detection for prod
+      threshold_usd: 100  # Alert when daily cost exceeds $100
+      alert_email: ""  # Set your alert email
+  
+  # Pre-deployment validation settings
+  pre_validation:
+    # Enable/disable pre-deployment validation
+    enabled: true
+    # Strict mode: warnings block deployment (not just errors)
+    strict_mode: true
+    # Enforce export naming convention
+    enforce_naming_convention: true
+    # Validate stack dependencies before deployment
+    validate_dependencies: true
+  
+  tags:
+    common:
+      Project: ""
+      Environment: prod
+      ManagedBy: CloudFormation
+      Team: ""
+      Application: ""
+      CostCenter: ""

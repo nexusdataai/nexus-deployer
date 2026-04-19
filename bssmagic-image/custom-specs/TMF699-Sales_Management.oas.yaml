@@ -1,0 +1,180 @@
+openapi: 3.0.3
+info:
+  title: TMF699 Sales Management
+  version: 4.0.0
+  description: StarHub custom spec for SalesLead CRUD via BSS Magic mapping views.
+servers:
+  - url: /tmf-api/salesManagement/v4
+paths:
+  /salesLead:
+    get:
+      operationId: listSalesLead
+      summary: List sales leads
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+        - name: fields
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: familyName
+          in: query
+          schema:
+            type: string
+        - name: companyName
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SalesLead'
+    post:
+      operationId: createSalesLead
+      summary: Create a sales lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalesLead_Create'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesLead'
+  /salesLead/{id}:
+    get:
+      operationId: retrieveSalesLead
+      summary: Retrieve a sales lead by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fields
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesLead'
+        '404':
+          description: Not found
+components:
+  schemas:
+    SalesLead:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        givenName:
+          type: string
+        familyName:
+          type: string
+        companyName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        mobilePhone:
+          type: string
+        mobileType:
+          type: string
+        salutation:
+          type: string
+        recordTypeId:
+          type: string
+        customerType:
+          type: string
+        serviceTypeEnquired:
+          type: string
+        productEnquired:
+          type: string
+        brn:
+          type: string
+        ownerId:
+          type: string
+        leadRemarks:
+          type: string
+        leadCurrency:
+          type: string
+        createdDate:
+          type: string
+        lastModifiedDate:
+          type: string
+    SalesLead_Create:
+      type: object
+      required:
+        - familyName
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        givenName:
+          type: string
+        familyName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        mobilePhone:
+          type: string
+        mobileType:
+          type: string
+        salutation:
+          type: string
+        recordTypeId:
+          type: string
+        customerType:
+          type: string
+        serviceTypeEnquired:
+          type: string
+        productEnquired:
+          type: string
+        brn:
+          type: string
+        ownerId:
+          type: string
+        leadRemarks:
+          type: string
+        leadCurrency:
+          type: string
+        source:
+          type: string
+        status:
+          type: string
