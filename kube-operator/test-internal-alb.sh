@@ -21,7 +21,7 @@ fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
-REGION="${REGION:-ap-southeast-1}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 
 GREEN='\033[0;32m'

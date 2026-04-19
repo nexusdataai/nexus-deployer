@@ -21,7 +21,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-REGION = "ap-southeast-1"
+REGION = "us-east-1"
 CALL_TIMEOUT = 8  # Hard timeout per API call (seconds)
 FAST_CONFIG = Config(
     connect_timeout=4,
@@ -201,21 +201,21 @@ PERMISSION_CHECKS = [
 # VPC Endpoint reachability checks -- tests connectivity to each AWS service
 # These verify the VPC endpoint exists and is reachable, not IAM permissions
 ENDPOINT_CHECKS = [
-    ("com.amazonaws.ap-southeast-1.ec2",             "ec2",              "describe_vpcs",              {"MaxResults": 5}),
-    ("com.amazonaws.ap-southeast-1.s3",              "s3",               "list_buckets",               {}),
-    ("com.amazonaws.ap-southeast-1.dynamodb",        "dynamodb",         "list_tables",                {"Limit": 1}),
-    ("com.amazonaws.ap-southeast-1.sts",             "sts",              "get_caller_identity",        {}),
-    ("com.amazonaws.ap-southeast-1.ssm",             "ssm",              "describe_parameters",        {"MaxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.secretsmanager",  "secretsmanager",   "list_secrets",               {"MaxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.glue",            "glue",             "get_databases",              {"MaxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.ecr.api",         "ecr",              "describe_repositories",      {"maxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.ecr.dkr",         "ecr",              "get_authorization_token",    {}),
-    ("com.amazonaws.ap-southeast-1.logs",            "logs",             "describe_log_groups",        {"limit": 1}),
-    ("com.amazonaws.ap-southeast-1.cognito-idp",     "cognito-idp",      "list_user_pools",            {"MaxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.athena",          "athena",           "list_work_groups",           {"MaxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.events",          "events",           "list_event_buses",           {"Limit": 1}),
-    ("com.amazonaws.ap-southeast-1.eks",             "eks",              "list_clusters",              {"maxResults": 1}),
-    ("com.amazonaws.ap-southeast-1.iam",             "iam",              "list_roles",                 {"MaxItems": 1}),
+    ("com.amazonaws.us-east-1.ec2",             "ec2",              "describe_vpcs",              {"MaxResults": 5}),
+    ("com.amazonaws.us-east-1.s3",              "s3",               "list_buckets",               {}),
+    ("com.amazonaws.us-east-1.dynamodb",        "dynamodb",         "list_tables",                {"Limit": 1}),
+    ("com.amazonaws.us-east-1.sts",             "sts",              "get_caller_identity",        {}),
+    ("com.amazonaws.us-east-1.ssm",             "ssm",              "describe_parameters",        {"MaxResults": 1}),
+    ("com.amazonaws.us-east-1.secretsmanager",  "secretsmanager",   "list_secrets",               {"MaxResults": 1}),
+    ("com.amazonaws.us-east-1.glue",            "glue",             "get_databases",              {"MaxResults": 1}),
+    ("com.amazonaws.us-east-1.ecr.api",         "ecr",              "describe_repositories",      {"maxResults": 1}),
+    ("com.amazonaws.us-east-1.ecr.dkr",         "ecr",              "get_authorization_token",    {}),
+    ("com.amazonaws.us-east-1.logs",            "logs",             "describe_log_groups",        {"limit": 1}),
+    ("com.amazonaws.us-east-1.cognito-idp",     "cognito-idp",      "list_user_pools",            {"MaxResults": 1}),
+    ("com.amazonaws.us-east-1.athena",          "athena",           "list_work_groups",           {"MaxResults": 1}),
+    ("com.amazonaws.us-east-1.events",          "events",           "list_event_buses",           {"Limit": 1}),
+    ("com.amazonaws.us-east-1.eks",             "eks",              "list_clusters",              {"maxResults": 1}),
+    ("com.amazonaws.us-east-1.iam",             "iam",              "list_roles",                 {"MaxItems": 1}),
 ]
 
 # Expected non-error codes that still mean permission is granted

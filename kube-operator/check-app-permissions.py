@@ -8,7 +8,7 @@ to test the exact same IAM role the application pods use.
 Environment variables (set by the Job):
     CAPABILITY  e.g. call-processing
     ENV         e.g. stage
-    REGION      e.g. ap-southeast-1
+    REGION      e.g. us-east-1
     PERM_CHECK_SSL_VERIFY  optional; set to 0/false to disable TLS cert verify (debug only)
 
 Usage (via CLI):
@@ -23,7 +23,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-REGION = os.getenv("REGION", "ap-southeast-1")
+REGION = os.getenv("REGION", "us-east-1")
 CAPABILITY = os.getenv("CAPABILITY", "call-processing")
 ENV = os.getenv("ENV", "stage")
 CALL_TIMEOUT = 8

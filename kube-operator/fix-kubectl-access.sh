@@ -8,7 +8,7 @@
 set -e
 
 CLUSTER_NAME="${1:-starhub-test}"
-REGION="${2:-ap-southeast-1}"
+REGION="${2:-us-east-1}"
 AWS_PROFILE="${3:-external-access}"
 
 echo ""

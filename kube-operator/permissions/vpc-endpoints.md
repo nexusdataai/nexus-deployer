@@ -12,4 +12,3 @@ com.amazonaws.us-east-1.cognito-idp
 com.amazonaws.us-east-1.athena
 com.amazonaws.us-east-1.events
 com.amazonaws.us-east-1.eks
-com.amazonaws.us-east-1.iam

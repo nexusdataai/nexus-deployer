@@ -20,7 +20,7 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
-REGION="${REGION:-ap-southeast-1}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 
 while [[ $# -gt 0 ]]; do
@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --env ENV        Target environment (default: from .env.local or prod)"
-            echo "  --region REGION  AWS region (default: ap-southeast-1)"
+            echo "  --region REGION  AWS region (default: us-east-1)"
             echo "  --profile PROF   AWS CLI profile (default: external-access)"
             exit 0
             ;;

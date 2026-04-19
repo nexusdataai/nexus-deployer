@@ -204,7 +204,7 @@ check_backend_local() {
 import boto3, os, sys
 try:
     from src.utils.aws_client_utils import vpc_boto3_client
-    sts = vpc_boto3_client('sts', region_name=os.getenv('AWS_REGION','ap-southeast-1'))
+    sts = vpc_boto3_client('sts', region_name=os.getenv('AWS_REGION','us-east-1'))
     print(sts.get_caller_identity()['Arn'])
 except Exception as e:
     print(f'ERROR:{e}', file=sys.stderr)

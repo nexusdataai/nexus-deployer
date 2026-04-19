@@ -151,7 +151,7 @@ if [ -z "$CURRENT_ACCOUNT" ]; then
 fi
 
 # Detect region from existing EKS cluster or default
-REGION=$(aws configure get region --profile "${AWS_PROFILE}" 2>/dev/null || echo "ap-southeast-1")
+REGION=$(aws configure get region --profile "${AWS_PROFILE}" 2>/dev/null || echo "us-east-1")
 ECR_REGISTRY="${CURRENT_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 
 # Resolve cluster name from --env convention (if not explicitly provided via --cluster)

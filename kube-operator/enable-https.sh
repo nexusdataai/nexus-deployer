@@ -25,7 +25,7 @@ fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
-REGION="${REGION:-ap-southeast-1}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 CERTIFICATE_ARN="${CERTIFICATE_ARN:-${_ENV_LOCAL_CERT:-}}"
 DISABLE_HTTPS=false

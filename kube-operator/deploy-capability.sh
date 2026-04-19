@@ -104,7 +104,7 @@ done
 CURRENT_ACCOUNT=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query 'Account' --output text 2>/dev/null || true)
 [ -z "$CURRENT_ACCOUNT" ] && fail "Failed to get AWS account ID. Are you logged in?"
 
-REGION=$(aws configure get region --profile "${AWS_PROFILE}" 2>/dev/null || echo "ap-southeast-1")
+REGION=$(aws configure get region --profile "${AWS_PROFILE}" 2>/dev/null || echo "us-east-1")
 ECR_REGISTRY="${CURRENT_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 
 if [ "$CLUSTER_EXPLICIT" = true ]; then

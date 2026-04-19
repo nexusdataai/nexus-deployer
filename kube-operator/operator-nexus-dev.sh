@@ -35,7 +35,7 @@ fi
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
-REGION="${REGION:-ap-southeast-1}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
 BACKEND_DIR="${SCRIPT_DIR}/../backend"
 
@@ -330,7 +330,7 @@ except ImportError:
     sys.exit(1)
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
-REGION = os.getenv('REGION', 'ap-southeast-1')
+REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 def get_oidc_thumbprint(oidc_issuer):
@@ -497,7 +497,7 @@ except ImportError:
     sys.exit(1)
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
-REGION = os.getenv('REGION', 'ap-southeast-1')
+REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 ALB_CONTROLLER_NAMESPACE = "kube-system"
@@ -983,7 +983,7 @@ except ImportError:
     sys.exit(1)
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
-REGION = os.getenv('REGION', 'ap-southeast-1')
+REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 ALB_CONTROLLER_NAMESPACE = "kube-system"
@@ -1638,7 +1638,7 @@ except ImportError as e:
     sys.exit(1)
 
 CLUSTER_NAME = os.getenv('CLUSTER_NAME') or sys.exit("Error: CLUSTER_NAME not set. Check .env.local or pass --cluster.")
-REGION = os.getenv('REGION', 'ap-southeast-1')
+REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'ptr-tech')
 
 # Minimum supported EKS version

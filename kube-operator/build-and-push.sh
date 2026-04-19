@@ -8,8 +8,8 @@
 # Examples:
 #   ./build-and-push.sh                           # Build and push 'latest' to default region
 #   ./build-and-push.sh v1.0.0                    # Build and push 'v1.0.0' tag
-#   ./build-and-push.sh latest ap-southeast-1     # Specify region
-#   ./build-and-push.sh latest ap-southeast-1 external-access  # Specify AWS profile
+#   ./build-and-push.sh latest us-east-1     # Specify region
+#   ./build-and-push.sh latest us-east-1 external-access  # Specify AWS profile
 #
 
 set -e
@@ -24,7 +24,7 @@ NC='\033[0m' # No Color
 # Configuration
 IMAGE_NAME="totogi-operator"
 TAG="${1:-latest}"
-REGION="${2:-${AWS_REGION:-ap-southeast-1}}"
+REGION="${2:-${AWS_REGION:-us-east-1}}"
 AWS_PROFILE="${3:-${AWS_PROFILE:-}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

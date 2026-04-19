@@ -18,7 +18,7 @@ except ImportError:
     print("Error: boto3 not installed")
     sys.exit(1)
 
-REGION = os.getenv("REGION", "ap-southeast-1")
+REGION = os.getenv("REGION", "us-east-1")
 AWS_PROFILE = os.getenv("AWS_PROFILE", "external-access")
 TARGET_NS = os.getenv("TARGET_NS", "")
 

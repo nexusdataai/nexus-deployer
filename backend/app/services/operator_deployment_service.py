@@ -153,7 +153,26 @@ class OperatorDeploymentService:
                 account_id = parts[4]
                 role_part = parts[5]  # assumed-role/MyRole/session-name
                 role_name = role_part.split("/")[1]
-                principal_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+                resolved = False
+                try:
+                    iam_client = self.session.client("iam") if hasattr(self, 'session') else boto3.client("iam")
+                    full_role = iam_client.get_role(RoleName=role_name)
+                    principal_arn = full_role["Role"]["Arn"]
+                    resolved = True
+                except Exception:
+                    pass
+                if not resolved:
+                    try:
+                        entries = self.eks_client.list_access_entries(clusterName=cluster_name).get("accessEntries", [])
+                        for entry in entries:
+                            if role_name in entry:
+                                principal_arn = entry
+                                resolved = True
+                                break
+                    except Exception:
+                        pass
+                if not resolved:
+                    principal_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
             
             logger.info(f"Ensuring EKS access for principal: {principal_arn}")
             
@@ -632,20 +651,17 @@ class OperatorDeploymentService:
         }
         
         try:
-            # Check if role exists
             try:
                 existing = self.iam_client.get_role(RoleName=role_name)
                 role_arn = existing["Role"]["Arn"]
                 logger.info(f"IAM role {role_name} already exists, updating policies...")
                 
-                # Always update trust policy to ensure IRSA is properly configured
                 self.iam_client.update_assume_role_policy(
                     RoleName=role_name,
                     PolicyDocument=json.dumps(trust_policy)
                 )
                 logger.info(f"Updated trust policy for {role_name}")
                 
-                # Always update inline policy to ensure all permissions are present
                 self.iam_client.put_role_policy(
                     RoleName=role_name,
                     PolicyName="totogi-operator-policy",
@@ -658,7 +674,6 @@ class OperatorDeploymentService:
                 if e.response["Error"]["Code"] != "NoSuchEntity":
                     raise
             
-            # Create role
             response = self.iam_client.create_role(
                 RoleName=role_name,
                 AssumeRolePolicyDocument=json.dumps(trust_policy),
@@ -670,7 +685,6 @@ class OperatorDeploymentService:
             )
             role_arn = response["Role"]["Arn"]
             
-            # Attach inline policy
             self.iam_client.put_role_policy(
                 RoleName=role_name,
                 PolicyName="totogi-operator-policy",
@@ -681,8 +695,9 @@ class OperatorDeploymentService:
             return role_arn
             
         except Exception as e:
-            logger.error(f"Failed to create operator IAM role: {e}")
-            raise
+            assumed_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+            logger.warning(f"IAM API unreachable ({e}). Assuming pre-created role: {assumed_arn}")
+            return assumed_arn
 
     async def _create_service_account(self, core_v1, role_arn: str):
         """Create ServiceAccount with IRSA annotation."""

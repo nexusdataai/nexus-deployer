@@ -86,7 +86,7 @@ done
 
 # AWS Configuration
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile "${AWS_PROFILE}")
-REGION="ap-southeast-1"
+REGION="us-east-1"
 ECR_BACKEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ai-job-engine:latest"
 ECR_FRONTEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/starhub-ui:latest"
 

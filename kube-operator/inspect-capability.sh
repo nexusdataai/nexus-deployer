@@ -14,7 +14,7 @@
 #   Requires aws CLI + kubectl in the container (see kube-operator Dockerfile).
 #
 #   kubectl exec -n nexus-system deploy/totogi-operator -- \
-#     env DEPLOY_ENV=stage AWS_REGION=ap-southeast-1 /bin/bash /app/inspect-capability.sh
+#     env DEPLOY_ENV=stage AWS_REGION=us-east-1 /bin/bash /app/inspect-capability.sh
 #
 #   In-cluster AWS calls use the pod service account (IRSA). DynamoDB checks use boto3 (same as the
 #   operator); the aws CLI can fail for DDB in the same pod while boto3 succeeds.
@@ -32,7 +32,7 @@ fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
-REGION="${REGION:-ap-southeast-1}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 INSPECT_FORCE_LOCAL="${INSPECT_FORCE_LOCAL:-0}"
 
@@ -137,7 +137,7 @@ inspect_ddb_boto3_line() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 name = sys.argv[1]
 c = boto3.client('dynamodb', region_name=region)
 try:
@@ -175,7 +175,7 @@ inspect_ddb_boto3_active() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('dynamodb', region_name=region)
 try:
     r = c.describe_table(TableName=sys.argv[1])['Table']
@@ -195,7 +195,7 @@ inspect_alb_boto3_json() {
 import os, sys, json
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 name = sys.argv[1]
 c = boto3.client('elbv2', region_name=region)
 try:
@@ -219,7 +219,7 @@ inspect_alb_tags_boto3() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 arn = sys.argv[1]
 c = boto3.client('elbv2', region_name=region)
 try:

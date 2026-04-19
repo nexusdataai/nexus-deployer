@@ -11,7 +11,7 @@
 # Examples:
 #   ./build-and-deploy.sh                                    # Build latest, deploy to starhub-test
 #   ./build-and-deploy.sh v1.0.0                            # Build v1.0.0, deploy to starhub-test
-#   ./build-and-deploy.sh latest starhub-test ap-southeast-1 external-access  # Full options
+#   ./build-and-deploy.sh latest starhub-test us-east-1 external-access  # Full options
 #
 
 set -e
@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 # Configuration
 TAG="${1:-latest}"
 CLUSTER="${2:-starhub-test}"
-REGION="${3:-${AWS_REGION:-ap-southeast-1}}"
+REGION="${3:-${AWS_REGION:-us-east-1}}"
 AWS_PROFILE="${4:-${AWS_PROFILE:-external-access}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
