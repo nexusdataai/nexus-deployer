@@ -5,30 +5,40 @@
 **Complete operator documentation is located at**:
 
 ```
-/opt/mycode/trilogy/starhub-deployer/doc/operator/README.md
+nexus-deployer/doc/operator/README.md
 ```
 
 ---
 
 ## 🚀 Quick Reference
 
-### Deploy Operator
+### 1. Create EKS Cluster (if needed)
+
+EKS cluster creation scripts live in `nexus-deployer/deploy/eks/`:
 
 ```bash
-cd /opt/mycode/trilogy/starhub-deployer
-./operator-starhub-test.sh deploy
+cd /opt/mycode/nexus/nexus-deployer/deploy/eks
+./create-hardened-eks-cluster.sh --name nexus-dev --region us-east-1
 ```
 
-### Check Status
+See `deploy/eks/README.md` and `deploy/eks/USAGE.md` for full details.
+
+### 2. Prepare Cluster for Operator
 
 ```bash
-./operator-starhub-test.sh status
+python prepare_cluster_for_operator.py
 ```
 
-### Clean Up
+### 3. Deploy Operator
 
 ```bash
-./operator-starhub-test.sh delete
+python deploy_operator_to_cluster.py
+```
+
+### 4. Clean Up
+
+```bash
+python cleanup_operator.py
 ```
 
 ---
@@ -37,18 +47,19 @@ cd /opt/mycode/trilogy/starhub-deployer
 
 | Script | Purpose |
 |--------|---------|
-| `deploy_operator_to_cluster.py` | Deploy operator (Python) |
-| `cleanup_operator.py` | Clean up operator (Python) |
-| `prepare_cluster_for_operator.py` | Pre-check cluster (Python) |
+| `prepare_cluster_for_operator.py` | Pre-check cluster access and readiness |
+| `deploy_operator_to_cluster.py` | Deploy operator to EKS cluster |
+| `cleanup_operator.py` | Clean up operator resources |
+
+## 📁 Related: EKS Cluster Creation
+
+| Location | Purpose |
+|----------|---------|
+| `deploy/eks/create-hardened-eks-cluster.sh` | Create EKS cluster with CIS Level 2 hardening |
+| `deploy/eks/cis-level2-full-hardening.sh` | Standalone CIS hardening for EKS nodes |
 
 ---
 
 ## 📖 For Full Documentation
 
-See: `/opt/mycode/trilogy/starhub-deployer/doc/operator/README.md`
-
-Or use the management script:
-```bash
-cd /opt/mycode/trilogy/starhub-deployer
-./operator-starhub-test.sh help
-```
+See: `nexus-deployer/doc/operator/README.md`
