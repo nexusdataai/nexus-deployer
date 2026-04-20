@@ -316,23 +316,26 @@ if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; t
     echo ""
     echo "=== Step 8: Deleting VPC ($VPC_ID) ==="
 
-    echo "   Waiting 30s for ENIs to detach..."
-    sleep 30
-
-    for eni in $(aws ec2 describe-network-interfaces \
-        --filters "Name=vpc-id,Values=$VPC_ID" \
-        --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null); do
-        ATTACH_ID=$(aws ec2 describe-network-interfaces --network-interface-ids "$eni" \
+    echo "   Cleaning up ENIs..."
+    for attempt in 1 2 3; do
+        ENIS=$(aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
             --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)
-        if [ -n "$ATTACH_ID" ] && [ "$ATTACH_ID" != "None" ]; then
-            aws ec2 detach-network-interface --attachment-id "$ATTACH_ID" --force \
+            --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null)
+        [ -z "$ENIS" ] && break
+        for eni in $ENIS; do
+            ATTACH_ID=$(aws ec2 describe-network-interfaces --network-interface-ids "$eni" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)
+            if [ -n "$ATTACH_ID" ] && [ "$ATTACH_ID" != "None" ]; then
+                aws ec2 detach-network-interface --attachment-id "$ATTACH_ID" --force \
+                    --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+            fi
+            sleep 2
+            aws ec2 delete-network-interface --network-interface-id "$eni" \
                 --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
-            sleep 3
-        fi
-        aws ec2 delete-network-interface --network-interface-id "$eni" \
-            --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+        done
+        [ "$attempt" -lt 3 ] && echo "   Waiting 10s for ENI cleanup (attempt $attempt/3)..." && sleep 10
     done
     echo "   ENIs cleaned up"
 
@@ -356,19 +359,20 @@ if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; t
     for rt in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
         --region "$REGION" --profile "$AWS_PROFILE" \
         --query 'RouteTables[].RouteTableId' --output text 2>/dev/null); do
-        IS_MAIN=$(aws ec2 describe-route-tables --route-table-ids "$rt" \
+        MAIN_COUNT=$(aws ec2 describe-route-tables --route-table-ids "$rt" \
             --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'RouteTables[0].Associations[?Main==`true`]' --output text 2>/dev/null)
-        if [ -z "$IS_MAIN" ]; then
-            for assoc in $(aws ec2 describe-route-tables --route-table-ids "$rt" \
-                --region "$REGION" --profile "$AWS_PROFILE" \
-                --query 'RouteTables[0].Associations[].RouteTableAssociationId' --output text 2>/dev/null); do
-                aws ec2 disassociate-route-table --association-id "$assoc" \
-                    --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
-            done
-            aws ec2 delete-route-table --route-table-id "$rt" \
-                --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+            --query 'length(RouteTables[0].Associations[?Main==`true`])' --output text 2>/dev/null || echo "0")
+        if [ "$MAIN_COUNT" != "0" ]; then
+            continue
         fi
+        for assoc in $(aws ec2 describe-route-tables --route-table-ids "$rt" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'RouteTables[0].Associations[].RouteTableAssociationId' --output text 2>/dev/null); do
+            aws ec2 disassociate-route-table --association-id "$assoc" \
+                --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+        done
+        aws ec2 delete-route-table --route-table-id "$rt" \
+            --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
     done
     echo "   Route tables deleted"
 
@@ -383,8 +387,12 @@ if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; t
     done
     echo "   Internet gateway deleted"
 
-    aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
-    echo -e "${GREEN}✓ VPC $VPC_ID deleted${NC}"
+    if aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$REGION" --profile "$AWS_PROFILE" 2>&1; then
+        echo -e "${GREEN}✓ VPC $VPC_ID deleted${NC}"
+    else
+        echo -e "${RED}✗ VPC $VPC_ID could not be deleted. Check for remaining dependencies:${NC}"
+        echo "    aws ec2 describe-network-interfaces --filters Name=vpc-id,Values=$VPC_ID --region $REGION --profile $AWS_PROFILE"
+    fi
 else
     if [ "$DELETE_VPC" != "true" ]; then
         echo ""
