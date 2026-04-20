@@ -169,7 +169,7 @@ print_summary() {
 # ================================================================
 echo ""
 echo -e "${CYAN}=================================================================${NC}"
-echo -e "${CYAN}  Totogi E2E Smoke Test${NC}"
+echo -e "${CYAN}  Nexus E2E Smoke Test${NC}"
 echo -e "${CYAN}=================================================================${NC}"
 echo ""
 echo "  Namespace:  ${NAMESPACE}"

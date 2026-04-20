@@ -164,8 +164,8 @@ echo -e "${CYAN}── Step 1: Ingresses & ALB Load Balancers ──${NC}"
 
 if kubectl get ns "${NS}" > /dev/null 2>&1; then
     if [ "$CONFIRM" = true ]; then
-        log_info "Removing finalizers from TotogiCapability CRs..."
-        for CR in $(kubectl get totogicapability -n "${NS}" -o name 2>/dev/null); do
+        log_info "Removing finalizers from NexusCapability CRs..."
+        for CR in $(kubectl get nexuscapability -n "${NS}" -o name 2>/dev/null); do
             kubectl patch "$CR" -n "${NS}" --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
         done
 

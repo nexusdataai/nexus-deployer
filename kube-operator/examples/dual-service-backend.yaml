@@ -5,7 +5,7 @@
 # 1. ClusterIP (internal) - For frontend UI to use (fast, private)
 # 2. LoadBalancer (external) - For external applications (public API)
 #
-# Apply AFTER deploying TotogiCapability
+# Apply AFTER deploying NexusCapability
 #
 # Usage:
 #   kubectl apply -f dual-service-backend.yaml
@@ -18,7 +18,7 @@ metadata:
   labels:
     app.kubernetes.io/name: call-processing
     app.kubernetes.io/component: backend
-    totogi.com/service-type: internal
+    nexus.ai/service-type: internal
 spec:
   type: ClusterIP  # Internal only - not exposed outside cluster
   selector:
@@ -38,7 +38,7 @@ metadata:
   labels:
     app.kubernetes.io/name: call-processing
     app.kubernetes.io/component: backend
-    totogi.com/service-type: external
+    nexus.ai/service-type: external
   annotations:
     # AWS LoadBalancer configuration
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # Network Load Balancer (faster, cheaper)

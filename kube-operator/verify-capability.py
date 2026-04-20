@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify TotogiCapability deployment (AWS + Kubernetes + health).
+"""Verify NexusCapability deployment (AWS + Kubernetes + health).
 
 When VERIFY_USE_IRSA=1 or KUBERNETES_SERVICE_HOST is set, uses default boto3
 credential chain (IRSA). Otherwise uses AWS_PROFILE (local / jumpbox).
@@ -79,7 +79,7 @@ def kubectl_text(args):
     return r.stdout.strip() if r.returncode == 0 else ""
 
 def find_capability():
-    """Find TotogiCapability to verify."""
+    """Find NexusCapability to verify."""
     if TARGET_NS:
         obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
         if obj and obj.get("items"):
@@ -95,7 +95,7 @@ def find_capability():
     
     obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
     if not obj or not obj.get("items"):
-        print("No TotogiCapability resources found.")
+        print("No NexusCapability resources found.")
         sys.exit(1)
     
     items = obj["items"]
@@ -555,7 +555,7 @@ def verify_cognito(session, spec, cap_name, env, alb_url):
     
     if not cognito_enabled:
         warn("Cognito not enabled in capability spec (enableCognito: false)")
-        print("      To enable, set enableCognito: true in the TotogiCapability spec")
+        print("      To enable, set enableCognito: true in the NexusCapability spec")
         return
     
     cognito_client = _aws_client(session, "cognito-idp", region_name=REGION)
@@ -754,7 +754,7 @@ def verify_cognito(session, spec, cap_name, env, alb_url):
         warn("Auth service", "ALB URL not available - skipping auth endpoint checks")
 
 def main():
-    print("Finding TotogiCapability to verify...")
+    print("Finding NexusCapability to verify...")
     cap = find_capability()
     
     meta = cap["metadata"]
@@ -778,15 +778,15 @@ def main():
         print("  VERIFICATION BLOCKED")
         print("═══════════════════════════════════════════════════════════════════")
         print("")
-        print(f"  TotogiCapability must be in phase Running (current: '{phase}').")
+        print(f"  NexusCapability must be in phase Running (current: '{phase}').")
         print("  Wait for deployment to finish, then retry.")
-        print(f"  Tip: ./operator-starhub-test.sh monitor   (namespace: {namespace})")
+        print(f"  Tip: ./operator-nexus-dev.sh monitor   (namespace: {namespace})")
         print("")
         sys.exit(1)
     
     if use_irsa_credentials():
         session = boto3.Session(region_name=REGION)
-        print("  AWS API calls: in-cluster IRSA (Totogi operator service account)")
+        print("  AWS API calls: in-cluster IRSA (Nexus operator service account)")
     else:
         session = boto3.Session(profile_name=AWS_PROFILE, region_name=REGION)
         print(f"  AWS API calls: boto3 profile '{AWS_PROFILE}'")

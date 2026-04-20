@@ -24,31 +24,31 @@
 
 ---
 # ============================================================
-# OPTION 1: TotogiCapability with ALB Ingress (RECOMMENDED)
+# OPTION 1: NexusCapability with ALB Ingress (RECOMMENDED)
 # ============================================================
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-__ENV__
   namespace: call-processing-__ENV__
   labels:
     app.kubernetes.io/name: call-processing
     app.kubernetes.io/version: "2.5.0"
-    totogi.com/environment: __ENV__
-    totogi.com/criticality: high
+    nexus.ai/environment: __ENV__
+    nexus.ai/criticality: high
 spec:
   # Capability identification
   capabilityName: call-processing
   version: "2.5.0"
   environment: __ENV__
-  region: ap-southeast-1
+  region: us-east-1
   enableCognito: true
-  adminEmail: "admin@totogi.com"     # Initial admin user (password change required on first login)
+  adminEmail: "admin@nexus.ai"     # Initial admin user (password change required on first login)
   
   # Frontend - Must listen on port 8080
   frontend:
     replicas: 3
-    image: "__ECR_REGISTRY__/starhub-ui:latest"
+    image: "__ECR_REGISTRY__/nexus-ui:latest"
   
   # Backend - Must listen on port 8000 with /health endpoint
   backend:
@@ -82,14 +82,14 @@ spec:
     # Credentials: upload via CLI after operator creates the placeholder secret:
     #   aws secretsmanager put-secret-value \
     #     --secret-id "call-processing/__ENV__/bssmagic-credentials" \
-    #     --secret-binary fileb://credentials.zip --region ap-southeast-1
+    #     --secret-binary fileb://credentials.zip --region us-east-1
     credentialsSecretName: "call-processing/__ENV__/bssmagic-credentials"
     # Axway config: operator auto-creates with UAT endpoint defaults.
     # Update CLIENT_ID, CLIENT_SECRET, KEY_ID, PROVIDER_ORG for your environment:
     #   aws secretsmanager put-secret-value \
     #     --secret-id "call-processing/__ENV__/bssmagic-axway-config" \
     #     --secret-string '{"AXWAY_CLIENT_ID":"...","AXWAY_CLIENT_SECRET":"..."}' \
-    #     --region ap-southeast-1
+    #     --region us-east-1
     axwaySecretName: "call-processing/__ENV__/bssmagic-axway-config"
     # S3 dump: operator auto-creates bucket. Upload dump for faster first boot:
     #   aws s3 cp bssmagic-dump.sql.gz s3://call-processing-__ENV__-bssmagic-dumps-ACCOUNT_ID/
@@ -118,7 +118,7 @@ spec:
   # ingress:
   #   enabled: true
   #   scheme: internet-facing
-  #   certificateArn: "arn:aws:acm:ap-southeast-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
+  #   certificateArn: "arn:aws:acm:us-east-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
   #   healthCheckPath: "/health"
 
   # Internal ALB Ingress (VPC-only access) — works independently of ingress.enabled above.
@@ -132,7 +132,7 @@ spec:
       - subnet-073f4c54a4d3ce169
     annotations:
       alb.ingress.kubernetes.io/security-groups: sg-0762abe928f161282
-    certificateArn: "arn:aws:acm:ap-southeast-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
+    certificateArn: "arn:aws:acm:us-east-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
 
   # AWS resources (DynamoDB, S3, Glue)
   dataServices:
@@ -164,7 +164,7 @@ spec:
 #   labels:
 #     app.kubernetes.io/name: call-processing
 #     app.kubernetes.io/component: backend
-#     totogi.com/service-type: internal
+#     nexus.ai/service-type: internal
 # spec:
 #   type: ClusterIP
 #   selector:

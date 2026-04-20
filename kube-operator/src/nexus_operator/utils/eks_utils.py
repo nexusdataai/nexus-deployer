@@ -203,7 +203,7 @@ def create_iam_oidc_provider(cluster_name: str, region: str) -> Optional[str]:
             ThumbprintList=[thumbprint],
             Tags=[
                 {"Key": "eks:cluster-name", "Value": cluster_name},
-                {"Key": "managed-by", "Value": "totogi-operator"},
+                {"Key": "managed-by", "Value": "nexus-operator"},
             ]
         )
         

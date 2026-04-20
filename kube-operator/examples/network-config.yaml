@@ -1,4 +1,4 @@
-# TotogiNetworkConfig -- VPC Endpoint Setup
+# NexusNetworkConfig -- VPC Endpoint Setup
 #
 # Apply once per cluster to create/verify VPC Gateway and Interface endpoints.
 # The operator provisions missing endpoints and reports status.
@@ -13,8 +13,8 @@
 # Or use the CLI:
 #   ./operator-starhub-test.sh setup-endpoints
 #
-apiVersion: totogi.com/v1
-kind: TotogiNetworkConfig
+apiVersion: nexus.ai/v1
+kind: NexusNetworkConfig
 metadata:
   name: vpc-endpoints
 spec:

@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./setup-admin.sh                                  # Uses defaults from .env.local
-#   ./setup-admin.sh --email admin@totogi.com --password MyPass123!
+#   ./setup-admin.sh --email admin@nexus.ai --password MyPass123!
 #   ./setup-admin.sh --verify-only                    # Only verify login, don't set password
 #   ./setup-admin.sh --help
 #
@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Usage:"
             echo "  $0                                    # Interactive (prompts for password)"
-            echo "  $0 --email admin@totogi.com --password Pass123!"
+            echo "  $0 --email admin@nexus.ai --password Pass123!"
             echo "  $0 --verify-only                      # Only verify existing login"
             echo ""
             echo "Options:"

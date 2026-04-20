@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Deploy Totogi Kubernetes Operator to EKS Cluster
+Deploy Nexus Kubernetes Operator to EKS Cluster
 
 This script is FULLY AUTONOMOUS and uses only Python APIs:
 - Kubernetes Python client (no kubectl binary required)
@@ -787,7 +787,7 @@ class OperatorDeployer:
             return False
         
         logger.info("=" * 70)
-        logger.info("DEPLOYING TOTOGI KUBERNETES OPERATOR")
+        logger.info("DEPLOYING NEXUS KUBERNETES OPERATOR")
         logger.info("=" * 70)
         
         try:
@@ -1123,7 +1123,7 @@ class OperatorDeployer:
         """
         logger.info("")
         logger.info("╔" + "═" * 68 + "╗")
-        logger.info("║" + " " * 15 + "TOTOGI OPERATOR DEPLOYMENT SCRIPT" + " " * 19 + "║")
+        logger.info("║" + " " * 15 + "NEXUS OPERATOR DEPLOYMENT SCRIPT" + " " * 19 + "║")
         logger.info("╚" + "═" * 68 + "╝")
         logger.info("")
         
@@ -1175,7 +1175,7 @@ class OperatorDeployer:
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Deploy Totogi Kubernetes Operator to EKS cluster",
+        description="Deploy Nexus Kubernetes Operator to EKS cluster",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

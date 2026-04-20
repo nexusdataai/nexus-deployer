@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class DynamoDBProvisioner:
-    """Provisions DynamoDB tables for Totogi capabilities."""
+    """Provisions DynamoDB tables for Nexus capabilities."""
     
     # Table schemas matching ECS/CloudFormation deployment
     # Backend expects uppercase PK/SK keys and GSI1 on transformation-system

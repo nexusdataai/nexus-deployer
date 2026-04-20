@@ -45,7 +45,7 @@ else
     echo "This means you don't have EKS Access Entry or aws-auth entry yet."
     echo ""
     echo "Solution: Deploy the operator, which will automatically grant you access:"
-    echo "  ./operator-starhub-test.sh deploy"
+    echo "  ./operator-nexus-dev.sh deploy"
     echo ""
     echo "Or manually create EKS Access Entry:"
     echo "  aws eks create-access-entry \\"

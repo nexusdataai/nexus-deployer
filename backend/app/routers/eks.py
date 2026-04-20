@@ -76,7 +76,7 @@ class EKSNamespaceListResponse(BaseModel):
 
 
 class DeployOperatorRequest(BaseModel):
-    """Request to deploy the Totogi Operator."""
+    """Request to deploy the Nexus Operator."""
     cluster_name: str
     operator_version: Optional[str] = None
 
@@ -90,7 +90,7 @@ class DeployOperatorResponse(BaseModel):
 
 
 class DeployCapabilityRequest(BaseModel):
-    """Request to deploy a capability via TotogiCapability CR."""
+    """Request to deploy a capability via NexusCapability CR."""
     cluster_name: str
     capability_name: str
     capability_version: str
@@ -204,7 +204,7 @@ async def check_operator_status(
     aws_session_id: Optional[str] = Query(None, description="AWS session ID for authentication")
 ):
     """
-    Check if the Totogi Operator is installed on the cluster.
+    Check if the Nexus Operator is installed on the cluster.
     
     Requirements: 3.9
     """
@@ -258,7 +258,7 @@ async def deploy_operator(
     aws_session_id: Optional[str] = Query(None, description="AWS session ID for authentication")
 ):
     """
-    Deploy the Totogi Operator to the EKS cluster.
+    Deploy the Nexus Operator to the EKS cluster.
     
     Creates the nexus-system namespace, IAM role with IRSA, and deploys the operator.
     
@@ -290,7 +290,7 @@ async def deploy_capability(
     aws_session_id: Optional[str] = Query(None, description="AWS session ID for authentication")
 ):
     """
-    Deploy a capability by creating a TotogiCapability Custom Resource.
+    Deploy a capability by creating a NexusCapability Custom Resource.
     
     The operator will reconcile the CR and provision all required resources.
     

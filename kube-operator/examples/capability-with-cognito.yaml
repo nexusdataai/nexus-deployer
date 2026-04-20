@@ -1,5 +1,5 @@
 ---
-# TotogiCapability with Automatic Cognito Provisioning
+# NexusCapability with Automatic Cognito Provisioning
 #
 # This example shows how to deploy an application with automatic
 # Cognito User Pool creation and SSM configuration.
@@ -16,14 +16,14 @@
 # 5. Deploy backend (reads from SSM)
 # 6. Deploy frontend
 
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: myapp-dev
   namespace: myapp-dev
   labels:
     app.kubernetes.io/name: myapp
-    totogi.com/environment: dev
+    nexus.ai/environment: dev
 spec:
   # Capability identification
   capabilityName: myapp

@@ -1,5 +1,5 @@
 ---
-# Totogi Operator RBAC Configuration
+# Nexus Operator RBAC Configuration
 # Feature: pure-eks-deployment
 # Requirements: 3.4
 #
@@ -16,33 +16,33 @@ metadata:
     # IRSA: do not apply as-is. Substitute ${ACCOUNT_ID} (see permissions/ADMIN-SETUP.md), e.g.:
     #   export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     #   sed -e "s|\${ACCOUNT_ID}|${ACCOUNT_ID}|g" manifests/rbac.yaml | kubectl apply -f -
-    eks.amazonaws.com/role-arn: "arn:aws:iam::${ACCOUNT_ID}:role/TotogiOperatorRole"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::${ACCOUNT_ID}:role/NexusOperatorRole"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: nexus-operator
 rules:
-  # TotogiCapability CRD management
-  - apiGroups: ["totogi.com"]
-    resources: ["totogicapabilities"]
+  # NexusCapability CRD management
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexuscapabilities"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["totogi.com"]
-    resources: ["totogicapabilities/status"]
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexuscapabilities/status"]
     verbs: ["get", "update", "patch"]
-  - apiGroups: ["totogi.com"]
-    resources: ["totogicapabilities/finalizers"]
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexuscapabilities/finalizers"]
     verbs: ["update"]
 
-  # TotogiNetworkConfig CRD (VPC endpoints — kopf watches cluster-scoped resources)
-  - apiGroups: ["totogi.com"]
-    resources: ["totoginetworkconfigs"]
+  # NexusNetworkConfig CRD (VPC endpoints — kopf watches cluster-scoped resources)
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexusnetworkconfigs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["totogi.com"]
-    resources: ["totoginetworkconfigs/status"]
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexusnetworkconfigs/status"]
     verbs: ["get", "update", "patch"]
-  - apiGroups: ["totogi.com"]
-    resources: ["totoginetworkconfigs/finalizers"]
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexusnetworkconfigs/finalizers"]
     verbs: ["update"]
 
   # Core Kubernetes resources

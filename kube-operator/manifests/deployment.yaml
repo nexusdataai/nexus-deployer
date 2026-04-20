@@ -1,5 +1,5 @@
 ---
-# Totogi Operator Deployment
+# Nexus Operator Deployment
 # Feature: pure-eks-deployment
 # Requirements: 3.2, 3.3
 apiVersion: v1
@@ -18,7 +18,7 @@ metadata:
   labels:
     app.kubernetes.io/name: nexus-operator
     app.kubernetes.io/component: operator
-    app.kubernetes.io/managed-by: totogi
+    app.kubernetes.io/managed-by: nexus
 spec:
   replicas: 1
   selector:
@@ -43,7 +43,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: operator
-          image: totogi/nexus-operator:latest
+          image: nexus/nexus-operator:latest
           imagePullPolicy: Always
           ports:
             - name: http

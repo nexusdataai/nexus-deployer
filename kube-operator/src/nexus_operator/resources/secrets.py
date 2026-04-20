@@ -123,7 +123,7 @@ class SecretsProvisioner:
                 if e.response["Error"]["Code"] != "ResourceNotFoundException":
                     raise
             
-            desc = description or f"Totogi secret for {self.naming.capability_name}"
+            desc = description or f"Nexus secret for {self.naming.capability_name}"
             self.client.create_secret(
                 Name=secret_name,
                 SecretString=json.dumps(value),

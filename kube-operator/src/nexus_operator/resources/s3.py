@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class S3Provisioner:
-    """Provisions S3 buckets for Totogi capabilities."""
+    """Provisions S3 buckets for Nexus capabilities."""
     
     BUCKET_PURPOSES = ["call-data", "wxcc-simulator", "sfdc-simulator", "journey-logs", "journey-reports", "bssmagic-dumps"]
     

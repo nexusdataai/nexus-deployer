@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class GlueProvisioner:
-    """Provisions AWS Glue databases and tables for Totogi capabilities."""
+    """Provisions AWS Glue databases and tables for Nexus capabilities."""
     
     # WXCC call records table schema - must match JSON structure written by call processor
     # See: starhub-backend/src/stages/call-process/call_processor.py

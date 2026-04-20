@@ -32,7 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo ""
 echo -e "${BLUE}================================================"
-echo "  Build and Deploy Totogi Operator"
+echo "  Build and Deploy Nexus Operator"
 echo -e "================================================${NC}"
 echo ""
 echo "Tag:         ${TAG}"
@@ -66,7 +66,7 @@ echo ""
 export OPERATOR_IMAGE="${IMAGE_URL}"
 
 # Deploy using the operator management script
-"${SCRIPT_DIR}/operator-starhub-test.sh" deploy --force
+"${SCRIPT_DIR}/operator-nexus-dev.sh" deploy --force
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -78,7 +78,7 @@ if [ $? -eq 0 ]; then
     echo "Cluster:        ${CLUSTER}"
     echo ""
     echo "Check operator status:"
-    echo "  ./operator-starhub-test.sh status"
+    echo "  ./operator-nexus-dev.sh status"
     echo ""
     echo "View operator logs:"
     echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"

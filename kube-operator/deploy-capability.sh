@@ -9,7 +9,7 @@
 #   1. Push CallSense app images to ECR (backend + frontend)
 #   2. Push BSS Magic image to ECR
 #   3. Upload BSS Magic credentials.zip to Secrets Manager
-#   4. Apply capability (TotogiCapability CR)
+#   4. Apply capability (NexusCapability CR)
 #   5. Monitor deployment progress
 #   6. Verify and fix SSM parameters (Glue, Cognito)
 #   7. Verify all resources
@@ -129,7 +129,7 @@ kubectl get nodes >/dev/null 2>&1 || fail "kubectl cannot connect to cluster (Un
 # Verify operator is running
 OPERATOR_READY=$(kubectl get deployment nexus-operator -n nexus-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
 if [ "$OPERATOR_READY" = "" ] || [ "$OPERATOR_READY" = "0" ]; then
-    fail "Totogi operator is not running. Deploy operator first with: ./operator-starhub-test.sh deploy"
+    fail "Nexus operator is not running. Deploy operator first with: ./operator-nexus-dev.sh deploy"
 fi
 success "Operator is running (${OPERATOR_READY} replica(s))"
 
@@ -172,7 +172,7 @@ if [ "$SKIP_IMAGES" = false ]; then
     IMAGES_DIR="${SCRIPT_DIR}/images"
     CALLSENSE_DIR="${IMAGES_DIR}/callsense"
 
-    for IMAGE_NAME in ai-job-engine starhub-ui; do
+    for IMAGE_NAME in ai-job-engine nexus-ui; do
         TAR_FILE="${CALLSENSE_DIR}/${IMAGE_NAME}.tar.gz"
         TAR_PLAIN="${CALLSENSE_DIR}/${IMAGE_NAME}.tar"
         ECR_TARGET="${ECR_REGISTRY}/${IMAGE_NAME}:latest"
@@ -315,13 +315,13 @@ kubectl create namespace "${NAMESPACE}" 2>/dev/null || true
 # Clear stale capability stuck in Terminating
 CAP_NAME=$(grep -E "^\s+name:" "${PATCHED_FILE}" | head -1 | awk '{print $2}')
 if [ -n "$CAP_NAME" ]; then
-    DELETION_TS=$(kubectl get totogicapability "$CAP_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
+    DELETION_TS=$(kubectl get nexuscapability "$CAP_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
     if [ -n "$DELETION_TS" ]; then
         echo "  ⚠ Capability '$CAP_NAME' stuck in Terminating — clearing finalizers..."
-        kubectl patch totogicapability "$CAP_NAME" -n "$NAMESPACE" --type merge -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
+        kubectl patch nexuscapability "$CAP_NAME" -n "$NAMESPACE" --type merge -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
         local_wait=0
         while [ "$local_wait" -lt 15 ]; do
-            kubectl get totogicapability "$CAP_NAME" -n "$NAMESPACE" >/dev/null 2>&1 || break
+            kubectl get nexuscapability "$CAP_NAME" -n "$NAMESPACE" >/dev/null 2>&1 || break
             sleep 2; local_wait=$((local_wait + 2))
         done
         echo "  ✓ Stale capability cleared"
@@ -341,7 +341,7 @@ success "Capability applied"
 # ──────────────────────────────────────────────────────────────
 step "Monitor deployment and wait for readiness"
 
-timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-starhub-test.sh monitor 2>&1" || true
+timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-nexus-dev.sh monitor 2>&1" || true
 echo ""
 
 echo "  Waiting for all pods to be ready..."
@@ -488,7 +488,7 @@ fi
 step "Verify all resources"
 
 # verify-capability runs a Job in nexus-system as the operator SA (IRSA); needs kubectl + verify-capability.py
-AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh verify-capability "${NAMESPACE}" 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh verify-capability "${NAMESPACE}" 2>&1
 verify_exit=$?
 
 # ──────────────────────────────────────────────────────────────

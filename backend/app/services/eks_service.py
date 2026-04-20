@@ -214,7 +214,7 @@ class EKSService:
     
     async def _check_operator_installed(self, cluster_name: str) -> Dict[str, Any]:
         """
-        Check if the Totogi Operator is installed on the cluster.
+        Check if the Nexus Operator is installed on the cluster.
         
         This is a placeholder that returns not_installed by default.
         Full implementation requires Kubernetes API access.
@@ -230,7 +230,7 @@ class EKSService:
     
     async def check_operator_status(self, cluster_name: str) -> Dict[str, Any]:
         """
-        Check the Totogi Operator installation status.
+        Check the Nexus Operator installation status.
         
         Args:
             cluster_name: Name of the EKS cluster
@@ -283,7 +283,7 @@ class EKSService:
         operator_version: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Deploy the Totogi Operator to the cluster.
+        Deploy the Nexus Operator to the cluster.
         
         Args:
             cluster_name: Name of the EKS cluster
@@ -310,7 +310,7 @@ class EKSService:
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Deploy a capability by creating a TotogiCapability CR.
+        Deploy a capability by creating a NexusCapability CR.
         
         Args:
             cluster_name: Name of the EKS cluster
@@ -349,7 +349,7 @@ class EKSService:
         
         Args:
             cluster_name: Name of the EKS cluster
-            cr_name: Name of the TotogiCapability CR
+            cr_name: Name of the NexusCapability CR
             namespace: Namespace where the CR is deployed
             
         Returns:

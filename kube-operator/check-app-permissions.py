@@ -12,7 +12,7 @@ Environment variables (set by the Job):
     PERM_CHECK_SSL_VERIFY  optional; set to 0/false to disable TLS cert verify (debug only)
 
 Usage (via CLI):
-    ./operator-starhub-test.sh check-app-permissions --env stage
+    ./operator-nexus-dev.sh check-app-permissions --env stage
 """
 
 import os

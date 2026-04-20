@@ -1,23 +1,23 @@
 ---
-# Example TotogiCapability for testing operator deployment
+# Example NexusCapability for testing operator deployment
 # This creates a minimal deployment for call-processing capability
 #
 # Apply with:
 #   kubectl apply -f test-capability.yaml
 #
 # Check status:
-#   kubectl get totogicapabilities -A
-#   kubectl describe totogicapability test-capability
+#   kubectl get nexuscapabilities -A
+#   kubectl describe nexuscapability test-capability
 
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-dev
   namespace: call-processing-dev  # Dedicated namespace - operator will create it
   labels:
     app.kubernetes.io/name: call-processing
     app.kubernetes.io/version: "1.0.0"
-    totogi.com/environment: dev
+    nexus.ai/environment: dev
 spec:
   # Basic capability info
   capabilityName: call-processing

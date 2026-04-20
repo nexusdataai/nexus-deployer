@@ -5,8 +5,8 @@ Feature: pure-eks-deployment
 Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 4.1, 4.2
 
 Handles:
-- Deploying the Totogi Operator to EKS clusters
-- Creating TotogiCapability Custom Resources
+- Deploying the Nexus Operator to EKS clusters
+- Creating NexusCapability Custom Resources
 - Monitoring operator and capability status
 """
 import base64
@@ -31,16 +31,16 @@ OPERATOR_NAMESPACE = "nexus-system"
 OPERATOR_DEPLOYMENT_NAME = "nexus-operator"
 OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
 OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "nexus-operator")
-CRD_GROUP = "totogi.com"
+CRD_GROUP = "nexus.ai"
 CRD_VERSION = "v1"
-CRD_PLURAL = "totogicapabilities"
-# VPC endpoint CRD — kopf watches cluster-scoped TotogiNetworkConfig
+CRD_PLURAL = "nexuscapabilities"
+# VPC endpoint CRD — kopf watches cluster-scoped NexusNetworkConfig
 NETWORK_CONFIG_PLURAL = "totoginetworkconfigs"
 
 
 class OperatorDeploymentService:
     """
-    Service for deploying and managing the Totogi Operator on EKS clusters.
+    Service for deploying and managing the Nexus Operator on EKS clusters.
     
     The operator is deployed with IRSA (IAM Roles for Service Accounts) to
     securely access AWS resources without embedding credentials.
@@ -428,7 +428,7 @@ class OperatorDeploymentService:
         operator_version: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Deploy the Totogi Operator to an EKS cluster.
+        Deploy the Nexus Operator to an EKS cluster.
         
         Steps:
         1. Create nexus-system namespace
@@ -440,7 +440,7 @@ class OperatorDeploymentService:
         
         Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8
         """
-        logger.info(f"Deploying Totogi Operator to cluster {cluster_name}")
+        logger.info(f"Deploying Nexus Operator to cluster {cluster_name}")
         
         try:
             # Initialize K8s clients
@@ -498,7 +498,7 @@ class OperatorDeploymentService:
                 name=OPERATOR_NAMESPACE,
                 labels={
                     "app.kubernetes.io/name": "nexus-operator",
-                    "app.kubernetes.io/managed-by": "totogi-deployer"
+                    "app.kubernetes.io/managed-by": "nexus-deployer"
                 }
             )
         )
@@ -677,9 +677,9 @@ class OperatorDeploymentService:
             response = self.iam_client.create_role(
                 RoleName=role_name,
                 AssumeRolePolicyDocument=json.dumps(trust_policy),
-                Description="IAM role for Totogi Operator with IRSA",
+                Description="IAM role for Nexus Operator with IRSA",
                 Tags=[
-                    {"Key": "managed-by", "Value": "totogi-deployer"},
+                    {"Key": "managed-by", "Value": "nexus-deployer"},
                     {"Key": "component", "Value": "nexus-operator"}
                 ]
             )
@@ -732,7 +732,7 @@ class OperatorDeploymentService:
                 raise
     
     async def _apply_crd(self, custom):
-        """Apply the TotogiCapability CRD from manifests/crd.yaml."""
+        """Apply the NexusCapability CRD from manifests/crd.yaml."""
         from kubernetes.client.rest import ApiException
         from kubernetes import client as k8s_client
         import yaml
@@ -812,8 +812,8 @@ class OperatorDeploymentService:
                     "scope": "Namespaced",
                     "names": {
                         "plural": CRD_PLURAL,
-                        "singular": "totogicapability",
-                        "kind": "TotogiCapability",
+                        "singular": "nexuscapability",
+                        "kind": "NexusCapability",
                         "shortNames": ["tc", "tcap"]
                     }
                 }
@@ -827,12 +827,12 @@ class OperatorDeploymentService:
             try:
                 # Try to create first
                 api_ext.create_custom_resource_definition(crd)
-                logger.info("Created TotogiCapability CRD")
+                logger.info("Created NexusCapability CRD")
             except ApiException as e:
                 if e.status == 409:
                     # CRD exists, update it (patch to preserve existing CRs)
                     api_ext.patch_custom_resource_definition(crd_name, crd)
-                    logger.info("Updated TotogiCapability CRD")
+                    logger.info("Updated NexusCapability CRD")
                 else:
                     raise
         except ApiException as e:
@@ -1041,7 +1041,7 @@ class OperatorDeploymentService:
 
     async def check_operator_status(self, cluster_name: str) -> Dict[str, Any]:
         """
-        Check the status of the Totogi Operator on a cluster.
+        Check the status of the Nexus Operator on a cluster.
         
         Returns:
             Dict with installed, status, version, namespace
@@ -1111,7 +1111,7 @@ class OperatorDeploymentService:
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Create a TotogiCapability Custom Resource.
+        Create a NexusCapability Custom Resource.
         
         Requirements: 4.1, 4.2
         """
@@ -1124,14 +1124,14 @@ class OperatorDeploymentService:
             # Build CR spec
             cr = {
                 "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-                "kind": "TotogiCapability",
+                "kind": "NexusCapability",
                 "metadata": {
                     "name": cr_name,
                     "namespace": namespace,
                     "labels": {
                         "app.kubernetes.io/name": capability_name,
                         "app.kubernetes.io/version": capability_version,
-                        "totogi.com/environment": environment
+                        "nexus.ai/environment": environment
                     }
                 },
                 "spec": {
@@ -1162,13 +1162,13 @@ class OperatorDeploymentService:
                     body=cr
                 )
                 
-                logger.info(f"Created TotogiCapability CR: {cr_name}")
+                logger.info(f"Created NexusCapability CR: {cr_name}")
                 
                 return {
                     "success": True,
                     "cr_name": cr_name,
                     "namespace": namespace,
-                    "message": f"TotogiCapability '{cr_name}' created successfully"
+                    "message": f"NexusCapability '{cr_name}' created successfully"
                 }
                 
             except ApiException as e:
@@ -1186,7 +1186,7 @@ class OperatorDeploymentService:
                         "success": True,
                         "cr_name": cr_name,
                         "namespace": namespace,
-                        "message": f"TotogiCapability '{cr_name}' updated"
+                        "message": f"NexusCapability '{cr_name}' updated"
                     }
                 raise
                 
@@ -1206,7 +1206,7 @@ class OperatorDeploymentService:
         namespace: str
     ) -> Dict[str, Any]:
         """
-        Get the status of a TotogiCapability CR.
+        Get the status of a NexusCapability CR.
         
         Requirements: 8.1, 8.2
         """
@@ -1270,7 +1270,7 @@ class OperatorDeploymentService:
         cr_name: str,
         namespace: str
     ) -> Dict[str, Any]:
-        """Delete a TotogiCapability CR."""
+        """Delete a NexusCapability CR."""
         try:
             _, _, custom = await self._get_k8s_clients(cluster_name)
             
@@ -1282,11 +1282,11 @@ class OperatorDeploymentService:
                 name=cr_name
             )
             
-            logger.info(f"Deleted TotogiCapability CR: {cr_name}")
+            logger.info(f"Deleted NexusCapability CR: {cr_name}")
             
             return {
                 "success": True,
-                "message": f"TotogiCapability '{cr_name}' deletion initiated"
+                "message": f"NexusCapability '{cr_name}' deletion initiated"
             }
             
         except Exception as e:

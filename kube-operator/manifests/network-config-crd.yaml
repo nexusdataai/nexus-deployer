@@ -1,21 +1,21 @@
 ---
-# TotogiNetworkConfig Custom Resource Definition
+# NexusNetworkConfig Custom Resource Definition
 # Manages VPC Gateway and Interface Endpoints for private EKS clusters.
 # Applied once per cluster; the operator creates/verifies endpoints and
 # reports status. All capabilities read from this status during deploy.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: totoginetworkconfigs.totogi.com
+  name: nexusnetworkconfigs.nexus.ai
   annotations:
     description: "Manages VPC endpoints (Gateway + PrivateLink) for AWS service access from private EKS clusters"
 spec:
-  group: totogi.com
+  group: nexus.ai
   names:
-    kind: TotogiNetworkConfig
-    listKind: TotogiNetworkConfigList
-    plural: totoginetworkconfigs
-    singular: totoginetworkconfig
+    kind: NexusNetworkConfig
+    listKind: NexusNetworkConfigList
+    plural: nexusnetworkconfigs
+    singular: nexusnetworkconfig
     shortNames:
       - tnc
   scope: Cluster

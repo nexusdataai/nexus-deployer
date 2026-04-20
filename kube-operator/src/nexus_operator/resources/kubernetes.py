@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class KubernetesResourceCreator:
-    """Creates Kubernetes resources for Totogi capability deployments."""
+    """Creates Kubernetes resources for Nexus capability deployments."""
     
     def __init__(self, namespace: str):
         self.namespace = namespace
@@ -53,9 +53,9 @@ class KubernetesResourceCreator:
             metadata=client.V1ObjectMeta(
                 name=self.namespace,
                 labels={
-                    "app.kubernetes.io/managed-by": "totogi-operator",
-                    "totogi.com/capability": naming.capability_name,
-                    "totogi.com/environment": naming.environment,
+                    "app.kubernetes.io/managed-by": "nexus-operator",
+                    "nexus.ai/capability": naming.capability_name,
+                    "nexus.ai/environment": naming.environment,
                 }
             )
         )
@@ -92,8 +92,8 @@ class KubernetesResourceCreator:
             existing_annotations["eks.amazonaws.com/role-arn"] = iam_role_arn
             existing_sa.metadata.annotations = existing_annotations
             existing_sa.metadata.labels = existing_sa.metadata.labels or {}
-            existing_sa.metadata.labels["app.kubernetes.io/managed-by"] = "totogi-operator"
-            existing_sa.metadata.labels["totogi.com/capability"] = naming.capability_name
+            existing_sa.metadata.labels["app.kubernetes.io/managed-by"] = "nexus-operator"
+            existing_sa.metadata.labels["nexus.ai/capability"] = naming.capability_name
             self.core_api.replace_namespaced_service_account(name=sa_name, namespace=self.namespace, body=existing_sa)
             logger.info(f"Patched ServiceAccount {sa_name} with role ARN: {iam_role_arn}")
             return {"name": sa_name, "status": "updated", "type": "ServiceAccount"}
@@ -109,8 +109,8 @@ class KubernetesResourceCreator:
                     "eks.amazonaws.com/role-arn": iam_role_arn,
                 },
                 labels={
-                    "app.kubernetes.io/managed-by": "totogi-operator",
-                    "totogi.com/capability": naming.capability_name,
+                    "app.kubernetes.io/managed-by": "nexus-operator",
+                    "nexus.ai/capability": naming.capability_name,
                 }
             )
         )
@@ -282,7 +282,7 @@ class KubernetesResourceCreator:
                 namespace=self.namespace,
                 labels=self._common_labels(naming, "backend"),
                 annotations={
-                    "totogi.com/purpose": "internal-backend-communication",
+                    "nexus.ai/purpose": "internal-backend-communication",
                 },
             ),
             spec=client.V1ServiceSpec(
@@ -548,7 +548,7 @@ class KubernetesResourceCreator:
                 namespace=self.namespace,
                 labels=self._common_labels(naming, "bssmagic"),
                 annotations={
-                    "totogi.com/purpose": "internal-bssmagic-runtime",
+                    "nexus.ai/purpose": "internal-bssmagic-runtime",
                 },
             ),
             spec=client.V1ServiceSpec(
@@ -930,10 +930,10 @@ http {{
     def _common_labels(self, naming: ResourceNaming, component: str) -> Dict[str, str]:
         """Generate common labels for resources."""
         return {
-            "app.kubernetes.io/managed-by": "totogi-operator",
+            "app.kubernetes.io/managed-by": "nexus-operator",
             "app.kubernetes.io/component": component,
-            "totogi.com/capability": naming.capability_name,
-            "totogi.com/environment": naming.environment,
+            "nexus.ai/capability": naming.capability_name,
+            "nexus.ai/environment": naming.environment,
         }
     
     async def _apply_statefulset(self, name: str, statefulset: client.V1StatefulSet) -> Dict[str, Any]:

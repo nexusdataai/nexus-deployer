@@ -1,20 +1,20 @@
 ---
-# TotogiCapability Custom Resource Definition
+# NexusCapability Custom Resource Definition
 # Feature: pure-eks-deployment
 # Requirements: 4.1, 4.2, 12.3
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: totogicapabilities.totogi.com
+  name: nexuscapabilities.nexus.ai
   annotations:
-    description: "Manages Totogi capability deployments including AWS resources and Kubernetes workloads"
+    description: "Manages Nexus capability deployments including AWS resources and Kubernetes workloads"
 spec:
-  group: totogi.com
+  group: nexus.ai
   names:
-    kind: TotogiCapability
-    listKind: TotogiCapabilityList
-    plural: totogicapabilities
-    singular: totogicapability
+    kind: NexusCapability
+    listKind: NexusCapabilityList
+    plural: nexuscapabilities
+    singular: nexuscapability
     shortNames:
       - tc
       - tcap
@@ -39,7 +39,7 @@ spec:
               properties:
                 capabilityName:
                   type: string
-                  description: "Name of the Totogi capability to deploy"
+                  description: "Name of the Nexus capability to deploy"
                   pattern: "^[a-z0-9-]+$"
                   minLength: 1
                   maxLength: 63

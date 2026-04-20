@@ -32,7 +32,7 @@ INTERFACE_SERVICES = [
     "events",
 ]
 
-SG_TAG_KEY = "totogi-operator"
+SG_TAG_KEY = "nexus-operator"
 SG_TAG_VALUE = "vpc-endpoints"
 SG_NAME = "totogi-vpc-endpoints"
 
@@ -158,7 +158,7 @@ class VPCEndpointProvisioner:
         try:
             resp = self.ec2.create_security_group(
                 GroupName=SG_NAME,
-                Description="Allow HTTPS for VPC Interface Endpoints (managed by totogi-operator)",
+                Description="Allow HTTPS for VPC Interface Endpoints (managed by nexus-operator)",
                 VpcId=vpc_id,
                 TagSpecifications=[{
                     "ResourceType": "security-group",

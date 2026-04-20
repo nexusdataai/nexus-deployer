@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Totogi Operator Management Script
+# Nexus Operator Management Script
 # Reads defaults from .env.local (ENV, Branch, Cluster). Env vars override.
 # 
 # Usage:
@@ -47,7 +47,7 @@ NC='\033[0m' # No Color
 
 show_help() {
     cat << EOF
-Totogi Operator Management Script for nexus-dev
+Nexus Operator Management Script for nexus-dev
 
 Usage:
   ./operator-nexus-dev.sh <command> [options]
@@ -121,7 +121,7 @@ Workflow:
 
 ALB Ingress Support:
   The deploy command automatically installs AWS Load Balancer Controller if not present.
-  This enables ALB Ingress for TotogiCapability resources.
+  This enables ALB Ingress for NexusCapability resources.
   
   To install ALB Controller separately:
     ./operator-nexus-dev.sh install-alb-controller
@@ -1117,7 +1117,7 @@ install_alb_controller() {
         echo "  ✓ AWS Load Balancer Controller is ready!"
         echo -e "===============================================${NC}"
         echo ""
-        echo "You can now use ALB Ingress in your TotogiCapability:"
+        echo "You can now use ALB Ingress in your NexusCapability:"
         echo "  spec:"
         echo "    ingress:"
         echo "      enabled: true"
@@ -1457,25 +1457,25 @@ for ing in data.get('items', []):
         echo ""
     fi
     
-    # Ensure all TotogiCapability CRs are fully deleted before removing the operator
-    if kubectl api-resources --api-group=totogi.com > /dev/null 2>&1; then
+    # Ensure all NexusCapability CRs are fully deleted before removing the operator
+    if kubectl api-resources --api-group=nexus.ai > /dev/null 2>&1; then
         local cap_count
-        cap_count=$(kubectl get totogicapabilities -A --no-headers 2>/dev/null | wc -l)
+        cap_count=$(kubectl get nexuscapabilities -A --no-headers 2>/dev/null | wc -l)
         if [ "$cap_count" -gt 0 ]; then
             echo "═══════════════════════════════════════════════════════════════════"
-            echo "  Pre-cleanup: Deleting TotogiCapability resources"
+            echo "  Pre-cleanup: Deleting NexusCapability resources"
             echo "═══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "  Found $cap_count TotogiCapability resource(s). Deleting..."
-            kubectl delete totogicapabilities --all -A --wait=false > /dev/null 2>&1
+            echo "  Found $cap_count NexusCapability resource(s). Deleting..."
+            kubectl delete nexuscapabilities --all -A --wait=false > /dev/null 2>&1
 
             local wait_secs=0
             local max_wait=60
             while [ "$wait_secs" -lt "$max_wait" ]; do
                 local remaining
-                remaining=$(kubectl get totogicapabilities -A --no-headers 2>/dev/null | wc -l)
+                remaining=$(kubectl get nexuscapabilities -A --no-headers 2>/dev/null | wc -l)
                 if [ "$remaining" -eq 0 ]; then
-                    echo "  ✓ All TotogiCapability resources deleted"
+                    echo "  ✓ All NexusCapability resources deleted"
                     break
                 fi
                 if [ "$((wait_secs % 15))" -eq 0 ] && [ "$wait_secs" -gt 0 ]; then
@@ -1486,7 +1486,7 @@ for ing in data.get('items', []):
             done
 
             local stuck
-            stuck=$(kubectl get totogicapabilities -A -o json 2>/dev/null | python3 -c "
+            stuck=$(kubectl get nexuscapabilities -A -o json 2>/dev/null | python3 -c "
 import sys,json
 data = json.load(sys.stdin)
 for item in data.get('items', []):
@@ -1501,16 +1501,16 @@ for item in data.get('items', []):
                 for entry in $stuck; do
                     local ns="${entry%%/*}"
                     local name="${entry##*/}"
-                    kubectl patch totogicapability "$name" -n "$ns" --type merge -p '{"metadata":{"finalizers":[]}}' > /dev/null 2>&1 || true
+                    kubectl patch nexuscapability "$name" -n "$ns" --type merge -p '{"metadata":{"finalizers":[]}}' > /dev/null 2>&1 || true
                     echo "  ✓ Cleared finalizer: ${ns}/${name}"
                 done
                 sleep 5
                 local final_count
-                final_count=$(kubectl get totogicapabilities -A --no-headers 2>/dev/null | wc -l)
+                final_count=$(kubectl get nexuscapabilities -A --no-headers 2>/dev/null | wc -l)
                 if [ "$final_count" -eq 0 ]; then
-                    echo "  ✓ All TotogiCapability resources fully removed"
+                    echo "  ✓ All NexusCapability resources fully removed"
                 else
-                    echo "  ⚠ ${final_count} TotogiCapability resource(s) still present"
+                    echo "  ⚠ ${final_count} NexusCapability resource(s) still present"
                 fi
             fi
             echo ""
@@ -2378,19 +2378,19 @@ def kubectl_json(args):
         return None
 
 def find_capability(target):
-    """Find TotogiCapability CR. target can be 'namespace/name' or auto-detect."""
+    """Find NexusCapability CR. target can be 'namespace/name' or auto-detect."""
     if target and "/" in target:
         ns, name = target.split("/", 1)
-        obj = kubectl_json(["get", "totogicapability", name, "-n", ns])
+        obj = kubectl_json(["get", "nexuscapability", name, "-n", ns])
         if obj:
             return obj
-        print(f"Error: TotogiCapability {name} not found in namespace {ns}")
+        print(f"Error: NexusCapability {name} not found in namespace {ns}")
         sys.exit(1)
     
     # Auto-detect: search all namespaces
-    obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
+    obj = kubectl_json(["get", "nexuscapability", "--all-namespaces"])
     if not obj or not obj.get("items"):
-        print("No TotogiCapability resources found.")
+        print("No NexusCapability resources found.")
         print("")
         print("Deploy a capability first:")
         print("  kubectl apply -f examples/call-processing-complete.yaml")
@@ -2492,7 +2492,7 @@ def render(obj, elapsed):
 def main():
     target = os.environ.get("MONITOR_TARGET", "")
     
-    print("Finding TotogiCapability...")
+    print("Finding NexusCapability...")
     obj = find_capability(target)
     ns = obj["metadata"]["namespace"]
     name = obj["metadata"]["name"]
@@ -2506,7 +2506,7 @@ def main():
     max_wait = 300  # 5 minute timeout
     
     while True:
-        obj = kubectl_json(["get", "totogicapability", name, "-n", ns])
+        obj = kubectl_json(["get", "nexuscapability", name, "-n", ns])
         if not obj:
             fetch_errors += 1
             if fetch_errors > 5:
@@ -2861,10 +2861,10 @@ check_status() {
     
     # Check CRD
     echo "CRD Status:"
-    if kubectl get crd totogicapabilities.totogi.com >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✓ TotogiCapability CRD registered${NC}"
+    if kubectl get crd nexuscapabilities.nexus.ai >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ NexusCapability CRD registered${NC}"
     else
-        echo -e "  ${RED}✗ TotogiCapability CRD not found${NC}"
+        echo -e "  ${RED}✗ NexusCapability CRD not found${NC}"
     fi
     echo ""
     
@@ -2922,12 +2922,12 @@ main() {
         setup-endpoints|endpoints)
             show_header "Setup VPC Endpoints"
 
-            echo "Applying TotogiNetworkConfig CRD..."
+            echo "Applying NexusNetworkConfig CRD..."
             kubectl apply -f "${SCRIPT_DIR}/manifests/network-config-crd.yaml" 2>/dev/null
             echo ""
 
             # Ensure operator ServiceAccount has RBAC for the new CRD
-            echo "Ensuring operator RBAC for TotogiNetworkConfig..."
+            echo "Ensuring operator RBAC for NexusNetworkConfig..."
             SA_NAME=$(kubectl get deployment nexus-operator -n nexus-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "nexus-operator-sa")
             kubectl apply -f - <<RBAC_EOF
 apiVersion: rbac.authorization.k8s.io/v1
@@ -2935,7 +2935,7 @@ kind: ClusterRole
 metadata:
   name: nexus-operator-network-config
 rules:
-  - apiGroups: ["totogi.com"]
+  - apiGroups: ["nexus.ai"]
     resources: ["totoginetworkconfigs", "totoginetworkconfigs/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
@@ -3012,7 +3012,7 @@ RBAC_EOF
                 if [ -n "$MSG" ]; then echo "  Message: ${MSG}"; fi
                 if [ -n "$CHECKED" ]; then echo "  Last checked: ${CHECKED}"; fi
             else
-                echo "  No TotogiNetworkConfig found."
+                echo "  No NexusNetworkConfig found."
                 echo ""
                 echo "  To set up VPC endpoints, run:"
                 echo "    ./operator-nexus-dev.sh setup-endpoints"
@@ -3023,12 +3023,12 @@ RBAC_EOF
             show_header "Delete VPC Endpoints Configuration"
 
             if ! kubectl get tnc vpc-endpoints > /dev/null 2>&1; then
-                echo "  No TotogiNetworkConfig 'vpc-endpoints' found — nothing to delete."
+                echo "  No NexusNetworkConfig 'vpc-endpoints' found — nothing to delete."
                 echo ""
                 exit 0
             fi
 
-            echo "  This will delete the TotogiNetworkConfig CR."
+            echo "  This will delete the NexusNetworkConfig CR."
             echo "  The actual VPC endpoints in AWS will NOT be deleted (they remain for other workloads)."
             echo ""
             read -rp "  Proceed? [y/N] " confirm
@@ -3038,10 +3038,10 @@ RBAC_EOF
             fi
             echo ""
 
-            echo "  Deleting TotogiNetworkConfig 'vpc-endpoints'..."
+            echo "  Deleting NexusNetworkConfig 'vpc-endpoints'..."
             kubectl delete tnc vpc-endpoints --timeout=30s 2>/dev/null || \
                 kubectl patch tnc vpc-endpoints --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-            echo -e "${GREEN}  ✓ TotogiNetworkConfig deleted${NC}"
+            echo -e "${GREEN}  ✓ NexusNetworkConfig deleted${NC}"
             echo ""
 
             echo "  Cleaning up RBAC..."
@@ -3051,7 +3051,7 @@ RBAC_EOF
             echo ""
 
             echo "  Cleaning up CRD..."
-            kubectl delete crd totoginetworkconfigs.totogi.com 2>/dev/null || true
+            kubectl delete crd totoginetworkconfigs.nexus.ai 2>/dev/null || true
             echo -e "${GREEN}  ✓ CRD removed${NC}"
             echo ""
 

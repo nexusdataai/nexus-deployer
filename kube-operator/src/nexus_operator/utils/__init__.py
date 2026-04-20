@@ -1,4 +1,4 @@
-"""Utility modules for the Totogi Operator."""
+"""Utility modules for the Nexus Operator."""
 
 from .naming import ResourceNaming
 

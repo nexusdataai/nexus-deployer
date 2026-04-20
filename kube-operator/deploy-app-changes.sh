@@ -28,7 +28,7 @@ DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TRILOGY_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
 
 BACKEND_DIR="${TRILOGY_ROOT}/starhub-backend"
-FRONTEND_DIR="${TRILOGY_ROOT}/starhub-ui"
+FRONTEND_DIR="${TRILOGY_ROOT}/nexus-ui"
 DOCS_VENV="${DOCS_VENV:-/tmp/docs-venv}"
 
 # Load defaults from .env.local (CLI args and env vars override these)
@@ -88,7 +88,7 @@ done
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile "${AWS_PROFILE}")
 REGION="us-east-1"
 ECR_BACKEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ai-job-engine:latest"
-ECR_FRONTEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/starhub-ui:latest"
+ECR_FRONTEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/nexus-ui:latest"
 
 # Switch kubeconfig to target cluster
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null \
@@ -166,11 +166,11 @@ echo "  Building Frontend"
 echo "================================================"
 cd "${FRONTEND_DIR}"
 
-echo "Building starhub-ui..."
-docker build --no-cache -t starhub-ui:latest .
+echo "Building nexus-ui..."
+docker build --no-cache -t nexus-ui:latest .
 
 echo "Tagging for ECR..."
-docker tag starhub-ui:latest $ECR_FRONTEND
+docker tag nexus-ui:latest $ECR_FRONTEND
 
 echo "Pushing to ECR..."
 docker push $ECR_FRONTEND

@@ -7,7 +7,7 @@
 #   2. Ensure EBS CSI Driver (IAM role + EKS add-on for persistent storage)
 #   3. Upload BSS Magic credentials.zip to Secrets Manager
 #   4. Deploy operator
-#   5. Apply capability (TotogiCapability CR)
+#   5. Apply capability (NexusCapability CR)
 #   6. Monitor deployment progress
 #   7. Verify and fix SSM parameters (Glue, Cognito)
 #   8. Verify all resources
@@ -204,7 +204,7 @@ echo ""
 if [ "$SKIP_CLEAN" = false ]; then
     step "Delete existing operator (full cleanup)"
     
-    AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh delete --full --keep-ecr --keep-iam 2>&1 || true
+    AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh delete --full --keep-ecr --keep-iam 2>&1 || true
     success "Cleanup complete"
     
     # Refresh kubeconfig after delete (access entry was removed)
@@ -412,7 +412,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Deploy operator (IRSA + ALB Controller)"
 
-AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh deploy 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh deploy 2>&1
 deploy_exit=$?
 if [ $deploy_exit -ne 0 ]; then
     fail "Operator deployment failed (exit code: $deploy_exit)"
@@ -422,10 +422,10 @@ success "Operator deployed"
 # Ensure CRD is up to date (supports internalIngress, latest schema)
 echo ""
 echo "  Updating CRD..."
-CRD_DEL_TS=$(kubectl get crd totogicapabilities.totogi.com -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
+CRD_DEL_TS=$(kubectl get crd nexuscapabilities.nexus.ai -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
 if [ -n "$CRD_DEL_TS" ]; then
     echo "  CRD is stuck in Terminating — clearing finalizers and recreating..."
-    kubectl patch crd totogicapabilities.totogi.com --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+    kubectl patch crd nexuscapabilities.nexus.ai --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
     sleep 5
     kubectl apply -f "${SCRIPT_DIR}/manifests/crd.yaml" 2>/dev/null || kubectl create -f "${SCRIPT_DIR}/manifests/crd.yaml" 2>/dev/null || true
 else
@@ -466,17 +466,17 @@ echo ""
 # Create namespace if needed
 kubectl create namespace "${NAMESPACE}" 2>/dev/null || true
 
-# Ensure no stale TotogiCapability is stuck in Terminating state
+# Ensure no stale NexusCapability is stuck in Terminating state
 CAP_NAME=$(grep -E "^\s+name:" "${PATCHED_FILE}" | head -1 | awk '{print $2}')
 if [ -n "$CAP_NAME" ]; then
-    DELETION_TS=$(kubectl get totogicapability "$CAP_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
+    DELETION_TS=$(kubectl get nexuscapability "$CAP_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
     if [ -n "$DELETION_TS" ]; then
         echo "  ⚠ Existing capability '$CAP_NAME' is stuck in Terminating (since $DELETION_TS)"
         echo "  Clearing finalizers to allow fresh creation..."
-        kubectl patch totogicapability "$CAP_NAME" -n "$NAMESPACE" --type merge -p '{"metadata":{"finalizers":[]}}' > /dev/null 2>&1 || true
+        kubectl patch nexuscapability "$CAP_NAME" -n "$NAMESPACE" --type merge -p '{"metadata":{"finalizers":[]}}' > /dev/null 2>&1 || true
         local_wait=0
         while [ "$local_wait" -lt 15 ]; do
-            kubectl get totogicapability "$CAP_NAME" -n "$NAMESPACE" > /dev/null 2>&1 || break
+            kubectl get nexuscapability "$CAP_NAME" -n "$NAMESPACE" > /dev/null 2>&1 || break
             sleep 2
             local_wait=$((local_wait + 2))
         done
@@ -498,7 +498,7 @@ success "Capability applied"
 step "Monitor deployment and wait for readiness"
 
 # Monitor with timeout
-timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-starhub-test.sh monitor 2>&1" || true
+timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-nexus-dev.sh monitor 2>&1" || true
 echo ""
 
 # Wait for all pods to be ready
@@ -672,7 +672,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Verify all resources"
 
-AWS_PROFILE="${AWS_PROFILE}" ./operator-starhub-test.sh verify-capability "${NAMESPACE}" 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh verify-capability "${NAMESPACE}" 2>&1
 verify_exit=$?
 
 # ──────────────────────────────────────────────────────────────

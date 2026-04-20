@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build and Push Totogi Operator Image to ECR
+# Build and Push Nexus Operator Image to ECR
 #
 # Usage:
 #   ./build-and-push.sh [tag] [region] [profile]
@@ -35,7 +35,7 @@ fi
 
 echo ""
 echo -e "${BLUE}=============================================="
-echo "  Building Totogi Operator Image"
+echo "  Building Nexus Operator Image"
 echo -e "==============================================${NC}"
 echo ""
 echo "Image:       ${IMAGE_NAME}"
@@ -187,7 +187,7 @@ echo "  ${FULL_IMAGE_NAME}"
 echo ""
 echo "To deploy the operator with this image:"
 echo "  export OPERATOR_IMAGE=${FULL_IMAGE_NAME}"
-echo "  ./operator-starhub-test.sh deploy"
+echo "  ./operator-nexus-dev.sh deploy"
 echo ""
 echo "Or set in operator_deployment_service.py:"
 echo "  OPERATOR_IMAGE = \"${FULL_IMAGE_NAME}\""

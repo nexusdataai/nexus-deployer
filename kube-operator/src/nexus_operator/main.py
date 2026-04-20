@@ -1,5 +1,5 @@
 """
-Totogi Operator Main Entry Point
+Nexus Operator Main Entry Point
 
 Feature: pure-eks-deployment
 Requirements: 12.8
@@ -25,7 +25,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger("totogi-operator")
+logger = logging.getLogger("nexus-operator")
 
 # Health check state
 _health_state = {
@@ -55,13 +55,13 @@ async def readyz_handler(request: web.Request) -> web.Response:
 async def metrics_handler(request: web.Request) -> web.Response:
     """Prometheus metrics endpoint (placeholder)."""
     metrics = [
-        "# HELP totogi_operator_reconciliations_total Total number of reconciliations",
-        "# TYPE totogi_operator_reconciliations_total counter",
-        "totogi_operator_reconciliations_total 0",
+        "# HELP nexus_operator_reconciliations_total Total number of reconciliations",
+        "# TYPE nexus_operator_reconciliations_total counter",
+        "nexus_operator_reconciliations_total 0",
         "",
-        "# HELP totogi_operator_ready Operator readiness status",
-        "# TYPE totogi_operator_ready gauge",
-        f"totogi_operator_ready {1 if _health_state['ready'] else 0}",
+        "# HELP nexus_operator_ready Operator readiness status",
+        "# TYPE nexus_operator_ready gauge",
+        f"nexus_operator_ready {1 if _health_state['ready'] else 0}",
     ]
     return web.Response(text="\n".join(metrics), content_type="text/plain")
 
@@ -90,16 +90,16 @@ async def startup_handler(settings: kopf.OperatorSettings, **kwargs):
     
     Configures kopf settings and marks operator as ready.
     """
-    logger.info("Totogi Operator starting up...")
+    logger.info("Nexus Operator starting up...")
     
     # Configure kopf settings
     settings.posting.level = logging.WARNING
     settings.watching.server_timeout = 600
-    settings.persistence.finalizer = "totogi.com/finalizer"
+    settings.persistence.finalizer = "nexus.ai/finalizer"
     
     # Mark as ready
     _health_state["ready"] = True
-    logger.info("Totogi Operator is ready")
+    logger.info("Nexus Operator is ready")
 
 
 @kopf.on.cleanup()
@@ -109,7 +109,7 @@ async def cleanup_handler(**kwargs):
     
     Called when the operator is shutting down.
     """
-    logger.info("Totogi Operator shutting down...")
+    logger.info("Nexus Operator shutting down...")
     _health_state["ready"] = False
     _health_state["live"] = False
 
@@ -124,7 +124,7 @@ async def login_handler(**kwargs):
     return kopf.login_via_client(**kwargs)
 
 
-# ==================== TotogiCapability Handlers ====================
+# ==================== NexusCapability Handlers ====================
 
 def _now_iso() -> str:
     """Return current UTC time as ISO string."""
@@ -159,10 +159,10 @@ def _update_step(steps: List[Dict], step_name: str, status: str,
 
 
 # ══════════════════════════════════════════════════════════════════════
-# TotogiNetworkConfig handlers -- VPC Endpoint lifecycle
+# NexusNetworkConfig handlers -- VPC Endpoint lifecycle
 # ══════════════════════════════════════════════════════════════════════
 
-@kopf.on.create("totogi.com", "v1", "totoginetworkconfigs")
+@kopf.on.create("nexus.ai", "v1", "nexusnetworkconfigs")
 async def create_network_config(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
     """Provision VPC Gateway and Interface endpoints for the cluster."""
     from .resources import VPCEndpointProvisioner
@@ -170,7 +170,7 @@ async def create_network_config(spec: dict, name: str, logger: logging.Logger, p
     region = spec.get("region", "ap-southeast-1")
     cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
 
-    logger.info(f"TotogiNetworkConfig '{name}': provisioning VPC endpoints for cluster {cluster_name}")
+    logger.info(f"NexusNetworkConfig '{name}': provisioning VPC endpoints for cluster {cluster_name}")
     patch.status["phase"] = "Provisioning"
     patch.status["message"] = "Creating VPC endpoints..."
 
@@ -196,20 +196,20 @@ async def create_network_config(spec: dict, name: str, logger: logging.Logger, p
         if healthy == len(endpoints):
             patch.status["phase"] = "Ready"
             patch.status["message"] = f"All {healthy} endpoints healthy"
-            logger.info(f"TotogiNetworkConfig '{name}': Ready ({healthy}/{len(endpoints)} endpoints)")
+            logger.info(f"NexusNetworkConfig '{name}': Ready ({healthy}/{len(endpoints)} endpoints)")
         else:
             failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
             patch.status["phase"] = "Error"
             patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy: {', '.join(failed[:3])}"
-            logger.warning(f"TotogiNetworkConfig '{name}': {len(failed)} unhealthy endpoints")
+            logger.warning(f"NexusNetworkConfig '{name}': {len(failed)} unhealthy endpoints")
 
     except Exception as e:
         patch.status["phase"] = "Error"
         patch.status["message"] = str(e)[:200]
-        logger.error(f"TotogiNetworkConfig '{name}': provisioning failed: {e}")
+        logger.error(f"NexusNetworkConfig '{name}': provisioning failed: {e}")
 
 
-@kopf.on.timer("totogi.com", "v1", "totoginetworkconfigs", interval=300, initial_delay=60)
+@kopf.on.timer("nexus.ai", "v1", "nexusnetworkconfigs", interval=300, initial_delay=60)
 async def check_network_health(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
     """Periodic health check -- re-verify all VPC endpoints every 5 minutes."""
     from .resources import VPCEndpointProvisioner
@@ -240,22 +240,22 @@ async def check_network_health(spec: dict, name: str, logger: logging.Logger, pa
         if healthy < len(endpoints):
             failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
             patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy"
-            logger.warning(f"TotogiNetworkConfig '{name}' health check: {len(failed)} unhealthy")
+            logger.warning(f"NexusNetworkConfig '{name}' health check: {len(failed)} unhealthy")
         else:
             patch.status["message"] = f"All {healthy} endpoints healthy"
 
     except Exception as e:
-        logger.warning(f"TotogiNetworkConfig '{name}' health check failed: {e}")
+        logger.warning(f"NexusNetworkConfig '{name}' health check failed: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════
-# TotogiCapability handlers
+# NexusCapability handlers
 # ══════════════════════════════════════════════════════════════════════
 
-@kopf.on.create("totogi.com", "v1", "totogicapabilities")
+@kopf.on.create("nexus.ai", "v1", "nexuscapabilities")
 async def create_capability(spec: dict, name: str, namespace: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
     """
-    Handle TotogiCapability creation.
+    Handle NexusCapability creation.
     
     Provisions AWS resources and deploys Kubernetes workloads.
     
@@ -274,7 +274,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         CognitoProvisioner,
     )
     
-    logger.info(f"Creating TotogiCapability: {name} in namespace {namespace}")
+    logger.info(f"Creating NexusCapability: {name} in namespace {namespace}")
     
     capability_name = spec.get("capabilityName", "")
     version = spec.get("version", "")
@@ -304,7 +304,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     steps: List[Dict[str, Any]] = []
     
     try:
-        # ── Step 0: Verify VPC Endpoints (reads TotogiNetworkConfig status) ──
+        # ── Step 0: Verify VPC Endpoints (reads NexusNetworkConfig status) ──
         _update_step(steps, "VPCEndpoints", "in_progress")
         patch.status["steps"] = list(steps)
 
@@ -315,14 +315,14 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             except Exception:
                 k8s_config.load_kube_config()
             crd_api = k8s_client.CustomObjectsApi()
-            nc = crd_api.get_cluster_custom_object("totogi.com", "v1", "totoginetworkconfigs", "vpc-endpoints")
+            nc = crd_api.get_cluster_custom_object("nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints")
             nc_status = nc.get("status", {})
             nc_phase = nc_status.get("phase", "Unknown")
             nc_healthy = nc_status.get("healthyEndpoints", 0)
             nc_total = nc_status.get("totalEndpoints", 0)
 
             if nc_phase == "Ready":
-                logger.info(f"VPC Endpoints verified via TotogiNetworkConfig: {nc_healthy}/{nc_total} healthy")
+                logger.info(f"VPC Endpoints verified via NexusNetworkConfig: {nc_healthy}/{nc_total} healthy")
                 for ep in nc_status.get("endpoints", []):
                     state_str = "OK" if ep.get("state") in ("exists", "created") else ep.get("state", "unknown")
                     logger.info(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {state_str}")
@@ -335,7 +335,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 _update_step(steps, "VPCEndpoints", "done", resources=[f"phase={nc_phase}"])
 
         except Exception as nc_err:
-            logger.warning(f"TotogiNetworkConfig 'vpc-endpoints' not found — skipping endpoint verification ({nc_err})")
+            logger.warning(f"NexusNetworkConfig 'vpc-endpoints' not found — skipping endpoint verification ({nc_err})")
             logger.warning("Apply examples/network-config.yaml to enable VPC endpoint management")
             _update_step(steps, "VPCEndpoints", "skipped")
 
@@ -456,7 +456,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                                 metadata=k8s_client.V1ObjectMeta(
                                     name=secret_name,
                                     namespace=namespace,
-                                    labels={"app.kubernetes.io/managed-by": "totogi-operator", "totogi.com/type": "admin-credentials"}
+                                    labels={"app.kubernetes.io/managed-by": "nexus-operator", "nexus.ai/type": "admin-credentials"}
                                 ),
                                 data=secret_data,
                                 type="Opaque"
@@ -703,7 +703,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             patch.status["steps"] = list(steps)
         
         # ── Complete ──
-        logger.info(f"TotogiCapability {name} deployment complete")
+        logger.info(f"NexusCapability {name} deployment complete")
         
         kopf.event(
             kwargs["body"],
@@ -751,10 +751,10 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         }
 
 
-@kopf.on.update("totogi.com", "v1", "totogicapabilities")
+@kopf.on.update("nexus.ai", "v1", "nexuscapabilities")
 async def update_capability(spec: dict, name: str, namespace: str, status: dict, diff: kopf.Diff, logger: logging.Logger, **kwargs):
     """
-    Handle TotogiCapability updates.
+    Handle NexusCapability updates.
     
     Performs rolling updates for configuration changes.
     
@@ -763,7 +763,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     from .utils.naming import ResourceNaming
     from .resources import KubernetesResourceCreator
     
-    logger.info(f"Updating TotogiCapability: {name} in namespace {namespace}")
+    logger.info(f"Updating NexusCapability: {name} in namespace {namespace}")
     
     capability_name = spec.get("capabilityName", "")
     environment = spec.get("environment", "")
@@ -867,10 +867,10 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
         return {"phase": "Failed", "message": str(e)}
 
 
-@kopf.on.delete("totogi.com", "v1", "totogicapabilities")
+@kopf.on.delete("nexus.ai", "v1", "nexuscapabilities")
 async def delete_capability(spec: dict, name: str, namespace: str, status: dict, logger: logging.Logger, **kwargs):
     """
-    Handle TotogiCapability deletion.
+    Handle NexusCapability deletion.
     
     Cleans up AWS resources based on deletionPolicy.
     
@@ -888,7 +888,7 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
         CognitoProvisioner,
     )
     
-    logger.info(f"Deleting TotogiCapability: {name} in namespace {namespace}")
+    logger.info(f"Deleting NexusCapability: {name} in namespace {namespace}")
     
     capability_name = spec.get("capabilityName", "")
     environment = spec.get("environment", "")
@@ -967,7 +967,7 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
         dynamodb = DynamoDBProvisioner(naming, region)
         await dynamodb.delete_all()
         
-        logger.info(f"TotogiCapability {name} cleanup complete")
+        logger.info(f"NexusCapability {name} cleanup complete")
         
         kopf.event(
             kwargs["body"],
@@ -988,10 +988,10 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
 
 # ==================== Event Handlers ====================
 
-@kopf.on.event("totogi.com", "v1", "totogicapabilities")
+@kopf.on.event("nexus.ai", "v1", "nexuscapabilities")
 async def capability_event(event: dict, logger: logging.Logger, **kwargs):
     """
-    Handle all TotogiCapability events for logging.
+    Handle all NexusCapability events for logging.
     
     Requirements: 12.7
     """
@@ -1000,7 +1000,7 @@ async def capability_event(event: dict, logger: logging.Logger, **kwargs):
     name = obj.get("metadata", {}).get("name", "unknown")
     
     if event_type != "MODIFIED":  # Reduce noise from frequent updates
-        logger.debug(f"Event {event_type} for TotogiCapability {name}")
+        logger.debug(f"Event {event_type} for NexusCapability {name}")
 
 
 # ==================== Main Entry Point ====================
@@ -1033,7 +1033,7 @@ async def main_async():
 def main():
     """Main entry point for the operator."""
     logger.info("=" * 60)
-    logger.info("Totogi Kubernetes Operator")
+    logger.info("Nexus Kubernetes Operator")
     logger.info("=" * 60)
     logger.info(f"Log level: {LOG_LEVEL}")
     logger.info(f"Namespace: {os.environ.get('OPERATOR_NAMESPACE', 'default')}")

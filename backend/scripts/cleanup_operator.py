@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cleanup Totogi Kubernetes Operator Deployment
+Cleanup Nexus Kubernetes Operator Deployment
 
 This script is FULLY AUTONOMOUS and uses only Python APIs:
 - Kubernetes Python client (no kubectl binary required)
@@ -9,7 +9,7 @@ This script is FULLY AUTONOMOUS and uses only Python APIs:
 
 The script removes all resources created during operator deployment:
 - Kubernetes resources (namespace, RBAC, CRD, deployments)
-- IAM roles (TotogiOperatorRole)
+- IAM roles (NexusOperatorRole)
 - ECR repository (optional)
 - aws-auth ConfigMap entry
 - Access Entry (optional)
@@ -72,13 +72,13 @@ OPERATOR_DEPLOYMENT = "nexus-operator"
 OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
 OPERATOR_CLUSTER_ROLE = "nexus-operator"
 OPERATOR_CLUSTER_ROLE_BINDING = "nexus-operator"
-CRD_NAME = "totogicapabilities.totogi.com"
-IAM_ROLE_NAME = "TotogiOperatorRole"
+CRD_NAME = "nexuscapabilities.nexus.ai"
+IAM_ROLE_NAME = "NexusOperatorRole"
 ECR_REPO_NAME = "nexus-operator"
 
 
 class OperatorCleanup:
-    """Handles complete cleanup of Totogi operator deployment."""
+    """Handles complete cleanup of Nexus operator deployment."""
     
     def __init__(
         self,
@@ -400,14 +400,14 @@ class OperatorCleanup:
         """Delete Kubernetes resources using Python API."""
         success = True
         
-        # 1. Delete all TotogiCapability resources first
-        logger.info("[1/7] Deleting TotogiCapability resources...")
+        # 1. Delete all NexusCapability resources first
+        logger.info("[1/7] Deleting NexusCapability resources...")
         try:
-            # List all TotogiCapability resources across all namespaces
+            # List all NexusCapability resources across all namespaces
             resources = self._k8s_custom_objects_api.list_cluster_custom_object(
-                group="totogi.com",
+                group="nexus.ai",
                 version="v1",
-                plural="totogicapabilities"
+                plural="nexuscapabilities"
             )
             
             if resources.get('items'):
@@ -416,10 +416,10 @@ class OperatorCleanup:
                     name = resource['metadata']['name']
                     try:
                         self._k8s_custom_objects_api.delete_namespaced_custom_object(
-                            group="totogi.com",
+                            group="nexus.ai",
                             version="v1",
                             namespace=ns,
-                            plural="totogicapabilities",
+                            plural="nexuscapabilities",
                             name=name
                         )
                         logger.debug(f"  Deleted {name} in {ns}")
@@ -427,8 +427,8 @@ class OperatorCleanup:
                         if e.status != 404:
                             logger.warning(f"  Could not delete {name}: {e}")
                 
-                logger.info("✓ TotogiCapability resources deleted")
-                self.deleted_items.append("TotogiCapability resources")
+                logger.info("✓ NexusCapability resources deleted")
+                self.deleted_items.append("NexusCapability resources")
                 
                 # Wait for operator to process CR deletions and clean up AWS resources
                 # (Cognito, DynamoDB, S3, Glue, SSM, Secrets, IAM)
@@ -438,15 +438,15 @@ class OperatorCleanup:
                 time.sleep(wait_secs)
                 logger.info("  Done waiting")
             else:
-                logger.info("✓ No TotogiCapability resources found")
+                logger.info("✓ No NexusCapability resources found")
                 
         except ApiException as e:
             if e.status == 404:
-                logger.info("✓ TotogiCapability CRD not found (already deleted)")
+                logger.info("✓ NexusCapability CRD not found (already deleted)")
             else:
-                logger.warning(f"Could not delete TotogiCapability resources: {e}")
+                logger.warning(f"Could not delete NexusCapability resources: {e}")
         except Exception as e:
-            logger.warning(f"Could not delete TotogiCapability resources: {e}")
+            logger.warning(f"Could not delete NexusCapability resources: {e}")
         
         # 2. Delete operator deployment
         logger.info("[2/7] Deleting operator deployment...")
@@ -516,7 +516,7 @@ class OperatorCleanup:
             logger.warning(f"Could not delete ClusterRole: {e}")
         
         # 6. Delete CRD
-        logger.info("[6/7] Deleting TotogiCapability CRD...")
+        logger.info("[6/7] Deleting NexusCapability CRD...")
         try:
             self._k8s_apiextensions_api.delete_custom_resource_definition(
                 name=CRD_NAME
@@ -555,18 +555,18 @@ class OperatorCleanup:
         """Delete Kubernetes resources using kubectl subprocess (fallback)."""
         success = True
         
-        # 1. Delete all TotogiCapability resources first
-        logger.info("[1/7] Deleting TotogiCapability resources...")
+        # 1. Delete all NexusCapability resources first
+        logger.info("[1/7] Deleting NexusCapability resources...")
         try:
             result = subprocess.run(
-                ["kubectl", "delete", "totogicapabilities", "--all", "-A", "--wait=false"],
+                ["kubectl", "delete", "nexuscapabilities", "--all", "-A", "--wait=false"],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             if result.returncode == 0 or "NotFound" in result.stderr:
-                logger.info("✓ TotogiCapability resources deleted")
-                self.deleted_items.append("TotogiCapability resources")
+                logger.info("✓ NexusCapability resources deleted")
+                self.deleted_items.append("NexusCapability resources")
                 
                 # Wait for operator to process CR deletions and clean up AWS resources
                 import time
@@ -575,9 +575,9 @@ class OperatorCleanup:
                 time.sleep(wait_secs)
                 logger.info("  Done waiting")
             else:
-                logger.warning(f"Could not delete TotogiCapability resources: {result.stderr}")
+                logger.warning(f"Could not delete NexusCapability resources: {result.stderr}")
         except Exception as e:
-            logger.warning(f"Could not delete TotogiCapability resources: {e}")
+            logger.warning(f"Could not delete NexusCapability resources: {e}")
         
         # 2. Delete operator deployment
         logger.info("[2/7] Deleting operator deployment...")
@@ -642,7 +642,7 @@ class OperatorCleanup:
             logger.warning(f"Could not delete ClusterRole: {e}")
         
         # 6. Delete CRD
-        logger.info("[6/7] Deleting TotogiCapability CRD...")
+        logger.info("[6/7] Deleting NexusCapability CRD...")
         try:
             result = subprocess.run(
                 ["kubectl", "delete", "crd", CRD_NAME],
@@ -1033,7 +1033,7 @@ class OperatorCleanup:
         """
         logger.info("")
         logger.info("╔" + "═" * 68 + "╗")
-        logger.info("║" + " " * 17 + "TOTOGI OPERATOR CLEANUP SCRIPT" + " " * 21 + "║")
+        logger.info("║" + " " * 17 + "NEXUS OPERATOR CLEANUP SCRIPT" + " " * 21 + "║")
         logger.info("╚" + "═" * 68 + "╝")
         logger.info("")
         logger.info(f"Cluster: {self.cluster_name}")
@@ -1123,7 +1123,7 @@ class OperatorCleanup:
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Cleanup Totogi Kubernetes Operator deployment",
+        description="Cleanup Nexus Kubernetes Operator deployment",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1142,7 +1142,7 @@ Examples:
 What gets deleted:
   - Operator deployment and service
   - nexus-system namespace
-  - TotogiCapability CRD
+  - NexusCapability CRD
   - RBAC (ClusterRole, ClusterRoleBinding)
   - IAM role (unless --keep-iam)
   - ECR repository (unless --keep-ecr)

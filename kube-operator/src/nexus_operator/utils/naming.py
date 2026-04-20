@@ -278,7 +278,7 @@ class ResourceNaming:
         return [
             {"Key": "Capability", "Value": self.capability_name},
             {"Key": "Environment", "Value": self.environment},
-            {"Key": "managed-by", "Value": "totogi-operator"},
+            {"Key": "managed-by", "Value": "nexus-operator"},
         ]
     
     def aws_tags_dict(self) -> dict:
