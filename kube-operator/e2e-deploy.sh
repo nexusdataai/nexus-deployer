@@ -243,63 +243,12 @@ else
     fi
     echo "  OIDC Provider ID: ${OIDC_ID}"
 
-    # Ensure OIDC provider is registered in IAM (may already be done by fix-irsa)
+    # OIDC and IAM roles are pre-created by create-hardened-eks-cluster.sh (no IAM calls here)
     OIDC_ARN="arn:aws:iam::${CURRENT_ACCOUNT}:oidc-provider/oidc.eks.${REGION}.amazonaws.com/id/${OIDC_ID}"
-    if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn "${OIDC_ARN}" \
-        --profile "${AWS_PROFILE}" >/dev/null 2>&1; then
-        echo "  Registering OIDC provider in IAM..."
-        aws iam create-open-id-connect-provider \
-            --url "${OIDC_URL}" \
-            --client-id-list sts.amazonaws.com \
-            --thumbprint-list "9e99a48a9960b14926bb7f3b02e22da2b0ab7280" \
-            --profile "${AWS_PROFILE}" >/dev/null 2>&1 || true
-    fi
+    echo "  OIDC ARN (pre-created): ${OIDC_ARN}"
 
-    # Create IAM role for EBS CSI Driver (idempotent — handles race conditions)
     EBS_CSI_ROLE_NAME="AmazonEKS_EBS_CSI_DriverRole"
-    TRUST_POLICY=$(cat <<TRUSTEOF
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Principal": {
-      "Federated": "${OIDC_ARN}"
-    },
-    "Action": "sts:AssumeRoleWithWebIdentity",
-    "Condition": {
-      "StringEquals": {
-        "oidc.eks.${REGION}.amazonaws.com/id/${OIDC_ID}:aud": "sts.amazonaws.com",
-        "oidc.eks.${REGION}.amazonaws.com/id/${OIDC_ID}:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa"
-      }
-    }
-  }]
-}
-TRUSTEOF
-    )
-    if aws iam get-role --role-name "${EBS_CSI_ROLE_NAME}" --profile "${AWS_PROFILE}" >/dev/null 2>&1; then
-        echo "  IAM role ${EBS_CSI_ROLE_NAME} already exists, updating trust policy"
-        aws iam update-assume-role-policy \
-            --role-name "${EBS_CSI_ROLE_NAME}" \
-            --policy-document "${TRUST_POLICY}" \
-            --profile "${AWS_PROFILE}" 2>/dev/null || true
-    else
-        echo "  Creating IAM role: ${EBS_CSI_ROLE_NAME}..."
-        aws iam create-role \
-            --role-name "${EBS_CSI_ROLE_NAME}" \
-            --assume-role-policy-document "${TRUST_POLICY}" \
-            --description "IRSA role for EBS CSI Driver on EKS cluster ${CLUSTER_NAME}" \
-            --tags "Key=Capability,Value=nexus-ai" "Key=Environment,Value=${DEPLOY_ENV}" "Key=managed-by,Value=nexus-operator" \
-            --profile "${AWS_PROFILE}" >/dev/null 2>&1 || {
-                echo "  Role may already exist (IAM propagation delay) — continuing"
-            }
-    fi
-
-    aws iam attach-role-policy \
-        --role-name "${EBS_CSI_ROLE_NAME}" \
-        --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" \
-        --profile "${AWS_PROFILE}" 2>/dev/null || true
-
-    success "IAM role ${EBS_CSI_ROLE_NAME} ready"
+    echo "  EBS CSI role (pre-created): ${EBS_CSI_ROLE_NAME}"
 
     EBS_CSI_ROLE_ARN="arn:aws:iam::${CURRENT_ACCOUNT}:role/${EBS_CSI_ROLE_NAME}"
 

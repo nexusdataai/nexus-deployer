@@ -1,0 +1,63 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyIAMUserCreation",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateLoginProfile",
+        "iam:UpdateLoginProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyMFARemoval",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeactivateMFADevice",
+        "iam:DeleteVirtualMFADevice"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRootAccessKeyCreation",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateAccessKey"
+      ],
+      "Resource": "arn:aws:iam::*:root",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    },
+    {
+      "Sid": "ProtectProvisionerRole",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/NexusClusterProvisioner",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::*:role/NexusClusterProvisioner",
+            "arn:aws:iam::*:role/OrganizationAccountAccessRole"
+          ]
+        }
+      }
+    }
+  ]
+}

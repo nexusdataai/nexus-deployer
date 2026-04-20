@@ -115,24 +115,24 @@ spec:
   #   /api → backend (port 8000)
   # BSS Magic is internal-only (ClusterIP) — backend calls it via K8s service DNS
   # NOTE: internalIngress works independently — no need to enable this for internal-only ALB.
-  # ingress:
-  #   enabled: true
-  #   scheme: internet-facing
-  #   certificateArn: "arn:aws:acm:us-east-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
-  #   healthCheckPath: "/health"
+  ingress:
+    enabled: true
+    scheme: internet-facing
+    certificateArn: "arn:aws:acm:us-east-1:654654554404:certificate/de35467f-eac6-40dd-86d9-4c7cdfbeedd6"
+    healthCheckPath: "/health"
 
   # Internal ALB Ingress (VPC-only access) — works independently of ingress.enabled above.
   # Creates an ALB with scheme "internal", accessible only from within the VPC.
-  internalIngress:
-    enabled: true
-    httpsOnly: true   # Internal ALB: HTTPS:443 only (no HTTP:80 listener); requires certificateArn
-    healthCheckPath: "/health"
-    subnets:
-      - subnet-020799a1cd8db3e3c
-      - subnet-073f4c54a4d3ce169
-    annotations:
-      alb.ingress.kubernetes.io/security-groups: sg-0762abe928f161282
-    certificateArn: "arn:aws:acm:us-east-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
+  # internalIngress:
+  #   enabled: true
+  #   httpsOnly: true   # Internal ALB: HTTPS:443 only (no HTTP:80 listener); requires certificateArn
+  #   healthCheckPath: "/health"
+  #   subnets:
+  #     - subnet-020799a1cd8db3e3c
+  #     - subnet-073f4c54a4d3ce169
+  #   annotations:
+  #     alb.ingress.kubernetes.io/security-groups: sg-0762abe928f161282
+  #   certificateArn: "arn:aws:acm:us-east-1:433193941624:certificate/a13b7e2d-a75f-4bdd-91c5-b7599211b67a"
 
   # AWS resources (DynamoDB, S3, Glue)
   dataServices:

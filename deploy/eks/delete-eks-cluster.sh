@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         --profile)      AWS_PROFILE="$2"; shift 2 ;;
         --capability)   CAPABILITY="$2"; shift 2 ;;
         --env)          APP_ENV="$2"; shift 2 ;;
+        --vpc-id)       VPC_ID="$2"; shift 2 ;;
         --delete-vpc)   DELETE_VPC=true; shift ;;
         --delete-roles) DELETE_ROLES=true; shift ;;
         --auto-approve) AUTO_APPROVE=yes; shift ;;
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --profile PROFILE     AWS CLI profile (default: ptr-tech)"
             echo "  --capability NAME     Capability name for app role cleanup (default: nexus)"
             echo "  --env ENV             Environment for app role cleanup (default: dev)"
+            echo "  --vpc-id VPC_ID       VPC ID to delete (auto-detected from cluster if running)"
             echo "  --delete-vpc          Also delete the VPC and all networking resources"
             echo "  --delete-roles        Also delete IAM roles (cluster, node, IRSA)"
             echo "  --auto-approve        Skip confirmation prompt"
@@ -99,14 +101,26 @@ if [ "$AUTO_APPROVE" != "yes" ]; then
     fi
 fi
 
-# Discover VPC from cluster before deletion
-VPC_ID=""
-if [ "$CLUSTER_EXISTS" == "true" ]; then
+# Discover VPC and OIDC from cluster (if still running)
+if [ -z "$VPC_ID" ] && [ "$CLUSTER_EXISTS" == "true" ]; then
     VPC_ID=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" \
         --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || true)
+fi
+if [ "$CLUSTER_EXISTS" == "true" ]; then
     OIDC_ISSUER=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" \
         --query 'cluster.identity.oidc.issuer' --output text 2>/dev/null || true)
     OIDC_PROVIDER=$(echo "$OIDC_ISSUER" | sed 's|https://||')
+fi
+
+# If VPC not found from cluster (already deleted), try by name tag
+if [ -z "$VPC_ID" ] || [ "$VPC_ID" == "None" ]; then
+    VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${CLUSTER_NAME}-vpc" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'Vpcs[0].VpcId' --output text 2>/dev/null || true)
+    [ "$VPC_ID" == "None" ] && VPC_ID=""
+    if [ -n "$VPC_ID" ]; then
+        echo "Discovered VPC by name tag: $VPC_ID"
+    fi
 fi
 
 #=============================================================================
@@ -246,8 +260,9 @@ if [ "$DELETE_ROLES" == "true" ]; then
         echo -e "   ${GREEN}✓ $role_name deleted${NC}"
     }
 
+    OPERATOR_ROLE_NAME="${CAPABILITY}-${APP_ENV}-operator-role"
     APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
-    delete_role "nexus-operator-role"
+    delete_role "$OPERATOR_ROLE_NAME"
     delete_role "$APP_ROLE_NAME"
     delete_role "AmazonEKS_EBS_CSI_DriverRole"
     delete_role "aws-load-balancer-controller-role"

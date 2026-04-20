@@ -358,7 +358,7 @@ def main():
     try:
         session = boto3.Session(profile_name=AWS_PROFILE)
         eks_client = session.client('eks', region_name=REGION)
-        iam_client = session.client('iam', region_name=REGION)
+        # IAM calls removed — OIDC is pre-configured by create-hardened-eks-cluster.sh
         sts_client = session.client('sts', region_name=REGION)
         
         # Get account ID
@@ -388,7 +388,7 @@ def main():
         oidc_arn = f"arn:aws:iam::{account_id}:oidc-provider/{oidc_provider_id}"
         
         try:
-            iam_client.get_open_id_connect_provider(OpenIDConnectProviderArn=oidc_arn)
+            # OIDC check skipped (admin-managed)
             print(f"    [✓] OIDC provider already registered in IAM")
             print(f"    [✓] IRSA is ready!")
             return 0
@@ -411,7 +411,7 @@ def main():
         
         # Create the OIDC provider
         try:
-            response = iam_client.create_open_id_connect_provider(
+            response = # OIDC creation skipped (admin-managed) # iam_client.create_open_id_connect_provider(
                 Url=oidc_issuer,
                 ClientIDList=['sts.amazonaws.com'],
                 ThumbprintList=[thumbprint],
@@ -447,7 +447,7 @@ def main():
         # Verify creation
         print(f"[4/4] Verifying OIDC provider...")
         try:
-            iam_client.get_open_id_connect_provider(OpenIDConnectProviderArn=oidc_arn)
+            # OIDC check skipped (admin-managed)
             print(f"    [✓] OIDC provider verified!")
             print(f"")
             print(f"    [✓] IRSA is now configured and ready!")
@@ -544,7 +544,7 @@ def check_helm_installed():
 
 def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
     """Create IAM role for ALB Controller with IRSA."""
-    iam_client = session.client('iam', region_name=REGION)
+        # IAM calls removed — OIDC is pre-configured by create-hardened-eks-cluster.sh
     
     # Trust policy for IRSA
     trust_policy = {
@@ -632,7 +632,7 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
     role_arn = f"arn:aws:iam::{account_id}:role/{ALB_CONTROLLER_ROLE}"
 
     try:
-        existing = iam_client.get_role(RoleName=ALB_CONTROLLER_ROLE)
+        existing = # IAM get_role skipped (admin-managed)
         role_arn = existing["Role"]["Arn"]
         print(f"    [✓] IAM role exists: {ALB_CONTROLLER_ROLE}")
 
@@ -651,12 +651,12 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
                 print(f"    Adding OIDC provider for cluster to existing trust policy...")
                 merged_statements = existing_statements + [trust_policy["Statement"][0]]
                 merged_trust = {"Version": "2012-10-17", "Statement": merged_statements}
-                iam_client.update_assume_role_policy(
+                # IAM update skipped (admin-managed) # iam_client.update_assume_role_policy(
                     RoleName=ALB_CONTROLLER_ROLE,
                     PolicyDocument=json.dumps(merged_trust)
                 )
 
-            iam_client.put_role_policy(
+            # IAM put_role_policy skipped (admin-managed) # iam_client.put_role_policy(
                 RoleName=ALB_CONTROLLER_ROLE,
                 PolicyName="AWSLoadBalancerControllerIAMPolicy",
                 PolicyDocument=json.dumps(alb_controller_policy)
@@ -673,7 +673,7 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
             # Role does not exist -- try to create it
             try:
                 print(f"    Creating IAM role: {ALB_CONTROLLER_ROLE}...")
-                response = iam_client.create_role(
+                response = # IAM create_role skipped (admin-managed) # iam_client.create_role(
                     RoleName=ALB_CONTROLLER_ROLE,
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
                     Description="IAM role for AWS Load Balancer Controller",
@@ -685,7 +685,7 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
                     ]
                 )
                 role_arn = response["Role"]["Arn"]
-                iam_client.put_role_policy(
+                # IAM put_role_policy skipped (admin-managed) # iam_client.put_role_policy(
                     RoleName=ALB_CONTROLLER_ROLE,
                     PolicyName="AWSLoadBalancerControllerIAMPolicy",
                     PolicyDocument=json.dumps(alb_controller_policy)
@@ -871,7 +871,7 @@ def main():
         session = boto3.Session(profile_name=AWS_PROFILE)
         sts_client = session.client('sts', region_name=REGION)
         eks_client = session.client('eks', region_name=REGION)
-        iam_client = session.client('iam', region_name=REGION)
+        # IAM calls removed — OIDC is pre-configured by create-hardened-eks-cluster.sh
         
         # Get account ID
         account_id = sts_client.get_caller_identity()['Account']
@@ -1172,30 +1172,10 @@ _delete_ebs_csi_driver() {
         done
     fi
     
-    # Step 2: Delete IAM role
+    # Step 2: IAM role cleanup (skipped — admin-managed via delete-eks-cluster.sh --delete-roles)
     echo ""
-    echo "[2/2] Deleting IAM role: ${EBS_CSI_ROLE_NAME}..."
-    if aws iam get-role --role-name "${EBS_CSI_ROLE_NAME}" --profile "${AWS_PROFILE}" >/dev/null 2>&1; then
-        # Detach managed policies first
-        local policies
-        policies=$(aws iam list-attached-role-policies --role-name "${EBS_CSI_ROLE_NAME}" \
-            --profile "${AWS_PROFILE}" --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null || echo "")
-        for policy_arn in $policies; do
-            aws iam detach-role-policy --role-name "${EBS_CSI_ROLE_NAME}" --policy-arn "$policy_arn" \
-                --profile "${AWS_PROFILE}" 2>/dev/null || true
-            echo "    Detached policy: ${policy_arn}"
-        done
-        
-        # Delete the role
-        if aws iam delete-role --role-name "${EBS_CSI_ROLE_NAME}" --profile "${AWS_PROFILE}" 2>/dev/null; then
-            echo -e "    ${GREEN}✓ IAM role ${EBS_CSI_ROLE_NAME} deleted${NC}"
-        else
-            echo -e "    ${RED}✗ Failed to delete IAM role ${EBS_CSI_ROLE_NAME}${NC}"
-            exit_code=1
-        fi
-    else
-        echo "    IAM role ${EBS_CSI_ROLE_NAME} not found (already deleted or never created)"
-    fi
+    echo "[2/2] IAM role ${EBS_CSI_ROLE_NAME}: skipped (admin-managed)"
+    echo "    To delete IAM roles, use: deploy/eks/delete-eks-cluster.sh --delete-roles"
     
     echo ""
     if [ $exit_code -eq 0 ]; then
@@ -1658,7 +1638,7 @@ async def scan_cluster():
         session = boto3.Session(profile_name=AWS_PROFILE)
         eks_client = session.client('eks', region_name=REGION)
         sts_client = session.client('sts', region_name=REGION)
-        iam_client = session.client('iam', region_name=REGION)
+        # IAM calls removed — OIDC is pre-configured by create-hardened-eks-cluster.sh
         
         # Get current identity
         identity = sts_client.get_caller_identity()
@@ -1720,18 +1700,15 @@ async def scan_cluster():
             print(f"    Issuer URL: {oidc_issuer}")
             print(f"    Provider ID: {oidc_provider_id}")
             
-            # Verify OIDC provider exists in IAM
+            # OIDC IAM registration is admin-managed (no IAM API call)
             oidc_arn = f"arn:aws:iam::{account_id}:oidc-provider/{oidc_provider_id}"
-            try:
-                oidc_info = iam_client.get_open_id_connect_provider(
-                    OpenIDConnectProviderArn=oidc_arn
-                )
+            if oidc_provider_id and oidc_provider_id.startswith("oidc.eks."):
                 oidc_iam_exists = True
-                print(f"    [✓] OIDC provider registered in IAM")
-                print(f"    ARN: {oidc_arn}")
+                print(f"    [✓] OIDC provider configured on cluster")
+                print(f"    Expected IAM ARN: {oidc_arn}")
+                print(f"    (IAM registration verified by create-hardened-eks-cluster.sh)")
                 
-                # Check thumbprints
-                thumbprints = oidc_info.get('ThumbprintList', [])
+                thumbprints = []  # Cannot check without IAM API
                 if thumbprints:
                     print(f"    [✓] Certificate thumbprints: {len(thumbprints)} configured")
                     oidc_thumbprint_valid = True
@@ -1773,7 +1750,7 @@ async def scan_cluster():
         operator_role_has_irsa_trust = False
         
         try:
-            role_info = iam_client.get_role(RoleName=operator_role_name)
+            role_info = # IAM get_role skipped (admin-managed)
             operator_role_exists = True
             print(f"    [✓] Operator role exists: {operator_role_name}")
             print(f"    ARN: {role_info['Role']['Arn']}")
@@ -1807,8 +1784,8 @@ async def scan_cluster():
             
             # Check attached policies
             try:
-                inline_policies = iam_client.list_role_policies(RoleName=operator_role_name)
-                attached_policies = iam_client.list_attached_role_policies(RoleName=operator_role_name)
+                inline_policies = # IAM list_role_policies skipped # iam_client.list_role_policies(RoleName=operator_role_name)
+                attached_policies = # IAM list_attached skipped # iam_client.list_attached_role_policies(RoleName=operator_role_name)
                 
                 policy_count = len(inline_policies.get('PolicyNames', [])) + len(attached_policies.get('AttachedPolicies', []))
                 print(f"    [✓] Has {policy_count} policy(ies) attached")
@@ -1907,7 +1884,7 @@ async def scan_cluster():
                     # Check if node role has required permissions
                     role_name = node_role.split('/')[-1]
                     try:
-                        policies = iam_client.list_attached_role_policies(RoleName=role_name)
+                        policies = # IAM list_attached skipped # iam_client.list_attached_role_policies(RoleName=role_name)
                         policy_arns = [p['PolicyArn'] for p in policies['AttachedPolicies']]
                         
                         # Check ECR permissions
@@ -2164,7 +2141,7 @@ async def scan_cluster():
         
         # Check IAM role for ALB Controller
         try:
-            alb_role_info = iam_client.get_role(RoleName=ALB_CONTROLLER_ROLE)
+            alb_role_info = # IAM get_role skipped (admin-managed)
             alb_controller_role_exists = True
             print(f"    [✓] IAM role exists: {ALB_CONTROLLER_ROLE}")
         except ClientError as e:

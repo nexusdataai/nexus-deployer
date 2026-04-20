@@ -27,9 +27,12 @@ from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 logger = logging.getLogger(__name__)
 
 # Operator configuration
+OPERATOR_CAPABILITY = os.environ.get("OPERATOR_CAPABILITY", "nexus-ai")
+OPERATOR_ENV = os.environ.get("OPERATOR_ENV", "dev")
 OPERATOR_NAMESPACE = "nexus-system"
 OPERATOR_DEPLOYMENT_NAME = "nexus-operator"
-OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
+OPERATOR_SERVICE_ACCOUNT = f"{OPERATOR_CAPABILITY}-{OPERATOR_ENV}-operator-role-sa"
+OPERATOR_ROLE_NAME = f"{OPERATOR_CAPABILITY}-{OPERATOR_ENV}-operator-role"
 OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "nexus-operator")
 CRD_GROUP = "nexus.ai"
 CRD_VERSION = "v1"
@@ -78,9 +81,6 @@ class OperatorDeploymentService:
                 self.eks_client = boto_session.client(
                     "eks", **merge_vpc_boto3_kwargs("eks", self.region, dict(client_kwargs))
                 )
-                self.iam_client = boto_session.client(
-                    "iam", **merge_vpc_boto3_kwargs("iam", self.region, dict(client_kwargs))
-                )
                 self.sts_client = boto_session.client(
                     "sts", **merge_vpc_boto3_kwargs("sts", self.region, dict(client_kwargs))
                 )
@@ -93,7 +93,6 @@ class OperatorDeploymentService:
         """Use default boto3 clients."""
         r = self.region
         self.eks_client = boto3.client("eks", **merge_vpc_boto3_kwargs("eks", r, dict(client_kwargs)))
-        self.iam_client = boto3.client("iam", **merge_vpc_boto3_kwargs("iam", r, dict(client_kwargs)))
         self.sts_client = boto3.client("sts", **merge_vpc_boto3_kwargs("sts", r, dict(client_kwargs)))
     
     async def _get_k8s_clients(self, cluster_name: str):
@@ -155,22 +154,14 @@ class OperatorDeploymentService:
                 role_name = role_part.split("/")[1]
                 resolved = False
                 try:
-                    iam_client = self.session.client("iam") if hasattr(self, 'session') else boto3.client("iam")
-                    full_role = iam_client.get_role(RoleName=role_name)
-                    principal_arn = full_role["Role"]["Arn"]
-                    resolved = True
+                    entries = self.eks_client.list_access_entries(clusterName=cluster_name).get("accessEntries", [])
+                    for entry in entries:
+                        if role_name in entry:
+                            principal_arn = entry
+                            resolved = True
+                            break
                 except Exception:
                     pass
-                if not resolved:
-                    try:
-                        entries = self.eks_client.list_access_entries(clusterName=cluster_name).get("accessEntries", [])
-                        for entry in entries:
-                            if role_name in entry:
-                                principal_arn = entry
-                                resolved = True
-                                break
-                    except Exception:
-                        pass
                 if not resolved:
                     principal_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
             
@@ -517,187 +508,10 @@ class OperatorDeploymentService:
         account_id: str,
         oidc_provider: Optional[str]
     ) -> str:
-        """
-        Create IAM role for the operator with IRSA trust policy.
-        
-        Requirements: 3.5, 3.6
-        """
-        role_name = "nexus-operator-role"
-        
-        # Build trust policy
-        if oidc_provider:
-            trust_policy = {
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": {
-                        "Federated": f"arn:aws:iam::{account_id}:oidc-provider/{oidc_provider}"
-                    },
-                    "Action": "sts:AssumeRoleWithWebIdentity",
-                    "Condition": {
-                        "StringEquals": {
-                            f"{oidc_provider}:sub": f"system:serviceaccount:{OPERATOR_NAMESPACE}:{OPERATOR_SERVICE_ACCOUNT}",
-                            f"{oidc_provider}:aud": "sts.amazonaws.com"
-                        }
-                    }
-                }]
-            }
-        else:
-            # Fallback for clusters without OIDC
-            trust_policy = {
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": {"Service": "ec2.amazonaws.com"},
-                    "Action": "sts:AssumeRole"
-                }]
-            }
-        
-        # Operator policy - needs broad permissions to provision resources
-        operator_policy = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "dynamodb:CreateTable", "dynamodb:DeleteTable", "dynamodb:DescribeTable",
-                        "dynamodb:UpdateTable", "dynamodb:TagResource", "dynamodb:ListTables"
-                    ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{account_id}:table/*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "s3:CreateBucket", "s3:DeleteBucket", "s3:PutBucketPolicy",
-                        "s3:PutBucketTagging", "s3:PutLifecycleConfiguration",
-                        "s3:PutBucketVersioning", "s3:GetBucketVersioning",
-                        "s3:PutBucketEncryption", "s3:GetBucketEncryption",
-                        "s3:PutBucketPublicAccessBlock", "s3:GetBucketPublicAccessBlock",
-                        "s3:GetBucketLocation", "s3:ListBucket", "s3:ListAllMyBuckets"
-                    ],
-                    "Resource": "arn:aws:s3:::*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ssm:PutParameter", "ssm:DeleteParameter", "ssm:GetParameter",
-                        "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:AddTagsToResource"
-                    ],
-                    "Resource": f"arn:aws:ssm:{self.region}:{account_id}:parameter/*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret",
-                        "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue",
-                        "secretsmanager:UpdateSecret", "secretsmanager:TagResource",
-                        "secretsmanager:DescribeSecret", "secretsmanager:ListSecrets"
-                    ],
-                    "Resource": f"arn:aws:secretsmanager:{self.region}:{account_id}:secret:*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "glue:CreateDatabase", "glue:DeleteDatabase", "glue:GetDatabase", "glue:GetDatabases",
-                        "glue:CreateTable", "glue:DeleteTable", "glue:UpdateTable", "glue:GetTable", "glue:GetTables",
-                        "glue:CreatePartition", "glue:BatchCreatePartition", "glue:UpdatePartition", "glue:DeletePartition",
-                        "glue:GetPartition", "glue:GetPartitions", "glue:BatchGetPartition",
-                        "glue:DeleteUserDefinedFunction", "glue:GetUserDefinedFunction", "glue:GetUserDefinedFunctions"
-                    ],
-                    "Resource": [
-                        f"arn:aws:glue:{self.region}:{account_id}:catalog",
-                        f"arn:aws:glue:{self.region}:{account_id}:database/*",
-                        f"arn:aws:glue:{self.region}:{account_id}:table/*",
-                        f"arn:aws:glue:{self.region}:{account_id}:userDefinedFunction/*"
-                    ]
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole",
-                        "iam:PutRolePolicy", "iam:DeleteRolePolicy",
-                        "iam:UpdateAssumeRolePolicy",
-                        "iam:GetOpenIDConnectProvider",
-                        "iam:TagRole", "iam:PassRole"
-                    ],
-                    "Resource": f"arn:aws:iam::{account_id}:role/*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "eks:DescribeCluster",
-                        "eks:ListClusters"
-                    ],
-                    "Resource": "*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool",
-                        "cognito-idp:DescribeUserPool", "cognito-idp:ListUserPools",
-                        "cognito-idp:CreateGroup", "cognito-idp:GetGroup",
-                        "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient",
-                        "cognito-idp:DescribeUserPoolClient", "cognito-idp:ListUserPoolClients",
-                        "cognito-idp:CreateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain",
-                        "cognito-idp:DescribeUserPoolDomain",
-                        "cognito-idp:ListUsersInGroup",
-                        "cognito-idp:AdminCreateUser", "cognito-idp:AdminGetUser",
-                        "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminSetUserPassword",
-                        "cognito-idp:TagResource", "cognito-idp:UntagResource"
-                    ],
-                    "Resource": "*"
-                }
-            ]
-        }
-        
-        try:
-            try:
-                existing = self.iam_client.get_role(RoleName=role_name)
-                role_arn = existing["Role"]["Arn"]
-                logger.info(f"IAM role {role_name} already exists, updating policies...")
-                
-                self.iam_client.update_assume_role_policy(
-                    RoleName=role_name,
-                    PolicyDocument=json.dumps(trust_policy)
-                )
-                logger.info(f"Updated trust policy for {role_name}")
-                
-                self.iam_client.put_role_policy(
-                    RoleName=role_name,
-                    PolicyName="nexus-operator-policy",
-                    PolicyDocument=json.dumps(operator_policy)
-                )
-                logger.info(f"Updated inline policy for {role_name}")
-                
-                return role_arn
-            except ClientError as e:
-                if e.response["Error"]["Code"] != "NoSuchEntity":
-                    raise
-            
-            response = self.iam_client.create_role(
-                RoleName=role_name,
-                AssumeRolePolicyDocument=json.dumps(trust_policy),
-                Description="IAM role for Nexus Operator with IRSA",
-                Tags=[
-                    {"Key": "managed-by", "Value": "nexus-deployer"},
-                    {"Key": "component", "Value": "nexus-operator"}
-                ]
-            )
-            role_arn = response["Role"]["Arn"]
-            
-            self.iam_client.put_role_policy(
-                RoleName=role_name,
-                PolicyName="nexus-operator-policy",
-                PolicyDocument=json.dumps(operator_policy)
-            )
-            
-            logger.info(f"Created IAM role: {role_name}")
-            return role_arn
-            
-        except Exception as e:
-            assumed_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-            logger.warning(f"IAM API unreachable ({e}). Assuming pre-created role: {assumed_arn}")
-            return assumed_arn
+        """Return the pre-created operator role ARN by naming convention. No IAM API call."""
+        role_arn = f"arn:aws:iam::{account_id}:role/{OPERATOR_ROLE_NAME}"
+        logger.info(f"Using pre-created operator role: {role_arn}")
+        return role_arn
 
     async def _create_service_account(self, core_v1, role_arn: str):
         """Create ServiceAccount with IRSA annotation."""
@@ -848,7 +662,7 @@ class OperatorDeploymentService:
         
         # ClusterRole
         cluster_role = k8s_client.V1ClusterRole(
-            metadata=k8s_client.V1ObjectMeta(name="nexus-operator-role"),
+            metadata=k8s_client.V1ObjectMeta(name=OPERATOR_ROLE_NAME),
             rules=[
                 k8s_client.V1PolicyRule(
                     api_groups=[CRD_GROUP],
@@ -902,21 +716,21 @@ class OperatorDeploymentService:
         
         try:
             rbac_v1.create_cluster_role(cluster_role)
-            logger.info("Created ClusterRole nexus-operator-role")
+            logger.info(f"Created ClusterRole {OPERATOR_ROLE_NAME}")
         except ApiException as e:
             if e.status == 409:
-                rbac_v1.replace_cluster_role("nexus-operator-role", cluster_role)
-                logger.info("Updated ClusterRole nexus-operator-role")
+                rbac_v1.replace_cluster_role(OPERATOR_ROLE_NAME, cluster_role)
+                logger.info(f"Updated ClusterRole {OPERATOR_ROLE_NAME}")
             else:
                 raise
         
         # ClusterRoleBinding
         cluster_role_binding = k8s_client.V1ClusterRoleBinding(
-            metadata=k8s_client.V1ObjectMeta(name="nexus-operator-binding"),
+            metadata=k8s_client.V1ObjectMeta(name=f"{OPERATOR_ROLE_NAME}-binding"),
             role_ref=k8s_client.V1RoleRef(
                 api_group="rbac.authorization.k8s.io",
                 kind="ClusterRole",
-                name="nexus-operator-role"
+                name=OPERATOR_ROLE_NAME
             ),
             subjects=[
                 k8s_client.RbacV1Subject(
@@ -929,11 +743,11 @@ class OperatorDeploymentService:
         
         try:
             rbac_v1.create_cluster_role_binding(cluster_role_binding)
-            logger.info("Created ClusterRoleBinding nexus-operator-binding")
+            logger.info(f"Created ClusterRoleBinding {OPERATOR_ROLE_NAME}-binding")
         except ApiException as e:
             if e.status == 409:
-                rbac_v1.patch_cluster_role_binding("nexus-operator-binding", cluster_role_binding)
-                logger.info("Updated ClusterRoleBinding nexus-operator-binding")
+                rbac_v1.patch_cluster_role_binding(f"{OPERATOR_ROLE_NAME}-binding", cluster_role_binding)
+                logger.info(f"Updated ClusterRoleBinding {OPERATOR_ROLE_NAME}-binding")
             else:
                 raise
     

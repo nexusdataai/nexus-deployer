@@ -243,9 +243,9 @@ class ResourceNaming:
         """
         Generate Kubernetes ServiceAccount name.
         
-        Pattern: {capability}-{env}-{component}-sa
+        Pattern: {capability}-{env}-{component}-role-sa
         """
-        return f"{self.capability_name}-{self.environment}-{component}-sa"
+        return f"{self.capability_name}-{self.environment}-{component}-role-sa"
     
     def kubernetes_deployment(self, component: str) -> str:
         """
@@ -293,7 +293,7 @@ class ResourceNaming:
         
         Pattern: /totogi/{capability}/{env}
         """
-        return f"/totogi/{self.capability_name}/{self.environment}"
+        return f"/nexus/{self.capability_name}/{self.environment}"
     
     def log_stream_prefix(self, component: str) -> str:
         """

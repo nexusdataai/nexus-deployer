@@ -716,10 +716,11 @@ create_irsa_role() {
     echo "   ✓ $role_name (created)"
 }
 
-create_irsa_role "nexus-operator-role" \
+OPERATOR_ROLE_NAME="${CAPABILITY}-${APP_ENV}-operator-role"
+create_irsa_role "$OPERATOR_ROLE_NAME" \
     "$PERMISSIONS_DIR/operator-trust-policy.json" \
     "$PERMISSIONS_DIR/operator-policy.json" \
-    "nexus-operator-policy" \
+    "${OPERATOR_ROLE_NAME}-policy" \
     ""
 
 APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
@@ -1096,7 +1097,7 @@ echo "  Endpoint:   ${CLUSTER_ENDPOINT:0:60}..."
 echo ""
 echo "🔐 OIDC / IRSA:"
 echo "  OIDC:       ${OIDC_PROVIDER:0:60}..."
-echo "  Operator:   nexus-operator-role"
+echo "  Operator:   $OPERATOR_ROLE_NAME"
 echo "  App:        $APP_ROLE_NAME"
 echo "  EBS CSI:    AmazonEKS_EBS_CSI_DriverRole"
 if [ "$SKIP_ADDONS" != "true" ]; then

@@ -1,0 +1,63 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonWhitelistedServices",
+      "Effect": "Deny",
+      "NotAction": [
+        "acm:*",
+        "access-analyzer:*",
+        "athena:*",
+        "autoscaling:*",
+        "budgets:*",
+        "ce:*",
+        "cloudformation:*",
+        "cloudfront:*",
+        "cloudtrail:*",
+        "cloudwatch:*",
+        "cognito-idp:*",
+        "cognito-identity:*",
+        "config:*",
+        "cost-optimization-hub:*",
+        "cur:*",
+        "dynamodb:*",
+        "ec2:*",
+        "ecr:*",
+        "eks:*",
+        "elasticloadbalancing:*",
+        "events:*",
+        "glue:*",
+        "guardduty:*",
+        "health:*",
+        "iam:*",
+        "kms:*",
+        "lambda:*",
+        "logs:*",
+        "organizations:*",
+        "route53:*",
+        "s3:*",
+        "secretsmanager:*",
+        "securityhub:*",
+        "ses:*",
+        "sns:*",
+        "ssm:*",
+        "sts:*",
+        "support:*",
+        "tag:*",
+        "trustedadvisor:*",
+        "wafv2:*",
+        "aws-portal:*",
+        "account:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::*:role/aws-service-role/*",
+            "arn:aws:iam::*:role/AWS*"
+          ]
+        }
+      }
+    }
+  ]
+}

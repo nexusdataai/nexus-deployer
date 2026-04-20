@@ -1,0 +1,87 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyCloudTrailDisable",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:UpdateTrail"
+      ],
+      "Resource": "arn:aws:cloudtrail:*:*:trail/nexus-org-trail",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/NexusClusterProvisioner"
+        }
+      }
+    },
+    {
+      "Sid": "DenyGuardDutyDisable",
+      "Effect": "Deny",
+      "Action": [
+        "guardduty:DeleteDetector",
+        "guardduty:DisassociateFromMasterAccount",
+        "guardduty:DisassociateFromAdministratorAccount",
+        "guardduty:UpdateDetector"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyConfigDisable",
+      "Effect": "Deny",
+      "Action": [
+        "config:StopConfigurationRecorder",
+        "config:DeleteConfigurationRecorder",
+        "config:DeleteDeliveryChannel",
+        "config:DeleteRetentionConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyVPCFlowLogDeletion",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:DeleteFlowLogs",
+        "logs:DeleteLogGroup"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/NexusClusterProvisioner"
+        }
+      }
+    },
+    {
+      "Sid": "DenyEKSLogDisable",
+      "Effect": "Deny",
+      "Action": [
+        "eks:UpdateClusterConfig"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/NexusClusterProvisioner"
+        }
+      }
+    },
+    {
+      "Sid": "DenySecurityHubDisable",
+      "Effect": "Deny",
+      "Action": [
+        "securityhub:DisableSecurityHub",
+        "securityhub:DeleteMembers",
+        "securityhub:DisassociateMembers"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyAccessAnalyzerDeletion",
+      "Effect": "Deny",
+      "Action": [
+        "access-analyzer:DeleteAnalyzer"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

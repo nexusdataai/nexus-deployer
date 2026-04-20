@@ -269,7 +269,6 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         GlueProvisioner,
         SSMProvisioner,
         SecretsProvisioner,
-        IAMProvisioner,
         KubernetesResourceCreator,
         CognitoProvisioner,
     )
@@ -517,20 +516,17 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         oidc_provider, cluster_name = get_oidc_provider_for_irsa(region)
         
         if oidc_provider:
-            sts_client = vpc_boto3_client("sts", region_name=region)
-            account_id = sts_client.get_caller_identity()["Account"]
             if verify_oidc_provider_exists(oidc_provider, account_id, region):
                 logger.info(f"IRSA enabled with OIDC provider: {oidc_provider}")
             else:
-                logger.warning("OIDC provider not registered in IAM - IRSA may not work")
+                logger.warning("OIDC provider not configured on cluster - IRSA may not work")
         else:
-            logger.warning("No OIDC provider found - falling back to EC2 trust policy")
-        
-        iam = IAMProvisioner(naming, region, oidc_provider=oidc_provider)
-        iam_result = await iam.create_application_role(resources)
-        if iam_result["status"] in ["created", "exists", "updated"]:
-            resources["iamRoles"] = [iam_result["arn"]]
-        
+            logger.warning("No OIDC provider found - IRSA may not work")
+
+        role_arn = f"arn:aws:iam::{account_id}:role/{naming.application_role()}"
+        resources["iamRoles"] = [role_arn]
+        logger.info(f"Using pre-created app role: {role_arn}")
+
         _update_step(steps, "IAM", "done", resources=resources["iamRoles"])
         patch.status["steps"] = list(steps)
         logger.info(f"IAM done: {resources['iamRoles']}")
@@ -554,6 +550,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         patch.status["steps"] = list(steps)
         
         role_arn = resources["iamRoles"][0] if resources["iamRoles"] else ""
+        if not role_arn:
+            role_arn = f"arn:aws:iam::{account_id}:role/{naming.application_role()}"
+            logger.warning(f"IAM role ARN not available from provisioning, using convention: {role_arn}")
         sa_result = await k8s.create_service_account(naming, role_arn)
         sa_was_updated = sa_result.get("status") == "updated"
         
@@ -883,7 +882,6 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
         GlueProvisioner,
         SSMProvisioner,
         SecretsProvisioner,
-        IAMProvisioner,
         KubernetesResourceCreator,
         CognitoProvisioner,
     )
@@ -935,12 +933,7 @@ async def delete_capability(spec: dict, name: str, namespace: str, status: dict,
             cognito = CognitoProvisioner(naming, region)
             await cognito.delete_all()
         
-        # IAM roles (with OIDC provider for proper cleanup)
-        logger.info("Deleting IAM roles...")
-        from .utils.eks_utils import get_oidc_provider_for_irsa
-        oidc_provider, _ = get_oidc_provider_for_irsa(region)
-        iam = IAMProvisioner(naming, region, oidc_provider=oidc_provider)
-        await iam.delete_application_role()
+        logger.info("IAM role lifecycle is admin-managed — skipping IAM deletion")
         
         # Secrets
         logger.info("Deleting Secrets Manager secrets...")
