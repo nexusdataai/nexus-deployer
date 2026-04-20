@@ -77,7 +77,7 @@ spec:
   #   {capability}/{env}/bssmagic-axway-config  — Axway endpoints + auth (UAT defaults)
   bssmagic:
     enabled: true
-    image: "__ECR_REGISTRY__/bssmagic-starhub-k8s:latest"
+    image: "__ECR_REGISTRY__/bssmagic-nexus-k8s:latest"
     replicas: 1
     # Credentials: upload via CLI after operator creates the placeholder secret:
     #   aws secretsmanager put-secret-value \
