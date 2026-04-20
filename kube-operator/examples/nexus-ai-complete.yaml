@@ -19,8 +19,8 @@
 #   - (Optional) ACM certificate for HTTPS
 #
 # Deploy:
-#   kubectl create namespace call-processing-__ENV__
-#   kubectl apply -f call-processing-complete.yaml
+#   kubectl create namespace nexus-ai-__ENV__
+#   kubectl apply -f nexus-ai-complete.yaml
 
 ---
 # ============================================================
@@ -29,16 +29,16 @@
 apiVersion: nexus.ai/v1
 kind: NexusCapability
 metadata:
-  name: call-processing-__ENV__
-  namespace: call-processing-__ENV__
+  name: nexus-ai-__ENV__
+  namespace: nexus-ai-__ENV__
   labels:
-    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/name: nexus-ai
     app.kubernetes.io/version: "2.5.0"
     nexus.ai/environment: __ENV__
     nexus.ai/criticality: high
 spec:
   # Capability identification
-  capabilityName: call-processing
+  capabilityName: nexus-ai
   version: "2.5.0"
   environment: __ENV__
   region: us-east-1
@@ -81,18 +81,18 @@ spec:
     replicas: 1
     # Credentials: upload via CLI after operator creates the placeholder secret:
     #   aws secretsmanager put-secret-value \
-    #     --secret-id "call-processing/__ENV__/bssmagic-credentials" \
+    #     --secret-id "nexus-ai/__ENV__/bssmagic-credentials" \
     #     --secret-binary fileb://credentials.zip --region us-east-1
-    credentialsSecretName: "call-processing/__ENV__/bssmagic-credentials"
+    credentialsSecretName: "nexus-ai/__ENV__/bssmagic-credentials"
     # Axway config: operator auto-creates with UAT endpoint defaults.
     # Update CLIENT_ID, CLIENT_SECRET, KEY_ID, PROVIDER_ORG for your environment:
     #   aws secretsmanager put-secret-value \
-    #     --secret-id "call-processing/__ENV__/bssmagic-axway-config" \
+    #     --secret-id "nexus-ai/__ENV__/bssmagic-axway-config" \
     #     --secret-string '{"AXWAY_CLIENT_ID":"...","AXWAY_CLIENT_SECRET":"..."}' \
     #     --region us-east-1
-    axwaySecretName: "call-processing/__ENV__/bssmagic-axway-config"
+    axwaySecretName: "nexus-ai/__ENV__/bssmagic-axway-config"
     # S3 dump: operator auto-creates bucket. Upload dump for faster first boot:
-    #   aws s3 cp bssmagic-dump.sql.gz s3://call-processing-__ENV__-bssmagic-dumps-ACCOUNT_ID/
+    #   aws s3 cp bssmagic-dump.sql.gz s3://nexus-ai-__ENV__-bssmagic-dumps-ACCOUNT_ID/
     # If S3 dump not found, falls back to baked-in dump in the Docker image.
     dumpS3Bucket: ""                    # Set to bucket name after creation (operator logs it)
     dumpS3Key: "bssmagic-dump.sql.gz"
@@ -159,16 +159,16 @@ spec:
 # apiVersion: v1
 # kind: Service
 # metadata:
-#   name: call-processing-__ENV__-backend-svc-internal
-#   namespace: call-processing-__ENV__
+#   name: nexus-ai-__ENV__-backend-svc-internal
+#   namespace: nexus-ai-__ENV__
 #   labels:
-#     app.kubernetes.io/name: call-processing
+#     app.kubernetes.io/name: nexus-ai
 #     app.kubernetes.io/component: backend
 #     nexus.ai/service-type: internal
 # spec:
 #   type: ClusterIP
 #   selector:
-#     app: call-processing-__ENV__-backend
+#     app: nexus-ai-__ENV__-backend
 #   ports:
 #     - name: http
 #       port: 8000
@@ -189,8 +189,8 @@ spec:
 #               Also reachable internally: http://{capability}-{env}-bssmagic-svc.{ns}.svc.cluster.local:8000
 #   
 #   Get ALB DNS:
-#     kubectl get ingress call-processing-__ENV__-app-ingress \
-#       -n call-processing-__ENV__ \
+#     kubectl get ingress nexus-ai-__ENV__-app-ingress \
+#       -n nexus-ai-__ENV__ \
 #       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 #
 # WITHOUT ALB INGRESS (LoadBalancer services):

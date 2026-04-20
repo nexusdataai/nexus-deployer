@@ -44,7 +44,7 @@ fi
 
 # Defaults
 SKIP_CLEAN=false
-CAPABILITY_FILE="${SCRIPT_DIR}/examples/call-processing-complete.yaml"
+CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ai-complete.yaml"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
@@ -288,7 +288,7 @@ TRUSTEOF
             --role-name "${EBS_CSI_ROLE_NAME}" \
             --assume-role-policy-document "${TRUST_POLICY}" \
             --description "IRSA role for EBS CSI Driver on EKS cluster ${CLUSTER_NAME}" \
-            --tags "Key=Capability,Value=call-processing" "Key=Environment,Value=${DEPLOY_ENV}" "Key=managed-by,Value=nexus-operator" \
+            --tags "Key=Capability,Value=nexus-ai" "Key=Environment,Value=${DEPLOY_ENV}" "Key=managed-by,Value=nexus-operator" \
             --profile "${AWS_PROFILE}" >/dev/null 2>&1 || {
                 echo "  Role may already exist (IAM propagation delay) — continuing"
             }
@@ -354,7 +354,7 @@ success "Storage prerequisites ready (EBS CSI + gp2 StorageClass)"
 step "Upload BSS Magic credentials to Secrets Manager"
 
 CREDS_ZIP_PATH="${SCRIPT_DIR}/../bssmagic-image/secrets/credentials.zip"
-CREDS_SECRET_ID="call-processing/${DEPLOY_ENV}/bssmagic-credentials"
+CREDS_SECRET_ID="nexus-ai/${DEPLOY_ENV}/bssmagic-credentials"
 
 # Convert to Windows path for AWS CLI fileb:// (Git Bash paths don't work with fileb://)
 CREDS_ZIP_PATH_WIN=$(cygpath -w "${CREDS_ZIP_PATH}" 2>/dev/null || echo "${CREDS_ZIP_PATH}")
@@ -574,7 +574,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Verify and fix SSM parameters"
 
-CAPABILITY_NAME="call-processing"
+CAPABILITY_NAME="nexus-ai"
 CAP_SANITIZED="${CAPABILITY_NAME//-/_}"
 SSM_PREFIX="/${CAPABILITY_NAME}/${DEPLOY_ENV}"
 SSM_FIXED=0

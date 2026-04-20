@@ -21,8 +21,8 @@
                 "dynamodb:ListTables"
             ],
             "Resource": [
-                "arn:aws:dynamodb:ap-southeast-1:757905896642:table/call-processing-prod-*",
-                "arn:aws:dynamodb:ap-southeast-1:757905896642:table/call-processing-prod-*/index/*"
+                "arn:aws:dynamodb:ap-southeast-1:757905896642:table/nexus-ai-prod-*",
+                "arn:aws:dynamodb:ap-southeast-1:757905896642:table/nexus-ai-prod-*/index/*"
             ]
         },
         {
@@ -41,8 +41,8 @@
                 "s3:PutBucketPublicAccessBlock"
             ],
             "Resource": [
-                "arn:aws:s3:::call-processing-prod-*",
-                "arn:aws:s3:::call-processing-prod-*/*"
+                "arn:aws:s3:::nexus-ai-prod-*",
+                "arn:aws:s3:::nexus-ai-prod-*/*"
             ]
         },
         {
@@ -56,7 +56,7 @@
                 "ssm:DeleteParameter",
                 "ssm:AddTagsToResource"
             ],
-            "Resource": "arn:aws:ssm:ap-southeast-1:757905896642:parameter/call-processing/prod/*"
+            "Resource": "arn:aws:ssm:ap-southeast-1:757905896642:parameter/nexus-ai/prod/*"
         },
         {
             "Sid": "SecretsAccess",
@@ -72,9 +72,9 @@
                 "secretsmanager:ListSecrets"
             ],
             "Resource": [
-                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:call-processing-prod/*",
-                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:call-processing-prod-*",
-                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:call-processing/prod/*"
+                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:nexus-ai-prod/*",
+                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:nexus-ai-prod-*",
+                "arn:aws:secretsmanager:ap-southeast-1:757905896642:secret:nexus-ai/prod/*"
             ]
         },
         {
@@ -100,8 +100,8 @@
             ],
             "Resource": [
                 "arn:aws:glue:ap-southeast-1:757905896642:catalog",
-                "arn:aws:glue:ap-southeast-1:757905896642:database/call-processing*",
-                "arn:aws:glue:ap-southeast-1:757905896642:table/call-processing*/*"
+                "arn:aws:glue:ap-southeast-1:757905896642:database/nexus-ai*",
+                "arn:aws:glue:ap-southeast-1:757905896642:table/nexus-ai*/*"
             ]
         },
         {

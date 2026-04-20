@@ -27,7 +27,7 @@ Usage:
     python scripts/infra-diagnostics/diagnose.py --json
 
     # Custom backend URL (e.g. from another pod)
-    python scripts/infra-diagnostics/diagnose.py --url http://call-processing-dev-backend-svc:8000
+    python scripts/infra-diagnostics/diagnose.py --url http://nexus-ai-dev-backend-svc:8000
 """
 
 import argparse

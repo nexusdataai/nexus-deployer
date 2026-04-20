@@ -422,7 +422,7 @@ def verify_app_health(namespace, ingress_obj, cap_name, env):
         print("  Backend (via ALB):")
         backend_ok = False
         dns_error = False
-        for endpoint in ["/api/health", "/health", "/api/v1/diagnostics/call-processing/summary"]:
+        for endpoint in ["/api/health", "/health", "/api/v1/diagnostics/nexus-ai/summary"]:
             try:
                 import urllib.request
                 req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")
@@ -476,7 +476,7 @@ def verify_app_health(namespace, ingress_obj, cap_name, env):
     if alb_url:
         print("")
         print("  Diagnostics:")
-        for endpoint in ["/api/v1/diagnostics/call-processing/summary", "/api/v1/db-doctor/status"]:
+        for endpoint in ["/api/v1/diagnostics/nexus-ai/summary", "/api/v1/db-doctor/status"]:
             try:
                 import urllib.request
                 req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")

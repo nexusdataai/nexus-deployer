@@ -38,7 +38,7 @@ class ResourceNaming:
         Initialize the naming utility.
         
         Args:
-            capability_name: Name of the capability (e.g., "call-processing")
+            capability_name: Name of the capability (e.g., "nexus-ai")
             environment: Target environment (dev, staging, prod)
             account_id: AWS account ID (optional, used for globally unique names)
         """

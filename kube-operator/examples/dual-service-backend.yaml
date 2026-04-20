@@ -13,16 +13,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: call-processing-prod-backend-svc-internal
-  namespace: call-processing-prod
+  name: nexus-ai-prod-backend-svc-internal
+  namespace: nexus-ai-prod
   labels:
-    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/name: nexus-ai
     app.kubernetes.io/component: backend
     nexus.ai/service-type: internal
 spec:
   type: ClusterIP  # Internal only - not exposed outside cluster
   selector:
-    app: call-processing-prod-backend  # Must match deployment pods
+    app: nexus-ai-prod-backend  # Must match deployment pods
   ports:
     - name: http
       port: 8000
@@ -33,10 +33,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: call-processing-prod-backend-svc-external
-  namespace: call-processing-prod
+  name: nexus-ai-prod-backend-svc-external
+  namespace: nexus-ai-prod
   labels:
-    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/name: nexus-ai
     app.kubernetes.io/component: backend
     nexus.ai/service-type: external
   annotations:
@@ -52,7 +52,7 @@ metadata:
 spec:
   type: LoadBalancer  # External - creates AWS Load Balancer
   selector:
-    app: call-processing-prod-backend  # Same pods as internal service
+    app: nexus-ai-prod-backend  # Same pods as internal service
   ports:
     - name: http
       port: 8000
@@ -67,7 +67,7 @@ spec:
 #    - Fast: No internet round-trip
 #    - Secure: Not exposed externally
 #    - Free: No data transfer costs
-#    - DNS: call-processing-prod-backend-svc-internal:8000
+#    - DNS: nexus-ai-prod-backend-svc-internal:8000
 # 
 # 3. External service (LoadBalancer):
 #    - Public: Accessible from internet
@@ -77,7 +77,7 @@ spec:
 #
 # 4. Frontend nginx.conf should proxy to internal service:
 #    location /api/ {
-#        proxy_pass http://call-processing-prod-backend-svc-internal:8000;
+#        proxy_pass http://nexus-ai-prod-backend-svc-internal:8000;
 #    }
 #
 # 5. External apps use LoadBalancer URL:

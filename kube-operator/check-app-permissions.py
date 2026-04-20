@@ -6,7 +6,7 @@ Runs as a Kubernetes Job using the capability's IRSA ServiceAccount
 to test the exact same IAM role the application pods use.
 
 Environment variables (set by the Job):
-    CAPABILITY  e.g. call-processing
+    CAPABILITY  e.g. nexus-ai
     ENV         e.g. stage
     REGION      e.g. us-east-1
     PERM_CHECK_SSL_VERIFY  optional; set to 0/false to disable TLS cert verify (debug only)
@@ -24,7 +24,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 REGION = os.getenv("REGION", "us-east-1")
-CAPABILITY = os.getenv("CAPABILITY", "call-processing")
+CAPABILITY = os.getenv("CAPABILITY", "nexus-ai")
 ENV = os.getenv("ENV", "stage")
 CALL_TIMEOUT = 8
 FAST_CONFIG = Config(

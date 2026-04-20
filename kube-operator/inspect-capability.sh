@@ -13,8 +13,8 @@
 #   Uses pod service account credentials (no --profile). Detected when KUBERNETES_SERVICE_HOST is set.
 #   Requires aws CLI + kubectl in the container (see kube-operator Dockerfile).
 #
-#   kubectl exec -n totogi-system deploy/totogi-operator -- \
-#     env DEPLOY_ENV=stage AWS_REGION=ap-southeast-1 /bin/bash /app/inspect-capability.sh
+#   kubectl exec -n nexus-system deploy/nexus-operator -- \
+#     env DEPLOY_ENV=stage AWS_REGION=us-east-1 /bin/bash /app/inspect-capability.sh
 #
 #   In-cluster AWS calls use the pod service account (IRSA). DynamoDB checks use boto3 (same as the
 #   operator); the aws CLI can fail for DDB in the same pod while boto3 succeeds.
@@ -31,8 +31,8 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
-REGION="${REGION:-ap-southeast-1}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
+REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 INSPECT_FORCE_LOCAL="${INSPECT_FORCE_LOCAL:-0}"
 
@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo "Without --local, if KUBERNETES_SERVICE_HOST is set, uses in-cluster"
             echo "kubectl and IAM/IRSA (no AWS profile)."
             echo ""
-            echo "Lists Kubernetes and AWS resources for call-processing/<env>."
+            echo "Lists Kubernetes and AWS resources for nexus-ai/<env>."
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -69,7 +69,7 @@ if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && [ "${INSPECT_FORCE_LOCAL}" != "1" ];
 fi
 
 export REGION
-CAP="call-processing"
+CAP="nexus-ai"
 NS="${CAP}-${DEPLOY_ENV}"
 CAP_US="${CAP//-/_}_${DEPLOY_ENV//-/_}"
 
@@ -129,7 +129,7 @@ taws() {
     fi
 }
 
-# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as totogi-operator process).
+# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as nexus-operator process).
 # Table name -> prints "STATUS|details" where details are items/billing/tags (empty if NOT FOUND).
 inspect_ddb_boto3_line() {
     local tn="$1"
@@ -137,7 +137,7 @@ inspect_ddb_boto3_line() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 name = sys.argv[1]
 c = boto3.client('dynamodb', region_name=region)
 try:
@@ -175,7 +175,7 @@ inspect_ddb_boto3_active() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('dynamodb', region_name=region)
 try:
     r = c.describe_table(TableName=sys.argv[1])['Table']
@@ -195,7 +195,7 @@ inspect_alb_boto3_json() {
 import os, sys, json
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 name = sys.argv[1]
 c = boto3.client('elbv2', region_name=region)
 try:
@@ -219,7 +219,7 @@ inspect_alb_tags_boto3() {
 import os, sys
 import boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 arn = sys.argv[1]
 c = boto3.client('elbv2', region_name=region)
 try:
@@ -453,7 +453,7 @@ else
     GLUE_DB_CHECK=$(timeout "${AWS_TIMEOUT}" python3 -c "
 import os, sys, boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('glue', region_name=region)
 try:
     r = c.get_database(Name=sys.argv[1])
@@ -484,7 +484,7 @@ else
     GLUE_TBL_JSON=$(timeout "${AWS_TIMEOUT}" python3 -c "
 import os, sys, json, boto3
 from botocore.exceptions import ClientError
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('glue', region_name=region)
 try:
     r = c.get_table(DatabaseName=sys.argv[1], Name=sys.argv[2])
@@ -519,7 +519,7 @@ if [ ${GLUE_TBL_EXIT} -eq 0 ]; then
     else
         read -r PART_COUNT LAST_PARTS <<< "$(timeout "${AWS_TIMEOUT}" python3 -c "
 import os, sys, json, boto3
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('glue', region_name=region)
 try:
     r = c.get_partitions(DatabaseName=sys.argv[1], TableName=sys.argv[2], MaxResults=5)
@@ -578,7 +578,7 @@ if [ "${USE_AWS_PROFILE}" = "1" ]; then
 else
     QUERY_EXEC_ID=$(timeout 15 python3 -c "
 import os, sys, boto3
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('athena', region_name=region)
 try:
     r = c.start_query_execution(
@@ -608,7 +608,7 @@ else
         else
             ATHENA_STATUS_JSON=$(timeout 10 python3 -c "
 import os, sys, json, boto3
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('athena', region_name=region)
 try:
     r = c.get_query_execution(QueryExecutionId=sys.argv[1])
@@ -633,7 +633,7 @@ except Exception as e:
         else
             ATHENA_RESULT=$(timeout 10 python3 -c "
 import os, sys, json, boto3
-region = os.environ.get('REGION', 'ap-southeast-1')
+region = os.environ.get('REGION', 'us-east-1')
 c = boto3.client('athena', region_name=region)
 try:
     r = c.get_query_results(QueryExecutionId=sys.argv[1])
@@ -1180,7 +1180,7 @@ if temp_file and os.path.exists(temp_file):
         # Clean up test file from S3
         try:
             import boto3
-            boto3.client('s3', region_name=os.environ.get('AWS_REGION','ap-southeast-1')).delete_object(Bucket=bucket, Key=s3_key)
+            boto3.client('s3', region_name=os.environ.get('AWS_REGION','us-east-1')).delete_object(Bucket=bucket, Key=s3_key)
         except Exception:
             pass
     except Exception as e:
@@ -1233,7 +1233,7 @@ try:
     db_ok = True
     try:
         import boto3
-        glue = boto3.client('glue', region_name=os.environ.get('AWS_REGION','ap-southeast-1'))
+        glue = boto3.client('glue', region_name=os.environ.get('AWS_REGION','us-east-1'))
         glue.get_database(Name=GLUE_DATABASE_NAME)
     except Exception as e:
         db_ok = False
@@ -1491,9 +1491,9 @@ try:
         ('Glue',              'glue',            'get_partitions',        {'DatabaseName':GLUE_DB,'TableName':GLUE_TBL,'MaxResults':1}, 'glue:GetPartitions'),
         ('Glue',              'glue',            'batch_delete_partition', {'DatabaseName':GLUE_DB,'TableName':GLUE_TBL,'PartitionsToDelete':[]}, 'glue:BatchDeletePartition'),
         ('Athena',            'athena',          'start_query_execution', {'QueryString':'SELECT 1','QueryExecutionContext':{'Database':GLUE_DB},'ResultConfiguration':{'OutputLocation':f's3://{S3_BUCKET}/athena-results/'}}, 'athena:StartQueryExecution'),
-        ('Cognito',           'cognito-idp',     'describe_user_pool',    {'UserPoolId':'ap-southeast-1_nonexistent'},       'cognito-idp:DescribeUserPool'),
-        ('Cognito',           'cognito-idp',     'admin_update_user_attributes', {'UserPoolId':'ap-southeast-1_nonexistent','Username':'_iam_check','UserAttributes':[]}, 'cognito-idp:AdminUpdateUserAttributes'),
-        ('Cognito',           'cognito-idp',     'admin_disable_user',    {'UserPoolId':'ap-southeast-1_nonexistent','Username':'_iam_check'}, 'cognito-idp:AdminDisableUser'),
+        ('Cognito',           'cognito-idp',     'describe_user_pool',    {'UserPoolId':'us-east-1_nonexistent'},       'cognito-idp:DescribeUserPool'),
+        ('Cognito',           'cognito-idp',     'admin_update_user_attributes', {'UserPoolId':'us-east-1_nonexistent','Username':'_iam_check','UserAttributes':[]}, 'cognito-idp:AdminUpdateUserAttributes'),
+        ('Cognito',           'cognito-idp',     'admin_disable_user',    {'UserPoolId':'us-east-1_nonexistent','Username':'_iam_check'}, 'cognito-idp:AdminDisableUser'),
         ('CloudWatchLogs',    'logs',            'describe_log_groups',   {'limit':1},                                       'logs:DescribeLogGroups'),
     ]
 

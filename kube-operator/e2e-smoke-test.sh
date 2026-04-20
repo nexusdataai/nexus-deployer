@@ -39,7 +39,7 @@ NAMESPACE=""
 OPENAI_KEY="${OPENAI_API_KEY:-}"
 RUN_PHASE=""
 STRICT=false
-CAPABILITY_FILE="${SCRIPT_DIR}/examples/call-processing-complete.yaml"
+CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ai-complete.yaml"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -98,7 +98,7 @@ done
 if [ -z "$NAMESPACE" ]; then
     NAMESPACE=$(grep -E "^\s+namespace:" "${CAPABILITY_FILE}" 2>/dev/null | head -1 | awk '{print $2}')
     if [ -z "$NAMESPACE" ]; then
-        NAMESPACE="call-processing-prod"
+        NAMESPACE="nexus-ai-prod"
     fi
 fi
 
@@ -218,7 +218,7 @@ r = api_get("/health")
 check("Backend health", "status" in str(r) or "error" not in str(r), "HTTP 200")
 
 # Full diagnostics
-r = api_get("/api/v1/diagnostics/call-processing")
+r = api_get("/api/v1/diagnostics/nexus-ai")
 checks = r.get("checks", {})
 
 for comp, result in checks.items():
@@ -281,7 +281,7 @@ print("  " + "-" * 50)
 
 # Core health
 check_endpoint("GET", "/health")
-check_endpoint("GET", "/api/v1/diagnostics/call-processing/summary")
+check_endpoint("GET", "/api/v1/diagnostics/nexus-ai/summary")
 
 # Simulator
 r = check_endpoint("GET", "/api/v1/simulator/status")
@@ -430,7 +430,7 @@ def warn(name, detail=""):
 
 # 1. Check OpenAI
 print("  [1/7] Checking OpenAI API key...")
-r = api("GET", "/api/v1/diagnostics/call-processing/openai")
+r = api("GET", "/api/v1/diagnostics/nexus-ai/openai")
 openai_ok = r.get("status") == "pass"
 if not check("OpenAI API key", openai_ok, r.get("message", "")):
     warn("OpenAI", "Key not available - transcription/analysis will be skipped")

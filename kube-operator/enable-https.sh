@@ -70,8 +70,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-NAMESPACE="call-processing-${DEPLOY_ENV}"
-CAPABILITY_NAME="call-processing"
+NAMESPACE="nexus-ai-${DEPLOY_ENV}"
+CAPABILITY_NAME="nexus-ai"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"

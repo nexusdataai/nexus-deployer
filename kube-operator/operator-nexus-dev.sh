@@ -271,8 +271,8 @@ deploy_operator() {
         echo -e "===============================================${NC}"
         echo ""
         echo "1. Deploy a capability:"
-        echo "   kubectl create namespace call-processing-prod"
-        echo "   kubectl apply -f examples/call-processing-complete.yaml"
+        echo "   kubectl create namespace nexus-ai-prod"
+        echo "   kubectl apply -f examples/nexus-ai-complete.yaml"
         echo ""
         echo "2. Monitor deployment progress:"
         echo "   ./operator-nexus-dev.sh monitor"
@@ -281,12 +281,12 @@ deploy_operator() {
         echo "   ./operator-nexus-dev.sh verify-capability"
         echo ""
         echo "4. Get the application URL (after ALB is active):"
-        echo "   kubectl get ingress -n call-processing-prod -o wide"
+        echo "   kubectl get ingress -n nexus-ai-prod -o wide"
         echo ""
         echo "5. Login to the application:"
         echo "   Get the admin credentials:"
-        echo "   kubectl get secret call-processing-prod-admin-credentials -n call-processing-prod -o jsonpath='{.data.admin-email}' | base64 -d && echo ''"
-        echo "   kubectl get secret call-processing-prod-admin-credentials -n call-processing-prod -o jsonpath='{.data.admin-password}' | base64 -d && echo ''"
+        echo "   kubectl get secret nexus-ai-prod-admin-credentials -n nexus-ai-prod -o jsonpath='{.data.admin-email}' | base64 -d && echo ''"
+        echo "   kubectl get secret nexus-ai-prod-admin-credentials -n nexus-ai-prod -o jsonpath='{.data.admin-password}' | base64 -d && echo ''"
         echo ""
         echo "   The initial admin user is configured via 'adminEmail' in the capability YAML."
         echo "   On first login, you will be prompted to set a new password."
@@ -678,7 +678,7 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
                     Description="IAM role for AWS Load Balancer Controller",
                     Tags=[
-                        {"Key": "Capability", "Value": "call-processing"},
+                        {"Key": "Capability", "Value": "nexus-ai"},
                         {"Key": "Environment", "Value": os.getenv("DEPLOY_ENV", "prod")},
                         {"Key": "managed-by", "Value": "nexus-operator"},
                         {"Key": "component", "Value": "aws-load-balancer-controller"}
@@ -2393,7 +2393,7 @@ def find_capability(target):
         print("No NexusCapability resources found.")
         print("")
         print("Deploy a capability first:")
-        print("  kubectl apply -f examples/call-processing-complete.yaml")
+        print("  kubectl apply -f examples/nexus-ai-complete.yaml")
         sys.exit(1)
     
     items = obj["items"]
@@ -3062,7 +3062,7 @@ RBAC_EOF
         check-app-permissions|check-app)
             show_header "Check App Permissions & VPC Endpoints"
 
-            CAP="call-processing"
+            CAP="nexus-ai"
             local APP_NS="${CAP}-${DEPLOY_ENV}"
             local APP_SA="${CAP}-${DEPLOY_ENV}-app-sa"
             local APP_ROLE="${CAP}-${DEPLOY_ENV}-app-role"

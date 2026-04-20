@@ -74,7 +74,7 @@ if [ -z "$CLUSTER_NAME" ]; then
     esac
 fi
 
-NAMESPACE="call-processing-${DEPLOY_ENV}"
+NAMESPACE="nexus-ai-${DEPLOY_ENV}"
 
 # Preflight: paths and tools (clear errors before long Docker builds)
 for _d in "$BACKEND_DIR" "$FRONTEND_DIR"; do

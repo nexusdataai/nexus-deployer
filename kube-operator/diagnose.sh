@@ -15,7 +15,7 @@
 #   sh diagnose.sh --category bssmagic
 #
 #   # Specify backend URL explicitly
-#   sh diagnose.sh --backend-url http://call-processing-dev-backend-svc:8000
+#   sh diagnose.sh --backend-url http://nexus-ai-dev-backend-svc:8000
 #
 #   # Run local pod checks only (no backend API call)
 #   sh diagnose.sh --local-only
@@ -127,7 +127,7 @@ resolve_backend_url() {
         return
     fi
     pod_type="$1"
-    cap="${CAPABILITY_NAME:-call-processing}"
+    cap="${CAPABILITY_NAME:-nexus-ai}"
     env="${ENVIRONMENT:-dev}"
     case "$pod_type" in
         backend) echo "http://localhost:8000" ;;

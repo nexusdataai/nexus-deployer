@@ -28,7 +28,7 @@ DIM="\033[2m"
 RESET="\033[0m"
 
 # ── Defaults ───────────────────────────────────────────────────────
-CAPABILITY="call-processing"
+CAPABILITY="nexus-ai"
 ENV="dev"
 NAMESPACE=""
 SINCE="1h"
@@ -68,7 +68,7 @@ Usage: sh logcheck.sh [OPTIONS] [COMPONENT...]
 Components: frontend, backend, bssmagic, all (default: all)
 
 Options:
-  --capability NAME   Capability name (default: call-processing)
+  --capability NAME   Capability name (default: nexus-ai)
   --env ENV           Environment (default: dev)
   --namespace NS      Override namespace (default: {capability}-{env})
   --since DURATION    Log time window (default: 1h)

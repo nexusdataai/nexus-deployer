@@ -86,7 +86,7 @@ if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && [ "${INSPECT_FORCE_LOCAL}" != "1" ];
     CLUSTER_NAME="${EKS_CLUSTER_NAME:-${CLUSTER_NAME}}"
 fi
 
-CAP="call-processing"
+CAP="nexus-ai"
 NS="${CAP}-${DEPLOY_ENV}"
 CAP_US="${CAP//-/_}_${DEPLOY_ENV//-/_}"
 

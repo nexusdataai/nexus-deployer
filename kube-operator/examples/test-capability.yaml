@@ -1,6 +1,6 @@
 ---
 # Example NexusCapability for testing operator deployment
-# This creates a minimal deployment for call-processing capability
+# This creates a minimal deployment for nexus-ai capability
 #
 # Apply with:
 #   kubectl apply -f test-capability.yaml
@@ -12,15 +12,15 @@
 apiVersion: nexus.ai/v1
 kind: NexusCapability
 metadata:
-  name: call-processing-dev
-  namespace: call-processing-dev  # Dedicated namespace - operator will create it
+  name: nexus-ai-dev
+  namespace: nexus-ai-dev  # Dedicated namespace - operator will create it
   labels:
-    app.kubernetes.io/name: call-processing
+    app.kubernetes.io/name: nexus-ai
     app.kubernetes.io/version: "1.0.0"
     nexus.ai/environment: dev
 spec:
   # Basic capability info
-  capabilityName: call-processing
+  capabilityName: nexus-ai
   version: "1.0.0"
   environment: dev
   region: ap-southeast-1

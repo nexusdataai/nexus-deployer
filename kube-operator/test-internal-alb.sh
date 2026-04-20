@@ -65,7 +65,7 @@ pod_curl_http_code() {
     printf '%s' "$raw" | python3 -c "import sys,re; s=sys.stdin.read(); m=re.findall(r'\\d{3}', s); print(m[-1] if m else '000')"
 }
 
-NAMESPACE="call-processing-${DEPLOY_ENV}"
+NAMESPACE="nexus-ai-${DEPLOY_ENV}"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"

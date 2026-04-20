@@ -27,7 +27,7 @@ DIM="\033[2m"
 RESET="\033[0m"
 
 # ── Defaults ───────────────────────────────────────────────────────
-CAPABILITY="call-processing"
+CAPABILITY="nexus-ai"
 ENV="dev"
 NAMESPACE=""
 TIMEOUT=300
@@ -69,7 +69,7 @@ Components:
   all         Roll out all three (default)
 
 Options:
-  --capability NAME   Capability name (default: call-processing)
+  --capability NAME   Capability name (default: nexus-ai)
   --env ENV           Environment (default: dev)
   --namespace NS      Override namespace (default: {capability}-{env})
   --timeout SECS      Rollout timeout per component (default: 300)

@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./create-hardened-eks-cluster.sh --name my-cluster --region us-east-1
-#   ./create-hardened-eks-cluster.sh --name my-cluster --capability call-processing --env dev
+#   ./create-hardened-eks-cluster.sh --name my-cluster --capability nexus-ai --env dev
 #   AUTO_APPROVE=yes ./create-hardened-eks-cluster.sh --name my-cluster
 #
 

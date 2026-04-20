@@ -38,7 +38,7 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 # Defaults
-CAPABILITY_FILE="${SCRIPT_DIR}/examples/call-processing-complete.yaml"
+CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ai-complete.yaml"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --env ENV              Target environment: dev, stage, prod (default: from .env.local or prod)"
             echo "  --cluster NAME         EKS cluster name (default: from .env.local)"
-            echo "  --capability FILE      Capability YAML file (default: examples/call-processing-complete.yaml)"
+            echo "  --capability FILE      Capability YAML file (default: examples/nexus-ai-complete.yaml)"
             echo "  --cert ARN             ACM certificate ARN for HTTPS"
             echo "  --skip-images          Skip pushing images to ECR (already pushed)"
             echo "  --skip-creds           Skip uploading BSS Magic credentials"
@@ -137,7 +137,7 @@ success "Operator is running (${OPERATOR_READY} replica(s))"
 [ "$SKIP_IMAGES" = true ] && total_steps=$((total_steps - 2))
 [ "$SKIP_CREDS" = true ] && total_steps=$((total_steps - 1))
 
-CAPABILITY_NAME="call-processing"
+CAPABILITY_NAME="nexus-ai"
 NAMESPACE="${CAPABILITY_NAME}-${DEPLOY_ENV}"
 
 cd "${SCRIPT_DIR}"
@@ -246,7 +246,7 @@ if [ "$SKIP_CREDS" = false ]; then
     step "Upload BSS Magic credentials to Secrets Manager"
 
     CREDS_ZIP_PATH="${SCRIPT_DIR}/../bssmagic-image/secrets/credentials.zip"
-    CREDS_SECRET_ID="call-processing/${DEPLOY_ENV}/bssmagic-credentials"
+    CREDS_SECRET_ID="nexus-ai/${DEPLOY_ENV}/bssmagic-credentials"
     CREDS_ZIP_PATH_WIN=$(cygpath -w "${CREDS_ZIP_PATH}" 2>/dev/null || echo "${CREDS_ZIP_PATH}")
 
     SECRET_EXISTS="false"

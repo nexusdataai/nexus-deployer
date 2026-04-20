@@ -12,7 +12,7 @@
             "oidc.eks.ap-southeast-1.amazonaws.com/id/637C510A19F78B7859017F301BB64950:aud": "sts.amazonaws.com"
           },
           "StringLike": {
-            "oidc.eks.ap-southeast-1.amazonaws.com/id/637C510A19F78B7859017F301BB64950:sub": "system:serviceaccount:call-processing-prod:*"
+            "oidc.eks.ap-southeast-1.amazonaws.com/id/637C510A19F78B7859017F301BB64950:sub": "system:serviceaccount:nexus-ai-prod:*"
           }
         }
       }
