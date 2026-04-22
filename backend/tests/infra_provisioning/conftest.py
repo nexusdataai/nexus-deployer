@@ -25,7 +25,7 @@ def aws_credentials():
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SECURITY_TOKEN"] = "testing"
     os.environ["AWS_SESSION_TOKEN"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "ap-southeast-1"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 
 
 @pytest.fixture
@@ -41,34 +41,34 @@ def mock_aws_services(aws_credentials):
 @pytest.fixture
 def dynamodb_client(mock_aws_services):
     """Create a mocked DynamoDB client."""
-    return boto3.client("dynamodb", region_name="ap-southeast-1")
+    return boto3.client("dynamodb", region_name="us-east-1")
 
 
 @pytest.fixture
 def s3_client(mock_aws_services):
     """Create a mocked S3 client."""
-    return boto3.client("s3", region_name="ap-southeast-1")
+    return boto3.client("s3", region_name="us-east-1")
 
 
 @pytest.fixture
 def ssm_client(mock_aws_services):
     """Create a mocked SSM client."""
-    return boto3.client("ssm", region_name="ap-southeast-1")
+    return boto3.client("ssm", region_name="us-east-1")
 
 
 @pytest.fixture
 def secretsmanager_client(mock_aws_services):
     """Create a mocked Secrets Manager client."""
-    return boto3.client("secretsmanager", region_name="ap-southeast-1")
+    return boto3.client("secretsmanager", region_name="us-east-1")
 
 
 @pytest.fixture
 def glue_client(mock_aws_services):
     """Create a mocked Glue client."""
-    return boto3.client("glue", region_name="ap-southeast-1")
+    return boto3.client("glue", region_name="us-east-1")
 
 
 @pytest.fixture
 def logs_client(mock_aws_services):
     """Create a mocked CloudWatch Logs client."""
-    return boto3.client("logs", region_name="ap-southeast-1")
+    return boto3.client("logs", region_name="us-east-1")

@@ -67,7 +67,7 @@ def merge_vpc_boto3_kwargs(
     merged: Dict[str, Any] = dict(kwargs or {})
     r = merged.get("region_name") or region_name
     if r is None:
-        r = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "ap-southeast-1"
+        r = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
     merged.setdefault("region_name", r)
     r = merged["region_name"]
     if merged.get("endpoint_url"):

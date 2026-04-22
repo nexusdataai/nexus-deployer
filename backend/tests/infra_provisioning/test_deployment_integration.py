@@ -32,7 +32,7 @@ def aws_credentials():
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SECURITY_TOKEN"] = "testing"
     os.environ["AWS_SESSION_TOKEN"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "ap-southeast-1"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def call_processing_request():
         capability_name="call-processing",
         capability_version="1.0.0",
         environment="dev",
-        region="ap-southeast-1",
+        region="us-east-1",
         account_id="123456789012",
         deploy_frontend=True,
         deploy_backend=True,
@@ -64,7 +64,7 @@ def other_capability_request():
         capability_name="other-capability",
         capability_version="1.0.0",
         environment="dev",
-        region="ap-southeast-1",
+        region="us-east-1",
         account_id="123456789012",
         deploy_frontend=True,
         deploy_backend=True,

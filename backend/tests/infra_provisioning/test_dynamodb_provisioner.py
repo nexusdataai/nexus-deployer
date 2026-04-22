@@ -43,7 +43,7 @@ class TestDynamoDBProvisionerProperties:
         **Validates: Requirements 1.1, 1.2, 1.3, 1.5**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = DynamoDBProvisioner(environment, region)
         naming = ResourceNaming(environment)
         dynamodb = boto3.client("dynamodb", region_name=region)
@@ -110,7 +110,7 @@ class TestDynamoDBProvisionerProperties:
         **Validates: Requirements 1.4**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = DynamoDBProvisioner(environment, region)
         
         # Act - First run
@@ -136,13 +136,13 @@ class TestDynamoDBProvisionerUnit:
     @mock_aws
     def test_table_exists_returns_false_for_nonexistent_table(self):
         """Test table_exists returns False for non-existent table."""
-        provisioner = DynamoDBProvisioner("dev", "ap-southeast-1")
+        provisioner = DynamoDBProvisioner("dev", "us-east-1")
         assert provisioner.table_exists("nonexistent-table") is False
     
     @mock_aws
     def test_table_exists_returns_true_for_existing_table(self):
         """Test table_exists returns True for existing table."""
-        provisioner = DynamoDBProvisioner("dev", "ap-southeast-1")
+        provisioner = DynamoDBProvisioner("dev", "us-east-1")
         
         # Create a table first
         provisioner.create_transformation_system_table()
@@ -154,13 +154,13 @@ class TestDynamoDBProvisionerUnit:
     @mock_aws
     def test_get_table_status_returns_none_for_nonexistent_table(self):
         """Test get_table_status returns None for non-existent table."""
-        provisioner = DynamoDBProvisioner("dev", "ap-southeast-1")
+        provisioner = DynamoDBProvisioner("dev", "us-east-1")
         assert provisioner.get_table_status("nonexistent-table") is None
     
     @mock_aws
     def test_get_table_status_returns_active_for_existing_table(self):
         """Test get_table_status returns ACTIVE for existing table."""
-        provisioner = DynamoDBProvisioner("dev", "ap-southeast-1")
+        provisioner = DynamoDBProvisioner("dev", "us-east-1")
         
         # Create a table first
         provisioner.create_transformation_system_table()
@@ -173,7 +173,7 @@ class TestDynamoDBProvisionerUnit:
     def test_transformation_system_table_has_correct_name(self):
         """Test transformation-system table follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = DynamoDBProvisioner(env, "ap-southeast-1")
+            provisioner = DynamoDBProvisioner(env, "us-east-1")
             result = provisioner.create_transformation_system_table()
             
             expected_name = f"call-processing-{env}-transformation-system"
@@ -183,7 +183,7 @@ class TestDynamoDBProvisionerUnit:
     def test_license_table_has_correct_name(self):
         """Test license table follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = DynamoDBProvisioner(env, "ap-southeast-1")
+            provisioner = DynamoDBProvisioner(env, "us-east-1")
             result = provisioner.create_license_table()
             
             expected_name = f"call-processing-{env}-license"
@@ -193,7 +193,7 @@ class TestDynamoDBProvisionerUnit:
     def test_wxcc_task_tracking_table_has_correct_name(self):
         """Test wxcc-task-tracking table follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = DynamoDBProvisioner(env, "ap-southeast-1")
+            provisioner = DynamoDBProvisioner(env, "us-east-1")
             result = provisioner.create_wxcc_task_tracking_table()
             
             expected_name = f"call-processing-{env}-wxcc-task-tracking"

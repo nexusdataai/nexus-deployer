@@ -714,7 +714,7 @@ Mappings:
       AccountId: '582318560864'
     ap-northeast-2:
       AccountId: '600734575887'
-    ap-southeast-1:
+    us-east-1:
       AccountId: '114774131450'
     ap-southeast-2:
       AccountId: '783225319266'

@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TRILOGY_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
 
-BACKEND_DIR="${TRILOGY_ROOT}/starhub-backend"
+BACKEND_DIR="${TRILOGY_ROOT}/nexus-backend"
 FRONTEND_DIR="${TRILOGY_ROOT}/nexus-ui"
 DOCS_VENV="${DOCS_VENV:-/tmp/docs-venv}"
 
@@ -46,7 +46,7 @@ fi
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-dev}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
-AWS_PROFILE="${AWS_PROFILE:-external-access}"
+AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do

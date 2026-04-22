@@ -40,7 +40,7 @@ capability_name_strategy = st.text(
     max_size=50
 ).filter(lambda x: x and not x.startswith('-') and not x.endswith('-'))
 
-region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"])
+region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "us-east-1"])
 log_level_strategy = st.sampled_from(["INFO", "WARNING", "ERROR", "DEBUG"])
 log_message_strategy = st.text(min_size=1, max_size=200).filter(
     lambda x: x.strip() and '\r' not in x and '\n' not in x

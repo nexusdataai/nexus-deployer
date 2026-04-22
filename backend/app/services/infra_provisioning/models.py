@@ -204,7 +204,7 @@ class EnvironmentConfig:
 ENVIRONMENT_CONFIGS: Dict[str, EnvironmentConfig] = {
     "dev": EnvironmentConfig(
         environment="dev",
-        region="ap-southeast-1",
+        region="us-east-1",
         dynamodb_billing_mode="PAY_PER_REQUEST",
         dynamodb_read_capacity=None,
         dynamodb_write_capacity=None,
@@ -215,7 +215,7 @@ ENVIRONMENT_CONFIGS: Dict[str, EnvironmentConfig] = {
     ),
     "test": EnvironmentConfig(
         environment="test",
-        region="ap-southeast-1",
+        region="us-east-1",
         dynamodb_billing_mode="PAY_PER_REQUEST",
         dynamodb_read_capacity=None,
         dynamodb_write_capacity=None,
@@ -226,7 +226,7 @@ ENVIRONMENT_CONFIGS: Dict[str, EnvironmentConfig] = {
     ),
     "stage": EnvironmentConfig(
         environment="stage",
-        region="ap-southeast-1",
+        region="us-east-1",
         dynamodb_billing_mode="PAY_PER_REQUEST",
         dynamodb_read_capacity=None,
         dynamodb_write_capacity=None,
@@ -237,7 +237,7 @@ ENVIRONMENT_CONFIGS: Dict[str, EnvironmentConfig] = {
     ),
     "prod": EnvironmentConfig(
         environment="prod",
-        region="ap-southeast-1",
+        region="us-east-1",
         dynamodb_billing_mode="PAY_PER_REQUEST",
         dynamodb_read_capacity=None,
         dynamodb_write_capacity=None,

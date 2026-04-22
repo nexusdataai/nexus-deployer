@@ -26,7 +26,7 @@ mfa_config_strategy = st.sampled_from(['OFF', 'ON', 'OPTIONAL'])
 temp_password_days_strategy = st.integers(min_value=1, max_value=365)
 
 region_strategy = st.sampled_from([
-    'us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'
+    'us-east-1', 'us-west-2', 'eu-west-1', 'us-east-1'
 ])
 
 oauth_flows_strategy = st.lists(

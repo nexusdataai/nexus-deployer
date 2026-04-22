@@ -55,7 +55,7 @@ EXAMPLES:
   $(basename "$0") -c config/prod-config.yaml
 
   # Cleanup with explicit parameters
-  $(basename "$0") -n call-processing -e prod -r ap-southeast-1
+  $(basename "$0") -n call-processing -e prod -r us-east-1
 
   # Dry run to see what would be deleted
   $(basename "$0") -c config/prod-config.yaml --dry-run

@@ -42,7 +42,7 @@ class ResourceTypeEnum(str, Enum):
 class ProvisioningRequest(BaseModel):
     """Request model for provisioning operations."""
     environment: str = Field(..., description="Target environment (dev, stage, test, prod)")
-    region: str = Field(default="ap-southeast-1", description="AWS region")
+    region: str = Field(default="us-east-1", description="AWS region")
     resource_types: Optional[List[ResourceTypeEnum]] = Field(
         default=None, 
         description="Specific resource types to provision. None = all types"

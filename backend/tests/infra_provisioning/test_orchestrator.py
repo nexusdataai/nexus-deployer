@@ -41,7 +41,7 @@ class TestOrchestratorProperties:
         **Validates: Requirements 1.4, 2.7, 4.7, 5.5, 6.3, 9.1, 9.2, 9.3, 9.4**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         orchestrator = ProvisioningOrchestrator(environment, region)
         
         # Act - First run
@@ -87,7 +87,7 @@ class TestOrchestratorProperties:
         **Validates: Requirements 10.4**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         orchestrator = ProvisioningOrchestrator(environment, region, dry_run=True)
         naming = ResourceNaming(environment)
         
@@ -128,12 +128,12 @@ class TestOrchestratorUnit:
     def test_invalid_environment_raises_error(self):
         """Test that invalid environment raises InvalidEnvironmentError."""
         with pytest.raises(InvalidEnvironmentError):
-            ProvisioningOrchestrator("invalid", "ap-southeast-1")
+            ProvisioningOrchestrator("invalid", "us-east-1")
     
     @mock_aws
     def test_provision_all_creates_all_resource_types(self):
         """Test that provision_all creates all resource types."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         report = orchestrator.provision_all()
         
         # Should have resources from all provisioners
@@ -145,7 +145,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_dynamodb_only(self):
         """Test provisioning only DynamoDB tables."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_dynamodb()
         
         assert len(results) == 3, "Should create 3 DynamoDB tables"
@@ -155,7 +155,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_s3_only(self):
         """Test provisioning only S3 buckets."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_s3()
         
         assert len(results) == 4, "Should create 4 S3 buckets"
@@ -165,7 +165,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_ssm_only(self):
         """Test provisioning only SSM parameters."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_ssm()
         
         assert len(results) > 0, "Should create SSM parameters"
@@ -175,7 +175,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_secrets_only(self):
         """Test provisioning only secrets."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_secrets()
         
         assert len(results) == 6, "Should create 6 secrets"
@@ -185,7 +185,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_glue_only(self):
         """Test provisioning only Glue resources."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_glue()
         
         assert len(results) == 2, "Should create database and table"
@@ -195,7 +195,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_provision_cloudwatch_only(self):
         """Test provisioning only CloudWatch resources."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         results = orchestrator.provision_cloudwatch()
         
         assert len(results) == 1, "Should create 1 log group"
@@ -205,7 +205,7 @@ class TestOrchestratorUnit:
     @mock_aws
     def test_report_contains_correct_counts(self):
         """Test that report contains correct success/failure counts."""
-        orchestrator = ProvisioningOrchestrator("dev", "ap-southeast-1")
+        orchestrator = ProvisioningOrchestrator("dev", "us-east-1")
         report = orchestrator.provision_all()
         
         # All should be created on first run

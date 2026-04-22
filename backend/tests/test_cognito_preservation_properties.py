@@ -198,7 +198,7 @@ class TestCognitoOutputsModel:
         user_pool_id=st.text(min_size=1, max_size=100),
         user_pool_client_id=st.text(min_size=1, max_size=100),
         user_pool_domain=st.text(min_size=0, max_size=200),
-        region=st.sampled_from(['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'])
+        region=st.sampled_from(['us-east-1', 'us-west-2', 'eu-west-1', 'us-east-1'])
     )
     @settings(max_examples=10)
     def test_cognito_outputs_preserves_all_fields(

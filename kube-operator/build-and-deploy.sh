@@ -66,7 +66,7 @@ echo ""
 export OPERATOR_IMAGE="${IMAGE_URL}"
 
 # Deploy using the operator management script
-"${SCRIPT_DIR}/operator-nexus-dev.sh" deploy --force
+"${SCRIPT_DIR}/operator-nexus.sh" deploy --force
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -78,7 +78,7 @@ if [ $? -eq 0 ]; then
     echo "Cluster:        ${CLUSTER}"
     echo ""
     echo "Check operator status:"
-    echo "  ./operator-nexus-dev.sh status"
+    echo "  ./operator-nexus.sh status"
     echo ""
     echo "View operator logs:"
     echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"

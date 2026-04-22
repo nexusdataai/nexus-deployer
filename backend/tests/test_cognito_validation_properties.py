@@ -32,7 +32,7 @@ client_id_strategy = st.text(
 )
 
 region_strategy = st.sampled_from([
-    'us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'
+    'us-east-1', 'us-west-2', 'eu-west-1', 'us-east-1'
 ])
 
 user_count_strategy = st.integers(min_value=0, max_value=100000)

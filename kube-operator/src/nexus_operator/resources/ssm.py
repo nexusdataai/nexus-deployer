@@ -108,6 +108,28 @@ class SSMProvisioner:
             "sfdc-simulator", "SFDC simulator S3 prefix"
         )
         
+        # Oracle ERP Simulator parameters
+        params[self.naming.ssm_parameter("oracle-erp", "enabled")] = (
+            "true", "Enable Oracle ERP simulator"
+        )
+        params[self.naming.ssm_parameter("oracle-erp", "bucket")] = (
+            self.naming.oracle_erp_simulator_bucket(), "Oracle ERP simulator S3 bucket"
+        )
+        params[self.naming.ssm_parameter("oracle-erp", "prefix")] = (
+            "oracle-erp-simulator", "Oracle ERP simulator S3 prefix"
+        )
+        
+        # SAP Simulator parameters
+        params[self.naming.ssm_parameter("sap", "enabled")] = (
+            "true", "Enable SAP simulator"
+        )
+        params[self.naming.ssm_parameter("sap", "bucket")] = (
+            self.naming.sap_simulator_bucket(), "SAP simulator S3 bucket"
+        )
+        params[self.naming.ssm_parameter("sap", "prefix")] = (
+            "sap-simulator", "SAP simulator S3 prefix"
+        )
+        
         # CloudWatch parameters
         params[self.naming.ssm_parameter("cloudwatch", "log-group")] = (
             self.naming.log_group(), "CloudWatch log group"

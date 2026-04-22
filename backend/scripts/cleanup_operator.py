@@ -15,7 +15,7 @@ The script removes all resources created during operator deployment:
 - Access Entry (optional)
 
 Usage:
-    python cleanup_operator.py --cluster starhub-test --region ap-southeast-1 --profile external-access
+    python cleanup_operator.py --cluster starhub-test --region us-east-1 --profile external-access
     python cleanup_operator.py --cluster starhub-test --profile external-access --keep-ecr
     python cleanup_operator.py --cluster starhub-test --profile external-access --keep-iam
 
@@ -83,7 +83,7 @@ class OperatorCleanup:
     def __init__(
         self,
         cluster_name: str,
-        region: str = "ap-southeast-1",
+        region: str = "us-east-1",
         aws_profile: Optional[str] = None,
         keep_ecr: bool = False,
         keep_iam: bool = False,
@@ -1160,8 +1160,8 @@ What gets deleted:
     
     parser.add_argument(
         "--region",
-        default=os.environ.get("AWS_REGION", "ap-southeast-1"),
-        help="AWS region (default: ap-southeast-1)"
+        default=os.environ.get("AWS_REGION", "us-east-1"),
+        help="AWS region (default: us-east-1)"
     )
     
     parser.add_argument(

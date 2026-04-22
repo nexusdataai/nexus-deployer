@@ -44,7 +44,7 @@ class TestVerificationServiceProperties:
         **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8**
         """
         # Arrange - First provision all resources
-        region = "ap-southeast-1"
+        region = "us-east-1"
         orchestrator = ProvisioningOrchestrator(environment, region)
         orchestrator.provision_all()
         
@@ -92,7 +92,7 @@ class TestVerificationServiceProperties:
         **Validates: Requirements 7.8**
         """
         # Arrange - Don't provision anything
-        region = "ap-southeast-1"
+        region = "us-east-1"
         
         # Act - Verify without provisioning
         verifier = VerificationService(environment, region)
@@ -113,7 +113,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_verify_dynamodb_tables_returns_correct_count(self):
         """Test that verify_dynamodb_tables returns results for all tables."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         results = verifier.verify_dynamodb_tables()
         
         assert len(results) == 3, "Should verify 3 DynamoDB tables"
@@ -121,7 +121,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_verify_s3_buckets_returns_correct_count(self):
         """Test that verify_s3_buckets returns results for all buckets."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         results = verifier.verify_s3_buckets()
         
         assert len(results) == 4, "Should verify 4 S3 buckets"
@@ -129,7 +129,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_verify_secrets_returns_correct_count(self):
         """Test that verify_secrets returns results for all secrets."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         results = verifier.verify_secrets()
         
         assert len(results) == 6, "Should verify 6 secrets"
@@ -137,7 +137,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_verify_glue_resources_returns_correct_count(self):
         """Test that verify_glue_resources returns results for database and table."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         results = verifier.verify_glue_resources()
         
         assert len(results) == 2, "Should verify database and table"
@@ -145,7 +145,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_verify_cloudwatch_returns_correct_count(self):
         """Test that verify_cloudwatch returns results for log group."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         results = verifier.verify_cloudwatch()
         
         assert len(results) == 1, "Should verify 1 log group"
@@ -153,7 +153,7 @@ class TestVerificationServiceUnit:
     @mock_aws
     def test_report_to_dict_serialization(self):
         """Test that report can be serialized to dict."""
-        verifier = VerificationService("dev", "ap-southeast-1")
+        verifier = VerificationService("dev", "us-east-1")
         report = verifier.verify_all()
         
         report_dict = report.to_dict()

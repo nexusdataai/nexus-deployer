@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'AWS Amplify UI Deployment Stack with Best Practices - Complete deployment in ap-southeast-1'
+Description: 'AWS Amplify UI Deployment Stack with Best Practices - Complete deployment in us-east-1'
 
 Parameters:
   DomainName:

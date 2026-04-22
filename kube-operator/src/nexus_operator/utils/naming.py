@@ -180,6 +180,14 @@ class ResourceNaming:
         """Get the SFDC simulator bucket name."""
         return self.s3_bucket("sfdc-simulator")
     
+    def oracle_erp_simulator_bucket(self) -> str:
+        """Get the Oracle ERP simulator bucket name."""
+        return self.s3_bucket("oracle-erp-simulator")
+    
+    def sap_simulator_bucket(self) -> str:
+        """Get the SAP simulator bucket name."""
+        return self.s3_bucket("sap-simulator")
+    
     def journey_logs_bucket(self) -> str:
         """Get the journey logs bucket name."""
         return self.s3_bucket("journey-logs")

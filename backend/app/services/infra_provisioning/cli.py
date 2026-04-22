@@ -208,8 +208,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     common.add_argument(
         "-r", "--region",
-        default="ap-southeast-1",
-        help="AWS region (default: ap-southeast-1)",
+        default="us-east-1",
+        help="AWS region (default: us-east-1)",
     )
     common.add_argument(
         "-o", "--output",

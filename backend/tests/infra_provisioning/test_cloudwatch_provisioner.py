@@ -41,7 +41,7 @@ class TestCloudWatchProvisionerProperties:
         **Validates: Requirements 6.1, 6.2**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = CloudWatchProvisioner(environment, region)
         naming = ResourceNaming(environment)
         logs = boto3.client("logs", region_name=region)
@@ -92,7 +92,7 @@ class TestCloudWatchProvisionerProperties:
         **Validates: Requirements 6.3**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = CloudWatchProvisioner(environment, region)
         
         # Act - First run
@@ -118,13 +118,13 @@ class TestCloudWatchProvisionerUnit:
     @mock_aws
     def test_log_group_exists_returns_false_for_nonexistent_group(self):
         """Test log_group_exists returns False for non-existent group."""
-        provisioner = CloudWatchProvisioner("dev", "ap-southeast-1")
+        provisioner = CloudWatchProvisioner("dev", "us-east-1")
         assert provisioner.log_group_exists("/nonexistent/log/group") is False
     
     @mock_aws
     def test_log_group_exists_returns_true_for_existing_group(self):
         """Test log_group_exists returns True for existing group."""
-        provisioner = CloudWatchProvisioner("dev", "ap-southeast-1")
+        provisioner = CloudWatchProvisioner("dev", "us-east-1")
         
         # Create log group first
         provisioner.create_log_group()
@@ -144,14 +144,14 @@ class TestCloudWatchProvisionerUnit:
         }
         
         for env, expected_days in expected.items():
-            provisioner = CloudWatchProvisioner(env, "ap-southeast-1")
+            provisioner = CloudWatchProvisioner(env, "us-east-1")
             assert provisioner.get_retention_days() == expected_days
     
     @mock_aws
     def test_log_group_name_follows_naming_convention(self):
         """Test that log group name follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = CloudWatchProvisioner(env, "ap-southeast-1")
+            provisioner = CloudWatchProvisioner(env, "us-east-1")
             result = provisioner.create_log_group()
             
             expected_name = f"/aws/call-processing/{env}"

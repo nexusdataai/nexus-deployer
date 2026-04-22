@@ -5,7 +5,7 @@
 #
 # Usage:
 #   kubectl apply -f manifests/network-config-crd.yaml   # CRD first
-#   sed 's/__CLUSTER_NAME__/my-cluster/g; s/__REGION__/ap-southeast-1/g' \
+#   sed 's/__CLUSTER_NAME__/my-cluster/g; s/__REGION__/us-east-1/g' \
 #       examples/network-config.yaml | kubectl apply -f -
 #
 #   kubectl get tnc vpc-endpoints                        # Check status

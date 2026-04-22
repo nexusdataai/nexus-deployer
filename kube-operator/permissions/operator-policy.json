@@ -95,6 +95,20 @@
         ]
       },
       {
+        "Sid": "AthenaManagement",
+        "Effect": "Allow",
+        "Action": [
+          "athena:GetWorkGroup",
+          "athena:UpdateWorkGroup",
+          "athena:CreateWorkGroup",
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:StopQueryExecution"
+        ],
+        "Resource": "arn:aws:athena:<region>:<account-id>:workgroup/*"
+      },
+      {
         "Sid": "IAMRoleManagement",
         "Effect": "Allow",
         "Action": [

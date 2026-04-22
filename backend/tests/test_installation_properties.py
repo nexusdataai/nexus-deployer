@@ -49,7 +49,7 @@ capability_name_strategy = st.text(
 ).filter(lambda x: x and not x.startswith('-') and not x.endswith('-'))
 
 environment_strategy = st.sampled_from(["dev", "stage", "prod", "test"])
-region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"])
+region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "us-east-1"])
 account_id_strategy = st.text(alphabet="0123456789", min_size=12, max_size=12)
 strategy_strategy = st.sampled_from(["CLEAN_DEPLOY", "UPDATE_EXISTING"])
 

@@ -17,7 +17,7 @@
 #   ./build-and-push.sh <ECR_REGISTRY> [TAG]
 #
 # Example:
-#   ./build-and-push.sh 123456789012.dkr.ecr.ap-southeast-1.amazonaws.com latest
+#   ./build-and-push.sh 123456789012.dkr.ecr.us-east-1.amazonaws.com latest
 # =============================================================================
 
 set -e

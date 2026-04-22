@@ -43,7 +43,7 @@ class TestSecretsProvisionerProperties:
         **Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.8**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = SecretsProvisioner(environment, region)
         naming = ResourceNaming(environment)
         secrets_client = boto3.client("secretsmanager", region_name=region)
@@ -101,7 +101,7 @@ class TestSecretsProvisionerProperties:
         **Validates: Requirements 4.7**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = SecretsProvisioner(environment, region)
         
         # Act - First run
@@ -127,13 +127,13 @@ class TestSecretsProvisionerUnit:
     @mock_aws
     def test_secret_exists_returns_false_for_nonexistent_secret(self):
         """Test secret_exists returns False for non-existent secret."""
-        provisioner = SecretsProvisioner("dev", "ap-southeast-1")
+        provisioner = SecretsProvisioner("dev", "us-east-1")
         assert provisioner.secret_exists("nonexistent-secret") is False
     
     @mock_aws
     def test_secret_exists_returns_true_for_existing_secret(self):
         """Test secret_exists returns True for existing secret."""
-        provisioner = SecretsProvisioner("dev", "ap-southeast-1")
+        provisioner = SecretsProvisioner("dev", "us-east-1")
         
         # Create a secret first
         secret_name = provisioner.naming.secret("api-keys")
@@ -146,7 +146,7 @@ class TestSecretsProvisionerUnit:
     def test_secret_names_follow_naming_convention(self):
         """Test that all secret names follow the naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = SecretsProvisioner(env, "ap-southeast-1")
+            provisioner = SecretsProvisioner(env, "us-east-1")
             names = provisioner.get_all_secret_names()
             
             for name in names:
@@ -156,7 +156,7 @@ class TestSecretsProvisionerUnit:
     @mock_aws
     def test_all_required_secrets_are_defined(self):
         """Test that all required secrets are defined."""
-        provisioner = SecretsProvisioner("dev", "ap-southeast-1")
+        provisioner = SecretsProvisioner("dev", "us-east-1")
         names = provisioner.get_all_secret_names()
         
         required = ["api-keys", "wxcc", "openai", "license", "anthropic", "github"]
@@ -167,7 +167,7 @@ class TestSecretsProvisionerUnit:
     @mock_aws
     def test_license_secret_has_both_keys(self):
         """Test that license secret contains both public and private keys."""
-        provisioner = SecretsProvisioner("dev", "ap-southeast-1")
+        provisioner = SecretsProvisioner("dev", "us-east-1")
         secrets = provisioner.get_placeholder_secrets()
         
         license_name = provisioner.naming.secret("license")
@@ -179,7 +179,7 @@ class TestSecretsProvisionerUnit:
     @mock_aws
     def test_anthropic_secret_has_both_keys(self):
         """Test that anthropic secret contains both API keys."""
-        provisioner = SecretsProvisioner("dev", "ap-southeast-1")
+        provisioner = SecretsProvisioner("dev", "us-east-1")
         secrets = provisioner.get_placeholder_secrets()
         
         anthropic_name = provisioner.naming.secret("anthropic")

@@ -63,6 +63,18 @@ class ResourceNaming:
         """Get the WXCC simulator bucket name."""
         return f"{self.capability}-{self.env}-wxcc-simulator"
     
+    def sfdc_simulator_bucket(self) -> str:
+        """Get the SFDC simulator bucket name."""
+        return f"{self.capability}-{self.env}-sfdc-simulator"
+    
+    def oracle_erp_simulator_bucket(self) -> str:
+        """Get the Oracle ERP simulator bucket name."""
+        return f"{self.capability}-{self.env}-oracle-erp-simulator"
+    
+    def sap_simulator_bucket(self) -> str:
+        """Get the SAP simulator bucket name."""
+        return f"{self.capability}-{self.env}-sap-simulator"
+    
     def journey_logs_bucket(self) -> str:
         """Get the journey logs bucket name."""
         return f"{self.capability}-{self.env}-journey-logs"
@@ -76,6 +88,9 @@ class ResourceNaming:
         return [
             self.call_data_bucket(),
             self.wxcc_simulator_bucket(),
+            self.sfdc_simulator_bucket(),
+            self.oracle_erp_simulator_bucket(),
+            self.sap_simulator_bucket(),
             self.journey_logs_bucket(),
             self.journey_reports_bucket(),
         ]

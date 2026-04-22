@@ -14,7 +14,7 @@ All resources follow the naming convention: call-processing-{env}-{resource}
 Usage:
     from app.services.infra_provisioning import ProvisioningOrchestrator
     
-    orchestrator = ProvisioningOrchestrator(environment="dev", region="ap-southeast-1")
+    orchestrator = ProvisioningOrchestrator(environment="dev", region="us-east-1")
     report = orchestrator.provision_all()
     
 CLI Usage:

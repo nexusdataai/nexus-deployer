@@ -43,7 +43,7 @@ class TestS3ProvisionerProperties:
         **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = S3Provisioner(environment, region)
         naming = ResourceNaming(environment)
         s3 = boto3.client("s3", region_name=region)
@@ -108,7 +108,7 @@ class TestS3ProvisionerProperties:
         **Validates: Requirements 2.7**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = S3Provisioner(environment, region)
         
         # Act - First run
@@ -134,13 +134,13 @@ class TestS3ProvisionerUnit:
     @mock_aws
     def test_bucket_exists_returns_false_for_nonexistent_bucket(self):
         """Test bucket_exists returns False for non-existent bucket."""
-        provisioner = S3Provisioner("dev", "ap-southeast-1")
+        provisioner = S3Provisioner("dev", "us-east-1")
         assert provisioner.bucket_exists("nonexistent-bucket-12345") is False
     
     @mock_aws
     def test_bucket_exists_returns_true_for_existing_bucket(self):
         """Test bucket_exists returns True for existing bucket."""
-        provisioner = S3Provisioner("dev", "ap-southeast-1")
+        provisioner = S3Provisioner("dev", "us-east-1")
         
         # Create a bucket first
         provisioner.create_call_data_bucket()
@@ -153,7 +153,7 @@ class TestS3ProvisionerUnit:
     def test_call_data_bucket_has_correct_name(self):
         """Test call-data bucket follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = S3Provisioner(env, "ap-southeast-1")
+            provisioner = S3Provisioner(env, "us-east-1")
             result = provisioner.create_call_data_bucket()
             
             expected_name = f"call-processing-{env}-call-data"
@@ -163,7 +163,7 @@ class TestS3ProvisionerUnit:
     def test_wxcc_simulator_bucket_has_correct_name(self):
         """Test wxcc-simulator bucket follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = S3Provisioner(env, "ap-southeast-1")
+            provisioner = S3Provisioner(env, "us-east-1")
             result = provisioner.create_wxcc_simulator_bucket()
             
             expected_name = f"call-processing-{env}-wxcc-simulator"
@@ -173,7 +173,7 @@ class TestS3ProvisionerUnit:
     def test_journey_logs_bucket_has_correct_name(self):
         """Test journey-logs bucket follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = S3Provisioner(env, "ap-southeast-1")
+            provisioner = S3Provisioner(env, "us-east-1")
             result = provisioner.create_journey_logs_bucket()
             
             expected_name = f"call-processing-{env}-journey-logs"
@@ -183,7 +183,7 @@ class TestS3ProvisionerUnit:
     def test_journey_reports_bucket_has_correct_name(self):
         """Test journey-reports bucket follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = S3Provisioner(env, "ap-southeast-1")
+            provisioner = S3Provisioner(env, "us-east-1")
             result = provisioner.create_journey_reports_bucket()
             
             expected_name = f"call-processing-{env}-journey-reports"

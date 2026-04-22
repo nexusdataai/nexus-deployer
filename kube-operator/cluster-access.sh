@@ -26,6 +26,8 @@ fi
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
+CAPABILITY="${CAPABILITY:-nexus-ai}"
+DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-dev}}"
 ACCESS_POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
 GREEN='\033[0;32m'
@@ -326,6 +328,186 @@ check_kubectl() {
     KUBECTL_OK=false
 }
 
+# ── Section: IAM Roles (convention-based, no IAM API) ──
+
+check_iam_roles() {
+    echo ""
+    echo -e "${CYAN}── IAM Roles (convention-based) ──${NC}"
+
+    local ACCOUNT_ID
+    ACCOUNT_ID=$(get_account_id)
+    local CAP="${CAPABILITY:-nexus-ai}"
+    local ENV="${DEPLOY_ENV:-dev}"
+
+    local ROLES=(
+        "Operator:${CAP}-${ENV}-operator-role"
+        "App:${CAP}-${ENV}-app-role"
+        "EBS CSI:AmazonEKS_EBS_CSI_DriverRole"
+        "LB Controller:aws-load-balancer-controller-role"
+    )
+
+    ROLES_OK=true
+    for entry in "${ROLES[@]}"; do
+        local label="${entry%%:*}"
+        local role="${entry#*:}"
+        log_info "${label}: arn:aws:iam::${ACCOUNT_ID}:role/${role}"
+    done
+    log_info "(Roles are pre-created by create-hardened-eks-cluster.sh — no IAM API check)"
+}
+
+# ── Section: EBS CSI Driver Addon ──
+
+check_ebs_csi() {
+    echo ""
+    echo -e "${CYAN}── EBS CSI Driver ──${NC}"
+
+    EBS_CSI_OK=false
+    local STATUS
+    STATUS=$(aws eks describe-addon --cluster-name "$CLUSTER_NAME" --addon-name aws-ebs-csi-driver \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'addon.status' --output text 2>/dev/null || echo "NOT_FOUND")
+
+    if [ "$STATUS" = "ACTIVE" ]; then
+        log_ok "EBS CSI Driver: ACTIVE"
+        local ROLE
+        ROLE=$(aws eks describe-addon --cluster-name "$CLUSTER_NAME" --addon-name aws-ebs-csi-driver \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'addon.serviceAccountRoleArn' --output text 2>/dev/null || echo "")
+        [ -n "$ROLE" ] && [ "$ROLE" != "None" ] && log_info "IRSA Role: $ROLE"
+        EBS_CSI_OK=true
+    elif [ "$STATUS" = "NOT_FOUND" ]; then
+        log_fail "EBS CSI Driver: NOT INSTALLED"
+    else
+        log_warn "EBS CSI Driver: $STATUS"
+    fi
+}
+
+# ── Section: ALB Controller ──
+
+check_alb_controller() {
+    echo ""
+    echo -e "${CYAN}── AWS Load Balancer Controller ──${NC}"
+
+    ALB_OK=false
+    if [ "$KUBECTL_OK" != "true" ]; then
+        log_warn "kubectl not connected — cannot check ALB Controller"
+        return
+    fi
+
+    local READY
+    READY=$(kubectl get deployment aws-load-balancer-controller -n kube-system \
+        -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "")
+    local DESIRED
+    DESIRED=$(kubectl get deployment aws-load-balancer-controller -n kube-system \
+        -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "")
+
+    if [ -n "$READY" ] && [ "$READY" != "0" ]; then
+        log_ok "ALB Controller: ${READY}/${DESIRED} replicas ready"
+        ALB_OK=true
+    elif [ -n "$DESIRED" ]; then
+        log_warn "ALB Controller deployed but not ready (${READY:-0}/${DESIRED})"
+    else
+        log_fail "ALB Controller: NOT INSTALLED"
+        log_info "Install with: deploy/eks/create-hardened-eks-cluster.sh (or helm)"
+    fi
+}
+
+# ── Section: Node Groups ──
+
+check_node_groups() {
+    echo ""
+    echo -e "${CYAN}── Node Groups ──${NC}"
+
+    NODES_OK=false
+    local NG_LIST
+    NG_LIST=$(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'nodegroups[]' --output text 2>/dev/null || echo "")
+
+    if [ -z "$NG_LIST" ]; then
+        log_fail "No node groups found"
+        return
+    fi
+
+    for ng in $NG_LIST; do
+        local NG_STATUS
+        NG_STATUS=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$ng" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'nodegroup.status' --output text 2>/dev/null || echo "UNKNOWN")
+        local NG_DESIRED
+        NG_DESIRED=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$ng" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'nodegroup.scalingConfig.desiredSize' --output text 2>/dev/null || echo "?")
+        if [ "$NG_STATUS" = "ACTIVE" ]; then
+            log_ok "$ng: ACTIVE (desired: $NG_DESIRED)"
+            NODES_OK=true
+        else
+            log_warn "$ng: $NG_STATUS"
+        fi
+    done
+
+    if [ "$KUBECTL_OK" = "true" ]; then
+        local NODE_COUNT
+        NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+        local READY_COUNT
+        READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready") || READY_COUNT=0
+        log_info "Kubernetes nodes: ${READY_COUNT}/${NODE_COUNT} Ready"
+    fi
+}
+
+# ── Section: VPC Endpoints ──
+
+check_vpc_endpoints() {
+    echo ""
+    echo -e "${CYAN}── VPC Endpoints ──${NC}"
+
+    VPCE_OK=false
+    local VPC_ID
+    VPC_ID=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || echo "")
+
+    if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+        log_warn "Cannot determine VPC ID"
+        return
+    fi
+
+    local EP_COUNT
+    EP_COUNT=$(aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'length(VpcEndpoints)' --output text 2>/dev/null || echo "0")
+
+    if [ "$EP_COUNT" -gt 0 ] 2>/dev/null; then
+        log_ok "VPC Endpoints: $EP_COUNT configured in $VPC_ID"
+        VPCE_OK=true
+    else
+        log_warn "No VPC endpoints found in $VPC_ID"
+    fi
+}
+
+# ── Section: ECR Images ──
+
+check_ecr_images() {
+    echo ""
+    echo -e "${CYAN}── ECR Images ──${NC}"
+
+    ECR_OK=true
+    local ACCOUNT_ID
+    ACCOUNT_ID=$(get_account_id)
+    local REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+
+    for img in nexus-operator ai-job-engine nexus-ui; do
+        local EXISTS
+        EXISTS=$(aws ecr describe-images --repository-name "$img" --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'imageDetails[0].imageTags[0]' --output text 2>/dev/null || echo "")
+        if [ -n "$EXISTS" ] && [ "$EXISTS" != "None" ]; then
+            log_ok "${img}:${EXISTS} in ${REGISTRY}"
+        else
+            log_fail "${img}: NOT FOUND in ECR"
+            ECR_OK=false
+        fi
+    done
+}
+
 # ── Fix: Create Access Entry ──
 
 fix_access_entry() {
@@ -485,6 +667,30 @@ print_summary() {
         log_fail "kubectl (Unauthorized)"; FAIL=$((FAIL+1))
     fi
 
+    if [ "$EBS_CSI_OK" = "true" ]; then
+        log_ok "EBS CSI Driver"; PASS=$((PASS+1))
+    elif [ -n "$EBS_CSI_OK" ]; then
+        log_fail "EBS CSI Driver"; FAIL=$((FAIL+1))
+    fi
+
+    if [ "$ALB_OK" = "true" ]; then
+        log_ok "ALB Controller"; PASS=$((PASS+1))
+    elif [ -n "$ALB_OK" ]; then
+        log_fail "ALB Controller"; FAIL=$((FAIL+1))
+    fi
+
+    if [ "$NODES_OK" = "true" ]; then
+        log_ok "Node Groups"; PASS=$((PASS+1))
+    elif [ -n "$NODES_OK" ]; then
+        log_fail "Node Groups"; FAIL=$((FAIL+1))
+    fi
+
+    if [ "$ECR_OK" = "true" ]; then
+        log_ok "ECR Images"; PASS=$((PASS+1))
+    elif [ "$ECR_OK" = "false" ]; then
+        log_fail "ECR Images (missing)"; FAIL=$((FAIL+1))
+    fi
+
     echo ""
     echo -e "  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
     echo "═══════════════════════════════════════════════════════════"
@@ -514,6 +720,12 @@ do_check() {
     HAS_ACCESS_ENTRY=false
     OIDC_OK=false
     KUBECTL_OK=false
+    ROLES_OK=""
+    EBS_CSI_OK=""
+    ALB_OK=""
+    NODES_OK=""
+    VPCE_OK=""
+    ECR_OK=""
     PRINCIPAL_ROLE_ARN=""
     OIDC_ISSUER=""
     OIDC_PROVIDER=""
@@ -523,6 +735,12 @@ do_check() {
     check_access_entries
     check_oidc
     check_kubectl
+    check_iam_roles
+    check_ebs_csi
+    check_alb_controller
+    check_node_groups
+    check_vpc_endpoints
+    check_ecr_images
     print_summary "check"
 }
 

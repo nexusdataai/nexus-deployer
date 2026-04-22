@@ -17,7 +17,7 @@ source:
 
 target:
   account_id: "764119721991"   # Target AWS account ID
-  region: ap-southeast-1             # Target deployment region
+  region: us-east-1             # Target deployment region
   environment: prod            # Environment: dev, stage, or prod
   role_arn: ""                  # Optional: Cross-account role ARN for deployment
 

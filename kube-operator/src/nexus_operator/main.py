@@ -167,7 +167,7 @@ async def create_network_config(spec: dict, name: str, logger: logging.Logger, p
     """Provision VPC Gateway and Interface endpoints for the cluster."""
     from .resources import VPCEndpointProvisioner
 
-    region = spec.get("region", "ap-southeast-1")
+    region = spec.get("region", "us-east-1")
     cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
 
     logger.info(f"NexusNetworkConfig '{name}': provisioning VPC endpoints for cluster {cluster_name}")
@@ -214,7 +214,7 @@ async def check_network_health(spec: dict, name: str, logger: logging.Logger, pa
     """Periodic health check -- re-verify all VPC endpoints every 5 minutes."""
     from .resources import VPCEndpointProvisioner
 
-    region = spec.get("region", "ap-southeast-1")
+    region = spec.get("region", "us-east-1")
     cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
 
     try:

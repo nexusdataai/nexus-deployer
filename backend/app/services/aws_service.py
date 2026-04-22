@@ -183,7 +183,7 @@ class AWSService:
             AWSRegion(code="ap-south-1", name="Asia Pacific (Mumbai)"),
             AWSRegion(code="ap-northeast-1", name="Asia Pacific (Tokyo)"),
             AWSRegion(code="ap-northeast-2", name="Asia Pacific (Seoul)"),
-            AWSRegion(code="ap-southeast-1", name="Asia Pacific (Singapore)"),
+            AWSRegion(code="us-east-1", name="Asia Pacific (Singapore)"),
             AWSRegion(code="ap-southeast-2", name="Asia Pacific (Sydney)"),
             AWSRegion(code="ca-central-1", name="Canada (Central)"),
             AWSRegion(code="eu-central-1", name="Europe (Frankfurt)"),

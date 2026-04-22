@@ -35,7 +35,7 @@ class TestSSMParameterUpdateBehavior:
         Property 8.1: When a parameter value changes, the parameter should be updated.
         """
         with mock_aws():
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             param_path = f"/call-processing/{env}/test/update-test"
             
             # Create initial parameter
@@ -62,7 +62,7 @@ class TestSSMParameterUpdateBehavior:
         Property 8.2: When a parameter value is the same, status should be ALREADY_EXISTS.
         """
         with mock_aws():
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             param_path = f"/call-processing/{env}/test/same-value-test"
             
             # Create initial parameter
@@ -82,7 +82,7 @@ class TestSSMParameterUpdateBehavior:
         Property 8.3: Parameter path should remain unchanged after update.
         """
         with mock_aws():
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             param_path = f"/call-processing/{env}/test/path-test"
             
             # Create and update
@@ -102,7 +102,7 @@ class TestSSMParameterUpdateBehavior:
         Property 8.4: Multiple updates with same value should be idempotent.
         """
         with mock_aws():
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             param_path = f"/call-processing/{env}/test/idempotent-test"
             value = "test-value"
             
@@ -124,7 +124,7 @@ class TestSSMParameterUpdateBehavior:
         Property 8.5: Updates should correctly track value changes in sequence.
         """
         with mock_aws():
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             param_path = f"/call-processing/{env}/test/sequence-test"
             
             values = ["value1", "value2", "value1", "value3", "value3"]
@@ -149,7 +149,7 @@ class TestSSMParameterUpdateEdgeCases:
     
     def test_update_empty_to_non_empty(self, mock_aws_env):
         """Update from placeholder to actual value."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         param_path = "/call-processing/dev/test/empty-test"
         
         # Create with placeholder
@@ -162,7 +162,7 @@ class TestSSMParameterUpdateEdgeCases:
     
     def test_update_with_special_characters(self, mock_aws_env):
         """Update parameter with special characters in value."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         param_path = "/call-processing/dev/test/special-chars"
         
         # Create with normal value
@@ -176,7 +176,7 @@ class TestSSMParameterUpdateEdgeCases:
     
     def test_update_with_long_value(self, mock_aws_env):
         """Update parameter with long value."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         param_path = "/call-processing/dev/test/long-value"
         
         # Create with short value
@@ -190,7 +190,7 @@ class TestSSMParameterUpdateEdgeCases:
     
     def test_update_preserves_type(self, mock_aws_env):
         """Parameter type should be preserved after update."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         param_path = "/call-processing/dev/test/type-test"
         
         # Create and update
@@ -207,7 +207,7 @@ class TestSSMProvisionAllUpdateBehavior:
     
     def test_provision_all_updates_changed_parameters(self, mock_aws_env):
         """provision_all should update parameters that have changed."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         
         # First provision
         results1 = provisioner.provision_all()
@@ -223,7 +223,7 @@ class TestSSMProvisionAllUpdateBehavior:
     
     def test_provision_all_idempotent(self, mock_aws_env):
         """provision_all should be idempotent."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         
         # Run multiple times
         for i in range(3):

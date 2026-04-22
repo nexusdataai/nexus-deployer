@@ -43,7 +43,7 @@ class TestGlueProvisionerProperties:
         **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = GlueProvisioner(environment, region)
         naming = ResourceNaming(environment)
         glue = boto3.client("glue", region_name=region)
@@ -100,7 +100,7 @@ class TestGlueProvisionerProperties:
         **Validates: Requirements 5.5**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = GlueProvisioner(environment, region)
         
         # Act - First run
@@ -126,13 +126,13 @@ class TestGlueProvisionerUnit:
     @mock_aws
     def test_database_exists_returns_false_for_nonexistent_database(self):
         """Test database_exists returns False for non-existent database."""
-        provisioner = GlueProvisioner("dev", "ap-southeast-1")
+        provisioner = GlueProvisioner("dev", "us-east-1")
         assert provisioner.database_exists("nonexistent-database") is False
     
     @mock_aws
     def test_database_exists_returns_true_for_existing_database(self):
         """Test database_exists returns True for existing database."""
-        provisioner = GlueProvisioner("dev", "ap-southeast-1")
+        provisioner = GlueProvisioner("dev", "us-east-1")
         
         # Create database first
         provisioner.create_database()
@@ -144,7 +144,7 @@ class TestGlueProvisionerUnit:
     @mock_aws
     def test_table_exists_returns_false_for_nonexistent_table(self):
         """Test table_exists returns False for non-existent table."""
-        provisioner = GlueProvisioner("dev", "ap-southeast-1")
+        provisioner = GlueProvisioner("dev", "us-east-1")
         
         # Create database first
         provisioner.create_database()
@@ -155,7 +155,7 @@ class TestGlueProvisionerUnit:
     @mock_aws
     def test_table_exists_returns_true_for_existing_table(self):
         """Test table_exists returns True for existing table."""
-        provisioner = GlueProvisioner("dev", "ap-southeast-1")
+        provisioner = GlueProvisioner("dev", "us-east-1")
         
         # Create database and table
         provisioner.create_database()
@@ -169,7 +169,7 @@ class TestGlueProvisionerUnit:
     def test_database_name_follows_naming_convention(self):
         """Test that database name follows naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = GlueProvisioner(env, "ap-southeast-1")
+            provisioner = GlueProvisioner(env, "us-east-1")
             result = provisioner.create_database()
             
             expected_name = f"call-processing-{env}-analytics"
@@ -178,8 +178,8 @@ class TestGlueProvisionerUnit:
     @mock_aws
     def test_wxcc_calls_table_has_required_columns(self):
         """Test that wxcc_calls table has required columns."""
-        provisioner = GlueProvisioner("dev", "ap-southeast-1")
-        glue = boto3.client("glue", region_name="ap-southeast-1")
+        provisioner = GlueProvisioner("dev", "us-east-1")
+        glue = boto3.client("glue", region_name="us-east-1")
         
         # Create database and table
         provisioner.create_database()

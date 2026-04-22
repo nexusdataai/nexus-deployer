@@ -69,7 +69,7 @@ def create_ui_deployment_architecture():
             secrets_manager = SecretsManager("Secrets\nManager")
         
         # Application Layer
-        with Cluster("Application - ap-southeast-1"):
+        with Cluster("Application - us-east-1"):
             amplify = Amplify("Amplify\nHosting")
             s3_hosting = S3("S3\nAssets")
         
@@ -181,11 +181,11 @@ def create_ui_authentication_architecture():
             corporate_users = General("Corporate Users\n(ADFS Domain)")
             adfs_server = General("ADFS Server\nActive Directory\nFederation Services")
         
-        with Cluster("Authentication Services - ap-southeast-1"):
+        with Cluster("Authentication Services - us-east-1"):
             cognito_user_pool = Cognito("Cognito User Pool\n• User Management\n• SAML/OIDC Provider\n• Multi-factor Auth\n• Custom Attributes")
             cognito_identity_pool = Cognito("Cognito Identity Pool\n• Federated Identities\n• Temporary AWS Credentials\n• Role-based Access")
         
-        with Cluster("Secret Management - ap-southeast-1"):
+        with Cluster("Secret Management - us-east-1"):
             secrets_manager = SecretsManager("AWS Secrets Manager\n• OAuth Client Secrets\n• API Keys\n• Database Credentials\n• Auto Rotation")
             parameter_store = SystemsManagerParameterStore("Parameter Store\n• Configuration Values\n• Environment Variables\n• Secure Strings")
         

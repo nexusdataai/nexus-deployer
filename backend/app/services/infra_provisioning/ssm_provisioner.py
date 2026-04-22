@@ -225,6 +225,9 @@ class SSMProvisioner:
         params.update(self.get_server_parameters())
         params.update(self.get_cognito_parameters())
         params.update(self.get_wxcc_parameters())
+        params.update(self.get_sfdc_parameters())
+        params.update(self.get_oracle_erp_parameters())
+        params.update(self.get_sap_parameters())
         params.update(self.get_s3_parameters())
         params.update(self.get_dynamodb_parameters())
         params.update(self.get_glue_parameters())
@@ -320,6 +323,57 @@ class SSMProvisioner:
             self.naming.ssm_parameter("wxcc", "org-id"): (
                 "sim-org-001",
                 "Simulated organization ID",
+            ),
+        }
+    
+    def get_sfdc_parameters(self) -> Dict[str, Tuple[str, str]]:
+        """Get SFDC simulator configuration parameters."""
+        return {
+            self.naming.ssm_parameter("sfdc", "enabled"): (
+                "true",
+                "Enable/disable SFDC simulator",
+            ),
+            self.naming.ssm_parameter("sfdc", "bucket"): (
+                self.naming.sfdc_simulator_bucket(),
+                "S3 bucket for SFDC simulator data",
+            ),
+            self.naming.ssm_parameter("sfdc", "prefix"): (
+                "sfdc-simulator",
+                "S3 prefix for SFDC simulator",
+            ),
+        }
+    
+    def get_oracle_erp_parameters(self) -> Dict[str, Tuple[str, str]]:
+        """Get Oracle ERP simulator configuration parameters."""
+        return {
+            self.naming.ssm_parameter("oracle-erp", "enabled"): (
+                "true",
+                "Enable/disable Oracle ERP simulator",
+            ),
+            self.naming.ssm_parameter("oracle-erp", "bucket"): (
+                self.naming.oracle_erp_simulator_bucket(),
+                "S3 bucket for Oracle ERP simulator data",
+            ),
+            self.naming.ssm_parameter("oracle-erp", "prefix"): (
+                "oracle-erp-simulator",
+                "S3 prefix for Oracle ERP simulator",
+            ),
+        }
+    
+    def get_sap_parameters(self) -> Dict[str, Tuple[str, str]]:
+        """Get SAP simulator configuration parameters."""
+        return {
+            self.naming.ssm_parameter("sap", "enabled"): (
+                "true",
+                "Enable/disable SAP simulator",
+            ),
+            self.naming.ssm_parameter("sap", "bucket"): (
+                self.naming.sap_simulator_bucket(),
+                "S3 bucket for SAP simulator data",
+            ),
+            self.naming.ssm_parameter("sap", "prefix"): (
+                "sap-simulator",
+                "S3 prefix for SAP simulator",
             ),
         }
     

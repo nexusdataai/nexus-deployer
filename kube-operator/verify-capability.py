@@ -780,7 +780,7 @@ def main():
         print("")
         print(f"  NexusCapability must be in phase Running (current: '{phase}').")
         print("  Wait for deployment to finish, then retry.")
-        print(f"  Tip: ./operator-nexus-dev.sh monitor   (namespace: {namespace})")
+        print(f"  Tip: ./operator-nexus.sh monitor   (namespace: {namespace})")
         print("")
         sys.exit(1)
     

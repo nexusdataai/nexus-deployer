@@ -38,7 +38,7 @@ def aws_credentials():
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SECURITY_TOKEN"] = "testing"
     os.environ["AWS_SESSION_TOKEN"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "ap-southeast-1"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +87,7 @@ class TestProvisioningEndpoint:
             "/api/provisioning/provision",
             json={
                 "environment": "dev",
-                "region": "ap-southeast-1"
+                "region": "us-east-1"
             }
         )
         
@@ -96,7 +96,7 @@ class TestProvisioningEndpoint:
         assert "provisioning_id" in data
         assert data["status"] in ["pending", "running"]
         assert data["environment"] == "dev"
-        assert data["region"] == "ap-southeast-1"
+        assert data["region"] == "us-east-1"
     
     def test_provision_invalid_environment(self, client):
         """
@@ -108,7 +108,7 @@ class TestProvisioningEndpoint:
             "/api/provisioning/provision",
             json={
                 "environment": "invalid",
-                "region": "ap-southeast-1"
+                "region": "us-east-1"
             }
         )
         
@@ -125,7 +125,7 @@ class TestProvisioningEndpoint:
             "/api/provisioning/provision",
             json={
                 "environment": "dev",
-                "region": "ap-southeast-1",
+                "region": "us-east-1",
                 "resource_types": ["dynamodb", "s3"]
             }
         )
@@ -160,7 +160,7 @@ class TestProvisioningStatusEndpoint:
             "/api/provisioning/provision",
             json={
                 "environment": "dev",
-                "region": "ap-southeast-1"
+                "region": "us-east-1"
             }
         )
         
@@ -192,7 +192,7 @@ class TestVerifyEndpoint:
             # Create mock verification report
             mock_report = MagicMock()
             mock_report.environment = "dev"
-            mock_report.region = "ap-southeast-1"
+            mock_report.region = "us-east-1"
             mock_report.verified_at = "2024-01-01T00:00:00"
             mock_report.results = []
             mock_report.passed_count = 0
@@ -205,14 +205,14 @@ class TestVerifyEndpoint:
                 "/api/provisioning/verify",
                 json={
                     "environment": "dev",
-                    "region": "ap-southeast-1"
+                    "region": "us-east-1"
                 }
             )
             
             assert response.status_code == 200
             data = response.json()
             assert data["environment"] == "dev"
-            assert data["region"] == "ap-southeast-1"
+            assert data["region"] == "us-east-1"
             assert "results" in data
             assert "passed_count" in data
             assert "failed_count" in data
@@ -228,7 +228,7 @@ class TestVerifyEndpoint:
             "/api/provisioning/verify",
             json={
                 "environment": "invalid",
-                "region": "ap-southeast-1"
+                "region": "us-east-1"
             }
         )
         
@@ -261,14 +261,14 @@ class TestDryRunEndpoint:
                 "/api/provisioning/dry-run",
                 json={
                     "environment": "dev",
-                    "region": "ap-southeast-1"
+                    "region": "us-east-1"
                 }
             )
             
             assert response.status_code == 200
             data = response.json()
             assert data["environment"] == "dev"
-            assert data["region"] == "ap-southeast-1"
+            assert data["region"] == "us-east-1"
             assert "resources_to_create" in data
             assert "total_count" in data
             assert data["total_count"] > 0
@@ -283,7 +283,7 @@ class TestDryRunEndpoint:
             "/api/provisioning/dry-run",
             json={
                 "environment": "invalid",
-                "region": "ap-southeast-1"
+                "region": "us-east-1"
             }
         )
         

@@ -46,7 +46,7 @@ secret_key_strategy = st.text(
     max_size=40
 )
 session_token_strategy = st.text(min_size=100, max_size=500)
-region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"])
+region_strategy = st.sampled_from(["us-east-1", "us-west-2", "eu-west-1", "us-east-1"])
 account_id_strategy = st.text(alphabet="0123456789", min_size=12, max_size=12)
 installation_id_strategy = st.uuids().map(str)
 

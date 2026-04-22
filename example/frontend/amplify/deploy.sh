@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 STACK_NAME="amplify-ui-production"
-REGION="ap-southeast-1"
+REGION="us-east-1"
 TEMPLATE_FILE="complete-amplify-stack.yaml"
 PARAMETERS_FILE="parameters.json"
 

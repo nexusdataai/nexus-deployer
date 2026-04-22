@@ -50,7 +50,7 @@ capability_name_strategy = st.text(
 environment_strategy = st.sampled_from(['dev', 'stage', 'prod', 'test'])
 
 region_strategy = st.sampled_from([
-    'us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1', 'ap-northeast-1'
+    'us-east-1', 'us-west-2', 'eu-west-1', 'us-east-1', 'ap-northeast-1'
 ])
 
 

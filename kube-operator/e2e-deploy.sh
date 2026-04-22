@@ -204,7 +204,7 @@ echo ""
 if [ "$SKIP_CLEAN" = false ]; then
     step "Delete existing operator (full cleanup)"
     
-    AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh delete --full --keep-ecr --keep-iam 2>&1 || true
+    AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus.sh delete --full --keep-ecr --keep-iam 2>&1 || true
     success "Cleanup complete"
     
     # Refresh kubeconfig after delete (access entry was removed)
@@ -361,7 +361,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Deploy operator (IRSA + ALB Controller)"
 
-AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh deploy 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus.sh deploy 2>&1
 deploy_exit=$?
 if [ $deploy_exit -ne 0 ]; then
     fail "Operator deployment failed (exit code: $deploy_exit)"
@@ -447,7 +447,7 @@ success "Capability applied"
 step "Monitor deployment and wait for readiness"
 
 # Monitor with timeout
-timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-nexus-dev.sh monitor 2>&1" || true
+timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-nexus.sh monitor 2>&1" || true
 echo ""
 
 # Wait for all pods to be ready
@@ -621,7 +621,7 @@ fi
 # ──────────────────────────────────────────────────────────────
 step "Verify all resources"
 
-AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus-dev.sh verify-capability "${NAMESPACE}" 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus.sh verify-capability "${NAMESPACE}" 2>&1
 verify_exit=$?
 
 # ──────────────────────────────────────────────────────────────

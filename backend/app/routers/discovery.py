@@ -67,7 +67,7 @@ class CreateLandingZoneRequest(BaseModel):
     name: str = Field(..., description="User-friendly name for the landing zone")
     provider: CloudProviderEnum = Field(..., description="Cloud provider (aws, azure, gcp)")
     account_id: str = Field(..., description="Cloud account identifier")
-    default_region: str = Field(default="ap-southeast-1", description="Default region for discovery")
+    default_region: str = Field(default="us-east-1", description="Default region for discovery")
     account_alias: Optional[str] = Field(default=None, description="Optional account alias")
 
 

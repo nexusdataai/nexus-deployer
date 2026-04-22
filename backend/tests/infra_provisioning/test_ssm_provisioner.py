@@ -42,7 +42,7 @@ class TestSSMProvisionerProperties:
         **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8**
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = SSMProvisioner(environment, region)
         naming = ResourceNaming(environment)
         ssm = boto3.client("ssm", region_name=region)
@@ -90,7 +90,7 @@ class TestSSMProvisionerProperties:
         reporting all parameters as ALREADY_EXISTS.
         """
         # Arrange
-        region = "ap-southeast-1"
+        region = "us-east-1"
         provisioner = SSMProvisioner(environment, region)
         
         # Act - First run
@@ -116,17 +116,17 @@ class TestSSMProvisionerUnit:
     @mock_aws
     def test_parameter_exists_returns_false_for_nonexistent_parameter(self):
         """Test parameter_exists returns False for non-existent parameter."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         assert provisioner.parameter_exists("/nonexistent/parameter") is False
     
     @mock_aws
     def test_parameter_exists_returns_true_for_existing_parameter(self):
         """Test parameter_exists returns True for existing parameter."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         
         # Create a parameter first
         path = provisioner.naming.ssm_parameter("aws", "region")
-        provisioner.create_parameter(path, "ap-southeast-1", "Test")
+        provisioner.create_parameter(path, "us-east-1", "Test")
         
         # Check it exists
         assert provisioner.parameter_exists(path) is True
@@ -134,8 +134,8 @@ class TestSSMProvisionerUnit:
     @mock_aws
     def test_parameter_update_when_value_differs(self):
         """Test that parameter is updated when value differs."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
-        ssm = boto3.client("ssm", region_name="ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
+        ssm = boto3.client("ssm", region_name="us-east-1")
         
         path = provisioner.naming.ssm_parameter("server", "log-level")
         
@@ -154,7 +154,7 @@ class TestSSMProvisionerUnit:
     @mock_aws
     def test_all_categories_have_parameters(self):
         """Test that all categories have at least one parameter."""
-        provisioner = SSMProvisioner("dev", "ap-southeast-1")
+        provisioner = SSMProvisioner("dev", "us-east-1")
         
         categories = {
             "aws": provisioner.get_aws_parameters(),
@@ -174,7 +174,7 @@ class TestSSMProvisionerUnit:
     def test_parameter_paths_follow_naming_convention(self):
         """Test that all parameter paths follow the naming convention."""
         for env in ["dev", "stage", "test", "prod"]:
-            provisioner = SSMProvisioner(env, "ap-southeast-1")
+            provisioner = SSMProvisioner(env, "us-east-1")
             paths = provisioner.get_all_parameter_paths()
             
             for path in paths:

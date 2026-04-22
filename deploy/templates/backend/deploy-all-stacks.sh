@@ -313,15 +313,15 @@ WXCC Configuration (optional):
 
 Examples:
   # Deploy all stacks (NOTE: ECR region should match AWS_REGION for ECS)
-  CAPABILITY_NAME=my-app ENVIRONMENT=dev CONTAINER_IMAGE=123.dkr.ecr.ap-southeast-1.amazonaws.com/my-app:latest ./deploy-all-stacks.sh
+  CAPABILITY_NAME=my-app ENVIRONMENT=dev CONTAINER_IMAGE=123.dkr.ecr.us-east-1.amazonaws.com/my-app:latest ./deploy-all-stacks.sh
 
   # Deploy only service and domain stacks
-  CAPABILITY_NAME=my-app ENVIRONMENT=dev CONTAINER_IMAGE=123.dkr.ecr.ap-southeast-1.amazonaws.com/my-app:latest \\
+  CAPABILITY_NAME=my-app ENVIRONMENT=dev CONTAINER_IMAGE=123.dkr.ecr.us-east-1.amazonaws.com/my-app:latest \\
     DEPLOY_FOUNDATION=false DEPLOY_IAM_ROLES=false DEPLOY_NETWORK=false DEPLOY_STORAGE=false \\
     ./deploy-all-stacks.sh
 
   # Deploy with custom domain
-  CAPABILITY_NAME=my-app ENVIRONMENT=prod CONTAINER_IMAGE=123.dkr.ecr.ap-southeast-1.amazonaws.com/my-app:v1.0.0 \\
+  CAPABILITY_NAME=my-app ENVIRONMENT=prod CONTAINER_IMAGE=123.dkr.ecr.us-east-1.amazonaws.com/my-app:v1.0.0 \\
     BASE_DOMAIN=mycompany.com API_SUBDOMAIN=api HOSTED_ZONE_ID=Z9876543210XYZ \\
     ./deploy-all-stacks.sh
 

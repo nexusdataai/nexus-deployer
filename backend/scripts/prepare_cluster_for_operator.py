@@ -12,7 +12,7 @@ This script automatically:
 Can be run standalone or integrated into deployment wizard.
 
 Usage:
-    python prepare_cluster_for_operator.py --cluster starhub-test --region ap-southeast-1 --profile external-access
+    python prepare_cluster_for_operator.py --cluster starhub-test --region us-east-1 --profile external-access
     python prepare_cluster_for_operator.py --cluster starhub-test --session-id <session-id>
 """
 import argparse
@@ -87,7 +87,7 @@ class ClusterPreparation:
     def __init__(
         self,
         cluster_name: str,
-        region: str = "ap-southeast-1",
+        region: str = "us-east-1",
         aws_profile: Optional[str] = None,
         aws_session_id: Optional[str] = None
     ):
@@ -649,7 +649,7 @@ Examples:
   # Prepare cluster with AWS profile
   python prepare_cluster_for_operator.py \\
     --cluster starhub-test \\
-    --region ap-southeast-1 \\
+    --region us-east-1 \\
     --profile external-access
 
   # Prepare cluster with session ID
@@ -680,8 +680,8 @@ This script will:
     
     parser.add_argument(
         "--region",
-        default=os.environ.get("AWS_REGION", "ap-southeast-1"),
-        help="AWS region (default: ap-southeast-1)"
+        default=os.environ.get("AWS_REGION", "us-east-1"),
+        help="AWS region (default: us-east-1)"
     )
     
     parser.add_argument(

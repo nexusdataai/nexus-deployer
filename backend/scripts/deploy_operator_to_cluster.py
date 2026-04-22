@@ -15,7 +15,7 @@ The script can automatically:
 5. Verify deployment health
 
 Usage:
-    python deploy_operator_to_cluster.py --cluster starhub-test --region ap-southeast-1 --profile external-access
+    python deploy_operator_to_cluster.py --cluster starhub-test --region us-east-1 --profile external-access
     python deploy_operator_to_cluster.py --cluster starhub-test --session-id <aws-session-id>
 
 Requirements:
@@ -74,7 +74,7 @@ class OperatorDeployer:
     def __init__(
         self,
         cluster_name: str,
-        region: str = "ap-southeast-1",
+        region: str = "us-east-1",
         aws_session_id: Optional[str] = None,
         operator_version: Optional[str] = None,
         aws_profile: Optional[str] = None
@@ -84,7 +84,7 @@ class OperatorDeployer:
         
         Args:
             cluster_name: Name of the EKS cluster
-            region: AWS region (default: ap-southeast-1)
+            region: AWS region (default: us-east-1)
             aws_session_id: Optional AWS session ID
             operator_version: Optional operator version (default: latest)
             aws_profile: Optional AWS profile name
@@ -1180,7 +1180,7 @@ async def main():
         epilog="""
 Examples:
   # Deploy to starhub-test cluster in Singapore
-  python deploy_operator_to_cluster.py --cluster starhub-test --region ap-southeast-1
+  python deploy_operator_to_cluster.py --cluster starhub-test --region us-east-1
 
   # Deploy with specific operator version
   python deploy_operator_to_cluster.py --cluster starhub-test --version v1.0.0
@@ -1192,7 +1192,7 @@ Examples:
   python deploy_operator_to_cluster.py --cluster starhub-test --session-id abc123
 
 Environment Variables:
-  AWS_REGION              Default AWS region (default: ap-southeast-1)
+  AWS_REGION              Default AWS region (default: us-east-1)
   AWS_ACCESS_KEY_ID       AWS credentials (if not using session ID)
   AWS_SECRET_ACCESS_KEY   AWS credentials (if not using session ID)
         """
@@ -1206,8 +1206,8 @@ Environment Variables:
     
     parser.add_argument(
         "--region",
-        default=os.environ.get("AWS_REGION", "ap-southeast-1"),
-        help="AWS region (default: ap-southeast-1)"
+        default=os.environ.get("AWS_REGION", "us-east-1"),
+        help="AWS region (default: us-east-1)"
     )
     
     parser.add_argument(

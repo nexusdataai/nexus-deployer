@@ -35,7 +35,7 @@ class ProvisioningOrchestrator:
     def __init__(
         self,
         environment: str,
-        region: str = "ap-southeast-1",
+        region: str = "us-east-1",
         dry_run: bool = False,
         endpoint_url: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,

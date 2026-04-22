@@ -29,7 +29,7 @@ spec:
   capabilityName: myapp
   version: "1.0.0"
   environment: dev
-  region: ap-southeast-1
+  region: us-east-1
   
   # Enable automatic Cognito provisioning
   enableCognito: true

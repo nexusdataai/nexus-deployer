@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class S3Provisioner:
     """Provisions S3 buckets for Nexus capabilities."""
     
-    BUCKET_PURPOSES = ["call-data", "wxcc-simulator", "sfdc-simulator", "journey-logs", "journey-reports", "bssmagic-dumps"]
+    BUCKET_PURPOSES = ["call-data", "wxcc-simulator", "sfdc-simulator", "oracle-erp-simulator", "sap-simulator", "journey-logs", "journey-reports", "bssmagic-dumps"]
     
     def __init__(self, naming: ResourceNaming, region: str):
         self.naming = naming

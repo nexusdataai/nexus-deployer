@@ -12,7 +12,7 @@ from app.services.aws_auth_service import AWSAuthService
 ADFS_URL = "adfs.devfactory.com/adfs/ls/idpinitiatedsignon"
 USERNAME = r"devfactory\papubhattacharya"
 PASSWORD = "Promodeagro@1977"
-REGION = "ap-southeast-1"
+REGION = "us-east-1"
 
 def test_full_adfs_flow():
     """Test the complete ADFS authentication flow."""

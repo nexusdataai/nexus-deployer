@@ -83,14 +83,20 @@ class S3Provisioner:
             List of ResourceStatus for each bucket
         """
         results = []
-        self._log_progress(f"  Creating 4 S3 buckets...")
-        self._log_progress(f"  [1/4] call-data bucket")
+        self._log_progress(f"  Creating 7 S3 buckets...")
+        self._log_progress(f"  [1/7] call-data bucket")
         results.append(self.create_call_data_bucket())
-        self._log_progress(f"  [2/4] wxcc-simulator bucket")
+        self._log_progress(f"  [2/7] wxcc-simulator bucket")
         results.append(self.create_wxcc_simulator_bucket())
-        self._log_progress(f"  [3/4] journey-logs bucket")
+        self._log_progress(f"  [3/7] sfdc-simulator bucket")
+        results.append(self.create_sfdc_simulator_bucket())
+        self._log_progress(f"  [4/7] oracle-erp-simulator bucket")
+        results.append(self.create_oracle_erp_simulator_bucket())
+        self._log_progress(f"  [5/7] sap-simulator bucket")
+        results.append(self.create_sap_simulator_bucket())
+        self._log_progress(f"  [6/7] journey-logs bucket")
         results.append(self.create_journey_logs_bucket())
-        self._log_progress(f"  [4/4] journey-reports bucket")
+        self._log_progress(f"  [7/7] journey-reports bucket")
         results.append(self.create_journey_reports_bucket())
         return results
     
@@ -123,6 +129,24 @@ class S3Provisioner:
         bucket_name = self.naming.wxcc_simulator_bucket()
         folders = self.naming.wxcc_simulator_folders()
         
+        return self._create_bucket_with_folders(bucket_name, folders)
+    
+    def create_sfdc_simulator_bucket(self) -> ResourceStatus:
+        """Create the SFDC simulator bucket."""
+        bucket_name = self.naming.sfdc_simulator_bucket()
+        folders = ["sfdc-simulator/"]
+        return self._create_bucket_with_folders(bucket_name, folders)
+    
+    def create_oracle_erp_simulator_bucket(self) -> ResourceStatus:
+        """Create the Oracle ERP simulator bucket."""
+        bucket_name = self.naming.oracle_erp_simulator_bucket()
+        folders = ["oracle-erp-simulator/"]
+        return self._create_bucket_with_folders(bucket_name, folders)
+    
+    def create_sap_simulator_bucket(self) -> ResourceStatus:
+        """Create the SAP simulator bucket."""
+        bucket_name = self.naming.sap_simulator_bucket()
+        folders = ["sap-simulator/"]
         return self._create_bucket_with_folders(bucket_name, folders)
     
     def create_journey_logs_bucket(self) -> ResourceStatus:
