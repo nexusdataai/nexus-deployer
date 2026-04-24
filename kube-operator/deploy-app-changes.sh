@@ -12,7 +12,7 @@
 #
 # Reads defaults from .env.local (ENV, Branch, Cluster). CLI args override.
 #
-# Location: /opt/mycode/trilogy/starhub-deployer/kube-operator/
+# Location: /opt/mycode/nexus/nexus-deployer/kube-operator/
 # Run from: This directory or anywhere
 
 set -eo pipefail
@@ -25,10 +25,10 @@ fi
 # Determine directories relative to script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TRILOGY_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
+NEXUS_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
 
-BACKEND_DIR="${TRILOGY_ROOT}/nexus-backend"
-FRONTEND_DIR="${TRILOGY_ROOT}/nexus-ui"
+BACKEND_DIR="${NEXUS_ROOT}/nexus-backend"
+FRONTEND_DIR="${NEXUS_ROOT}/nexus-ui"
 DOCS_VENV="${DOCS_VENV:-/tmp/docs-venv}"
 
 # Load defaults from .env.local (CLI args and env vars override these)
@@ -41,12 +41,13 @@ if [ -f "$_ENVLOCAL" ]; then
     _ENV_LOCAL_ENV=$(grep '^ENV=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
     _ENV_LOCAL_BRANCH=$(grep '^Branch=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
     _ENV_LOCAL_CLUSTER=$(grep '^Cluster=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
+    _ENV_LOCAL_PROFILE=$(grep '^AWSProfile=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-dev}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
-AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
+AWS_PROFILE="${AWS_PROFILE:-${_ENV_LOCAL_PROFILE:-ptr-tech}}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -58,7 +59,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --env ENV        Target environment: dev, stage, prod (default: dev)"
-            echo "  --cluster NAME   EKS cluster name (default: dev=starhub-test1, prod=starhub-test)"
+            echo "  --cluster NAME   EKS cluster name (default: from .env.local Cluster= or nexus-{env})"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -68,9 +69,9 @@ done
 # Derive cluster from env if not explicitly set
 if [ -z "$CLUSTER_NAME" ]; then
     case "$DEPLOY_ENV" in
-        prod)  CLUSTER_NAME="starhub-test" ;;
-        dev)   CLUSTER_NAME="starhub-test1" ;;
-        *)     CLUSTER_NAME="starhub-${DEPLOY_ENV}" ;;
+        prod)  CLUSTER_NAME="nexus-prod" ;;
+        dev)   CLUSTER_NAME="nexus-dev" ;;
+        *)     CLUSTER_NAME="nexus-${DEPLOY_ENV}" ;;
     esac
 fi
 
@@ -138,7 +139,7 @@ echo ""
 echo "================================================"
 echo "  Building Documentation"
 echo "================================================"
-DOCS_DIR="${TRILOGY_ROOT}/starhub-docs"
+DOCS_DIR="${NEXUS_ROOT}/nexus-docs"
 if [ -d "$DOCS_DIR" ]; then
     cd "$DOCS_DIR"
     # Self-heal venv if missing, broken, or mkdocs not importable (avoids stale /tmp/docs-venv)
