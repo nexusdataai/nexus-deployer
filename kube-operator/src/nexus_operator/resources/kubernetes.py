@@ -133,6 +133,7 @@ class KubernetesResourceCreator:
         region: str = "us-east-1",
         use_clusterip: bool = False,
         bssmagic_service: Optional[str] = None,
+        redis_service: Optional[str] = None,
     ) -> str:
         """
         Deploy backend Deployment and Service.
@@ -202,6 +203,10 @@ class KubernetesResourceCreator:
                 client.V1EnvVar(name="FDW_TMF_SPECS_DIR", value="/opt/tmf-specs"),
             ])
             logger.info(f"FDW integration enabled: {bssmagic_service}:5432/bssmagic")
+        
+        if redis_service:
+            env_vars.append(client.V1EnvVar(name="REDIS_URL", value=f"redis://{redis_service}:6379/0"))
+            logger.info(f"Redis cache enabled: {redis_service}:6379")
         
         # Create Deployment
         deployment = client.V1Deployment(
@@ -565,6 +570,98 @@ class KubernetesResourceCreator:
 
         logger.info(f"Deployed bssmagic-runtime StatefulSet: {bssmagic_sts_name}")
         return bssmagic_service_name
+
+    async def deploy_redis(
+        self,
+        naming: ResourceNaming,
+        maxmemory: str = "2gb",
+        storage_size: str = "2Gi",
+        storage_class: Optional[str] = None,
+    ) -> str:
+        """
+        Deploy Redis as a StatefulSet with ClusterIP Service for simulator data caching.
+
+        Returns the Redis service name for REDIS_URL injection.
+        """
+        redis_sts_name = "redis"
+        redis_service_name = "redis-svc"
+
+        statefulset = client.V1StatefulSet(
+            metadata=client.V1ObjectMeta(
+                name=redis_sts_name,
+                namespace=self.namespace,
+                labels={**self._common_labels(naming, "redis")},
+            ),
+            spec=client.V1StatefulSetSpec(
+                replicas=1,
+                service_name=redis_service_name,
+                selector=client.V1LabelSelector(
+                    match_labels={"app": "redis"}
+                ),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels={"app": "redis", **self._common_labels(naming, "redis")}
+                    ),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name="redis",
+                                image="redis:7-alpine",
+                                ports=[client.V1ContainerPort(container_port=6379, name="redis")],
+                                command=["redis-server", "--maxmemory", maxmemory,
+                                         "--maxmemory-policy", "allkeys-lru",
+                                         "--appendonly", "yes", "--appendfsync", "everysec"],
+                                resources=client.V1ResourceRequirements(
+                                    requests={"cpu": "100m", "memory": "256Mi"},
+                                    limits={"cpu": "500m", "memory": "2560Mi"},
+                                ),
+                                readiness_probe=client.V1Probe(
+                                    _exec=client.V1ExecAction(command=["redis-cli", "ping"]),
+                                    initial_delay_seconds=5, period_seconds=10,
+                                ),
+                                liveness_probe=client.V1Probe(
+                                    _exec=client.V1ExecAction(command=["redis-cli", "ping"]),
+                                    initial_delay_seconds=15, period_seconds=20,
+                                ),
+                                volume_mounts=[
+                                    client.V1VolumeMount(name="redis-data", mount_path="/data")
+                                ],
+                            )
+                        ],
+                    ),
+                ),
+                volume_claim_templates=[
+                    client.V1PersistentVolumeClaim(
+                        metadata=client.V1ObjectMeta(name="redis-data"),
+                        spec=client.V1PersistentVolumeClaimSpec(
+                            access_modes=["ReadWriteOnce"],
+                            resources=client.V1VolumeResourceRequirements(
+                                requests={"storage": storage_size}
+                            ),
+                            **({"storage_class_name": storage_class} if storage_class else {}),
+                        ),
+                    )
+                ],
+            ),
+        )
+        await self._apply_statefulset(redis_sts_name, statefulset)
+
+        redis_service = client.V1Service(
+            metadata=client.V1ObjectMeta(
+                name=redis_service_name,
+                namespace=self.namespace,
+                labels=self._common_labels(naming, "redis"),
+            ),
+            spec=client.V1ServiceSpec(
+                type="ClusterIP",
+                selector={"app": "redis"},
+                ports=[client.V1ServicePort(port=6379, target_port=6379, protocol="TCP", name="redis")],
+            ),
+        )
+        await self._apply_service(redis_service_name, redis_service)
+
+        logger.info(f"Deployed Redis StatefulSet: {redis_sts_name}, service: {redis_service_name}")
+        return redis_service_name
 
     def _fetch_axway_env_from_secret(self, secret_name: str, region: str) -> list:
         """

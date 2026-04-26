@@ -559,7 +559,32 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         _update_step(steps, "ServiceAccount", "done", resources=[naming.kubernetes_service_account("app")])
         patch.status["steps"] = list(steps)
         
-        # ── Step 10: Backend ──
+        # ── Step 10a: Redis Cache (always deployed for simulator data) ──
+        redis_spec = spec.get("redis", {})
+        redis_enabled = redis_spec.get("enabled", True)
+        redis_service_name = None
+        if redis_enabled:
+            patch.status["phase"] = "DeployingRedis"
+            patch.status["message"] = "Deploying Redis cache for simulator data..."
+            _update_step(steps, "Redis", "in_progress")
+            patch.status["steps"] = list(steps)
+
+            logger.info("Deploying Redis cache...")
+            redis_service_name = await k8s.deploy_redis(
+                naming=naming,
+                maxmemory=redis_spec.get("maxmemory", "2gb"),
+                storage_size=redis_spec.get("storageSize", "2Gi"),
+                storage_class=redis_spec.get("storageClass"),
+            )
+
+            _update_step(steps, "Redis", "done", resources=["redis", "redis-svc"])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Redis done: {redis_service_name}")
+        else:
+            _update_step(steps, "Redis", "skipped")
+            patch.status["steps"] = list(steps)
+
+        # ── Step 10b: Backend ──
         ingress_config = spec.get("ingress", {})
         use_ingress = ingress_config.get("enabled", False)
         internal_ingress_config = spec.get("internalIngress", {})
@@ -593,6 +618,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 region=region,
                 use_clusterip=use_ingress,
                 bssmagic_service=bssmagic_svc_for_backend,
+                redis_service=redis_service_name,
             )
             
             _update_step(steps, "Backend", "done", resources=[
@@ -792,7 +818,22 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
         else None
     )
     
+    # Pre-compute Redis service name
+    redis_spec = spec.get("redis", {})
+    redis_svc = "redis-svc" if redis_spec.get("enabled", True) else None
+    
     try:
+        # If redis config changed, update Redis deployment
+        if any("redis" in str(f) for f in changed_fields):
+            if redis_spec.get("enabled", True):
+                logger.info("Updating Redis deployment...")
+                await k8s.deploy_redis(
+                    naming=naming,
+                    maxmemory=redis_spec.get("maxmemory", "2gb"),
+                    storage_size=redis_spec.get("storageSize", "2Gi"),
+                    storage_class=redis_spec.get("storageClass"),
+                )
+
         # If backend config changed, update backend deployment
         if any("backend" in str(f) for f in changed_fields):
             backend_spec = spec.get("backend", {})
@@ -808,6 +849,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     region=region,
                     use_clusterip=use_ingress,
                     bssmagic_service=bssmagic_svc,
+                    redis_service=redis_svc,
                 )
 
         # If bssmagic config changed, update bssmagic deployment
