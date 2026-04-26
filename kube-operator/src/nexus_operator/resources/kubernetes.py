@@ -880,10 +880,10 @@ http {{
             proxy_read_timeout 30s;
         }}
 
-        location /docs/ {{
+        location ^~ /docs/ {{
             alias /usr/share/nginx/docs/;
             index index.html;
-            try_files $uri $uri/ /docs/index.html;
+            try_files $uri $uri/ =404;
         }}
 
         location /api/ {{
