@@ -313,6 +313,100 @@ for SEC in $(kubectl get secret -n "${NS}" --no-headers -o custom-columns=NAME:.
     row "K8s Secret: ${SEC}" "Active" ""
 done
 
+# ── Redis Cache ──
+header "Redis Cache (Simulator Data Store)"
+
+REDIS_SVC="redis-svc"
+REDIS_PORT=6379
+
+# Check if Redis service exists in namespace
+REDIS_SVC_IP=$(kubectl get svc "${REDIS_SVC}" -n "${NS}" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+if [ -n "${REDIS_SVC_IP}" ] && [ "${REDIS_SVC_IP}" != "None" ]; then
+    row "Service: ${REDIS_SVC}" "Active" "ClusterIP: ${REDIS_SVC_IP}:${REDIS_PORT}"
+else
+    row "Service: ${REDIS_SVC}" "NOT FOUND" "Deploy redis-statefulset.yaml to enable Redis cache"
+fi
+
+# Check Redis StatefulSet
+REDIS_STS_READY=$(kubectl get statefulset redis -n "${NS}" -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null || echo "")
+if [ -n "${REDIS_STS_READY}" ]; then
+    row "StatefulSet: redis" "${REDIS_STS_READY}" ""
+fi
+
+# Check Redis PVC
+REDIS_PVC=$(kubectl get pvc -n "${NS}" -l app=redis --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+if [ -n "${REDIS_PVC}" ]; then
+    REDIS_PVC_STAT=$(kubectl get pvc "${REDIS_PVC}" -n "${NS}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "?")
+    REDIS_PVC_CAP=$(kubectl get pvc "${REDIS_PVC}" -n "${NS}" -o jsonpath='{.status.capacity.storage}' 2>/dev/null || echo "")
+    row "PVC: ${REDIS_PVC}" "${REDIS_PVC_STAT}" "size=${REDIS_PVC_CAP}"
+fi
+
+# Connectivity check from a backend pod
+BACKEND_POD=$(kubectl get pods -n "${NS}" -l "app=${NS}-backend" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+if [ -n "${BACKEND_POD}" ] && [ -n "${REDIS_SVC_IP}" ] && [ "${REDIS_SVC_IP}" != "None" ]; then
+    REDIS_PING=$(kubectl exec -n "${NS}" "${BACKEND_POD}" -- timeout 5 python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(3)
+try:
+    s.connect(('${REDIS_SVC}', ${REDIS_PORT}))
+    s.sendall(b'*1\r\n\$4\r\nPING\r\n')
+    resp = s.recv(32).decode().strip()
+    print('PONG' if 'PONG' in resp else resp)
+finally:
+    s.close()
+" 2>/dev/null || echo "FAILED")
+    if [ "${REDIS_PING}" = "PONG" ]; then
+        row "Connectivity: backend→redis" "OK" "PING=PONG"
+    else
+        row "Connectivity: backend→redis" "FAILED" "${REDIS_PING}"
+    fi
+
+    # Memory usage
+    REDIS_INFO=$(kubectl exec -n "${NS}" "${BACKEND_POD}" -- timeout 5 python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(3)
+try:
+    s.connect(('${REDIS_SVC}', ${REDIS_PORT}))
+    s.sendall(b'*2\r\n\$4\r\nINFO\r\n\$6\r\nmemory\r\n')
+    data = b''
+    while True:
+        chunk = s.recv(4096)
+        if not chunk: break
+        data += chunk
+        if b'maxmemory_policy' in data: break
+    text = data.decode(errors='replace')
+    for line in text.split('\r\n'):
+        if line.startswith('used_memory_human:'):
+            print('mem=' + line.split(':')[1])
+        elif line.startswith('maxmemory_human:'):
+            print('max=' + line.split(':')[1])
+        elif line.startswith('maxmemory_policy:'):
+            print('policy=' + line.split(':')[1])
+finally:
+    s.close()
+" 2>/dev/null | tr '\n' ', ' || echo "unavailable")
+    row "Redis memory" "INFO" "${REDIS_INFO}"
+
+    # Key count for simulator prefixes
+    REDIS_KEYS=$(kubectl exec -n "${NS}" "${BACKEND_POD}" -- timeout 5 python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(3)
+try:
+    s.connect(('${REDIS_SVC}', ${REDIS_PORT}))
+    s.sendall(b'*2\r\n\$6\r\nDBSIZE\r\n\$0\r\n')
+    resp = s.recv(128).decode().strip()
+    print(resp.replace(':', ''))
+finally:
+    s.close()
+" 2>/dev/null || echo "?")
+    row "Redis keys (total)" "DBSIZE" "${REDIS_KEYS}"
+elif [ -z "${BACKEND_POD}" ]; then
+    row "Connectivity: backend→redis" "SKIP" "No backend pod found"
+fi
+
 # ── DynamoDB Tables ──
 header "DynamoDB Tables"
 
