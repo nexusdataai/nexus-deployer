@@ -880,6 +880,12 @@ http {{
             proxy_read_timeout 30s;
         }}
 
+        location /docs/ {{
+            alias /usr/share/nginx/docs/;
+            index index.html;
+            try_files $uri $uri/ /docs/index.html;
+        }}
+
         location /api/ {{
             proxy_pass http://{backend_svc}:8000;
             proxy_set_header Host $host;
