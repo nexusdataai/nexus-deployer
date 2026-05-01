@@ -411,6 +411,61 @@ Resources:
           Value: wxcc-task-tracking
 
 
+  # Foundry Workspace table - Solutions, Views, Dashboards (single-table design)
+  FoundryWorkspaceTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${CapabilityName}-${Environment}-foundry-workspace'
+      BillingMode: !Ref DynamoDBBillingMode
+      ProvisionedThroughput: !If
+        - UseProvisionedBilling
+        - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+          WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+        - !Ref AWS::NoValue
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - UseProvisionedBilling
+            - ReadCapacityUnits: !Ref DynamoDBReadCapacity
+              WriteCapacityUnits: !Ref DynamoDBWriteCapacity
+            - !Ref AWS::NoValue
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${CapabilityName}-${Environment}-foundry-workspace'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Capability
+          Value: !Ref CapabilityName
+        - Key: Purpose
+          Value: foundry-workspace
+
   # Lead & Opportunity Tracking table
   LeadOpportunityTrackingTable:
     Type: AWS::DynamoDB::Table
@@ -592,6 +647,18 @@ Outputs:
     Value: !GetAtt LeadOpportunityTrackingTable.Arn
     Export:
       Name: !Sub '${AWS::StackName}-LeadOpportunityTrackingTableArn'
+  
+  FoundryWorkspaceTableName:
+    Description: Name of the foundry workspace DynamoDB table
+    Value: !Ref FoundryWorkspaceTable
+    Export:
+      Name: !Sub '${AWS::StackName}-FoundryWorkspaceTableName'
+  
+  FoundryWorkspaceTableArn:
+    Description: ARN of the foundry workspace DynamoDB table
+    Value: !GetAtt FoundryWorkspaceTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FoundryWorkspaceTableArn'
   
   # ECR Repository Outputs
   ECRRepositoryUri:

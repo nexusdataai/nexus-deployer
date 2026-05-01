@@ -44,6 +44,10 @@ class ResourceNaming:
         """Get the lead/opportunity tracking table name."""
         return f"{self.capability}-{self.env}-lead-opportunity-tracking"
     
+    def foundry_workspace_table(self) -> str:
+        """Get the foundry workspace table name (Solutions, Views, Dashboards)."""
+        return f"{self.capability}-{self.env}-foundry-workspace"
+    
     def all_dynamodb_tables(self) -> List[str]:
         """Get all DynamoDB table names."""
         return [
@@ -51,6 +55,7 @@ class ResourceNaming:
             self.license_table(),
             self.wxcc_task_tracking_table(),
             self.lead_opportunity_tracking_table(),
+            self.foundry_workspace_table(),
         ]
     
     # ==================== S3 Buckets ====================

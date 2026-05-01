@@ -134,6 +134,29 @@ class DynamoDBProvisioner:
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },
+        "foundry-workspace": {
+            "KeySchema": [
+                {"AttributeName": "PK", "KeyType": "HASH"},
+                {"AttributeName": "SK", "KeyType": "RANGE"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "PK", "AttributeType": "S"},
+                {"AttributeName": "SK", "AttributeType": "S"},
+                {"AttributeName": "GSI1PK", "AttributeType": "S"},
+                {"AttributeName": "GSI1SK", "AttributeType": "S"},
+            ],
+            "GlobalSecondaryIndexes": [
+                {
+                    "IndexName": "GSI1",
+                    "KeySchema": [
+                        {"AttributeName": "GSI1PK", "KeyType": "HASH"},
+                        {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
+                    ],
+                    "Projection": {"ProjectionType": "ALL"},
+                }
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
     }
     
     def __init__(self, naming: ResourceNaming, region: str):
