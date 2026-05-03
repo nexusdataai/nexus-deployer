@@ -129,7 +129,28 @@ class SSMProvisioner:
         params[self.naming.ssm_parameter("sap", "prefix")] = (
             "sap-simulator", "SAP simulator S3 prefix"
         )
-        
+
+        # External Source Simulator parameters
+        ext_bucket = self.naming.external_simulator_bucket()
+        results_bucket = self.naming.solution_results_bucket()
+        mimir_bucket = self.naming.mimir_blocks_bucket()
+        mimir_namespace = self.naming.kubernetes_namespace()
+        mimir_url = "http://mimir-svc." + mimir_namespace + ".svc.cluster.local:8080"
+
+        params[self.naming.ssm_parameter("external", "enabled")] = ("true", "Enable External simulator")
+        params[self.naming.ssm_parameter("external", "bucket")] = (ext_bucket, "External simulator S3 bucket")
+        params[self.naming.ssm_parameter("external", "prefix")] = ("external-simulator", "External simulator S3 prefix")
+
+        # Solution Results bucket (Athena-queryable Parquet from journeys)
+        params[self.naming.ssm_parameter("s3", "solution-results-bucket")] = (results_bucket, "Bucket for journey-emitted relational result tables")
+
+        # Mimir time-series storage parameters
+        params[self.naming.ssm_parameter("mimir", "enabled")] = ("true", "Enable Grafana Mimir")
+        params[self.naming.ssm_parameter("mimir", "url")] = (mimir_url, "Mimir HTTP API URL")
+        params[self.naming.ssm_parameter("mimir", "tenant-id")] = ("nexus-default", "Default Mimir tenant id")
+        params[self.naming.ssm_parameter("mimir", "bucket")] = (mimir_bucket, "Mimir blocks-storage S3 bucket")
+        params[self.naming.ssm_parameter("mimir", "retention-days")] = ("90", "Mimir hot retention in days")
+
         # CloudWatch parameters
         params[self.naming.ssm_parameter("cloudwatch", "log-group")] = (
             self.naming.log_group(), "CloudWatch log group"

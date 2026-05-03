@@ -25,7 +25,7 @@ class ResourceNaming:
     
     # SSM Parameter categories
     SSM_CATEGORIES = [
-        "aws", "server", "cognito", "wxcc", "s3", "dynamodb", "glue", "cloudwatch"
+        "aws", "server", "cognito", "wxcc", "s3", "dynamodb", "glue", "cloudwatch", "mimir"
     ]
     
     # Secret types
@@ -195,7 +195,19 @@ class ResourceNaming:
     def journey_reports_bucket(self) -> str:
         """Get the journey reports bucket name."""
         return self.s3_bucket("journey-reports")
-    
+
+    def mimir_blocks_bucket(self) -> str:
+        """Get the Mimir TSDB blocks storage bucket name."""
+        return self.s3_bucket("mimir-blocks")
+
+    def external_simulator_bucket(self) -> str:
+        """Get the external sources simulator bucket name."""
+        return self.s3_bucket("external-simulator")
+
+    def solution_results_bucket(self) -> str:
+        """Get the bucket holding journey-emitted relational result tables (Athena-queryable)."""
+        return self.s3_bucket("solution-results")
+
     # ==================== Glue ====================
     
     def glue_database(self) -> str:

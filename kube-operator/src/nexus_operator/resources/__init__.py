@@ -9,6 +9,7 @@ from .iam import IAMProvisioner
 from .kubernetes import KubernetesResourceCreator
 from .cognito import CognitoProvisioner
 from .vpc_endpoints import VPCEndpointProvisioner
+from .mimir import MimirProvisioner
 
 __all__ = [
     "VPCEndpointProvisioner",
@@ -20,4 +21,5 @@ __all__ = [
     "IAMProvisioner",
     "KubernetesResourceCreator",
     "CognitoProvisioner",
+    "MimirProvisioner",
 ]
