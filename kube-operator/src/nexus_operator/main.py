@@ -271,6 +271,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         SecretsProvisioner,
         KubernetesResourceCreator,
         CognitoProvisioner,
+        MimirProvisioner,
     )
     
     logger.info(f"Creating NexusCapability: {name} in namespace {namespace}")
@@ -584,7 +585,41 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             _update_step(steps, "Redis", "skipped")
             patch.status["steps"] = list(steps)
 
-        # ── Step 10b: Backend ──
+        # ── Step 10b: Grafana Mimir (time-series backend for solution four-views) ──
+        mimir_spec = spec.get("mimir", {})
+        mimir_enabled = mimir_spec.get("enabled", True)
+        if mimir_enabled:
+            patch.status["phase"] = "DeployingMimir"
+            patch.status["message"] = "Deploying Grafana Mimir (monolithic) for solution KPI history..."
+            _update_step(steps, "Mimir", "in_progress")
+            patch.status["steps"] = list(steps)
+
+            try:
+                logger.info("Deploying Grafana Mimir...")
+                mimir = MimirProvisioner(namespace=namespace, naming=naming, region=region)
+                mimir_result = await mimir.provision(
+                    retention_days=mimir_spec.get("retentionDays", 90),
+                    storage_size=mimir_spec.get("storageSize", "5Gi"),
+                    storage_class=mimir_spec.get("storageClass"),
+                    service_account=naming.kubernetes_service_account(),
+                )
+                mimir_status = mimir_result.get("status", "unknown")
+                mimir_components = [c.get("name") for c in mimir_result.get("components", [])]
+                if mimir_status == "failed":
+                    logger.warning(f"Mimir deploy failed (non-fatal): {mimir_result.get('error')}")
+                    _update_step(steps, "Mimir", "done", resources=[f"failed: {mimir_result.get('error', '')[:80]}"])
+                else:
+                    _update_step(steps, "Mimir", "done", resources=mimir_components)
+                    logger.info(f"Mimir done: url={mimir_result.get('url')}")
+            except Exception as me:
+                logger.warning(f"Mimir provisioning failed (non-fatal, dashboards still work without TSDB): {me}")
+                _update_step(steps, "Mimir", "done", resources=[f"error: {str(me)[:80]}"])
+            patch.status["steps"] = list(steps)
+        else:
+            _update_step(steps, "Mimir", "skipped")
+            patch.status["steps"] = list(steps)
+
+        # ── Step 10c: Backend ──
         ingress_config = spec.get("ingress", {})
         use_ingress = ingress_config.get("enabled", False)
         internal_ingress_config = spec.get("internalIngress", {})

@@ -207,6 +207,21 @@ class KubernetesResourceCreator:
         if redis_service:
             env_vars.append(client.V1EnvVar(name="REDIS_URL", value=f"redis://{redis_service}:6379/0"))
             logger.info(f"Redis cache enabled: {redis_service}:6379")
+
+        # Grafana Mimir - time-series storage for solution four-views KPI history.
+        # The cluster service is deployed by MimirProvisioner alongside this backend.
+        env_vars.extend([
+            client.V1EnvVar(name="MIMIR_ENABLED", value="true"),
+            client.V1EnvVar(
+                name="MIMIR_URL",
+                value=f"http://mimir-svc.{self.namespace}.svc.cluster.local:8080",
+            ),
+            client.V1EnvVar(name="MIMIR_TENANT_ID", value="nexus-default"),
+            # External simulator + solution-results buckets (used by ResultSink for
+            # write_rows -> S3 partitioned JSON).
+            client.V1EnvVar(name="EXTERNAL_SIMULATOR_BUCKET", value=naming.external_simulator_bucket()),
+            client.V1EnvVar(name="SOLUTION_RESULTS_BUCKET", value=naming.solution_results_bucket()),
+        ])
         
         # Create Deployment
         deployment = client.V1Deployment(
