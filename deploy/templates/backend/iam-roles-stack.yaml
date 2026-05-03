@@ -218,8 +218,12 @@ Resources:
                   - glue:BatchGetPartition
                 Resource:
                   - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog'
+                  # Both hyphen and underscore variants because Glue replaces
+                  # hyphens with underscores in database/table names.
                   - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${CapabilityName}-*'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${CapabilityName}_*'
                   - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}-*/*'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${CapabilityName}_*/*'
               # CloudWatch metrics
               - Effect: Allow
                 Action:
