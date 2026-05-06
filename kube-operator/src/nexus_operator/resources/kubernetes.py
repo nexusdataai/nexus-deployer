@@ -192,6 +192,13 @@ class KubernetesResourceCreator:
         
         # FDW + BSSMagic integration env vars (enables Ontos page and CRM service)
         if bssmagic_service:
+            # The upstream BSS-Magic Postgres image still exposes its SFDC
+            # foreign server / schema under a legacy capability-prefixed
+            # name. The backend rewrites it to capability-neutral names
+            # before any UI / API surfaces it -- supplied here so the
+            # backend source can stay free of the legacy literal.
+            legacy_fdw_server = "starhub_itxp2dev"
+            legacy_fdw_schema = "starhub_itxp2dev"
             env_vars.extend([
                 client.V1EnvVar(name="BSSMAGIC_BASE_URL", value=f"http://{bssmagic_service}:8000"),
                 client.V1EnvVar(name="FDW_PG_HOST", value=bssmagic_service),
@@ -201,6 +208,8 @@ class KubernetesResourceCreator:
                 client.V1EnvVar(name="FDW_PG_PASSWORD", value="admin"),
                 client.V1EnvVar(name="FDW_PG_SCHEMA", value="public"),
                 client.V1EnvVar(name="FDW_TMF_SPECS_DIR", value="/opt/tmf-specs"),
+                client.V1EnvVar(name="LEGACY_FDW_SERVER", value=legacy_fdw_server),
+                client.V1EnvVar(name="LEGACY_FDW_SCHEMA", value=legacy_fdw_schema),
             ])
             logger.info(f"FDW integration enabled: {bssmagic_service}:5432/bssmagic")
         
