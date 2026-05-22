@@ -260,9 +260,25 @@ class KubernetesResourceCreator:
                                     requests={"cpu": cpu_request, "memory": memory_request},
                                     limits={"cpu": cpu_limit, "memory": memory_limit},
                                 ),
+                                # Cold start can take 4-6 minutes on this pod:
+                                # S3 dumps for 4 simulators (~3 min) + automation
+                                # indexer embeddings + Four-Views entity catalogue.
+                                # A dedicated startup_probe gives that work a
+                                # generous window (60 * 10s = 10 min) while
+                                # suppressing liveness/readiness; once it
+                                # succeeds, liveness/readiness take over with
+                                # tight, steady-state values so genuine hangs
+                                # are still caught quickly.
+                                startup_probe=client.V1Probe(
+                                    http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                                    initial_delay_seconds=30,
+                                    period_seconds=10,
+                                    timeout_seconds=5,
+                                    failure_threshold=60,
+                                ),
                                 liveness_probe=client.V1Probe(
                                     http_get=client.V1HTTPGetAction(path="/health", port=8000),
-                                    initial_delay_seconds=90,
+                                    initial_delay_seconds=240,
                                     period_seconds=15,
                                     timeout_seconds=5,
                                     failure_threshold=5,
