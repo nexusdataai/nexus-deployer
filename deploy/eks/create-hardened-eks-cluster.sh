@@ -1,8 +1,13 @@
 #!/bin/bash
 #
 # Hardened EKS Cluster Creation Script (Revised)
-# Creates a fully private EKS cluster with:
-#   - VPC endpoints (no NAT gateway)
+# Creates a hardened EKS cluster with one of four network profiles:
+#   - higher-cost   (default): full PrivateLink (all interface endpoints + S3/DDB gateway)
+#   - moderate              : S3/DDB gateway + t4g.nano NAT instance per AZ (HA)
+#   - lowest-cost           : S3/DDB gateway + single t4g.nano NAT instance (no HA)
+#   - public-nodes          : nodes in public subnets, no NAT, no endpoints (dev only)
+#
+# Other features:
 #   - OIDC provider registered in IAM
 #   - IRSA roles for operator, app, and EBS CSI driver
 #   - AWS Load Balancer Controller (ingress)
@@ -11,6 +16,7 @@
 #
 # Usage:
 #   ./create-hardened-eks-cluster.sh --name my-cluster --region us-east-1
+#   ./create-hardened-eks-cluster.sh --name my-cluster --network-profile lowest-cost
 #   ./create-hardened-eks-cluster.sh --name my-cluster --capability nexus-ai --env dev
 #   AUTO_APPROVE=yes ./create-hardened-eks-cluster.sh --name my-cluster
 #
@@ -34,6 +40,29 @@ CAPABILITY="${CAPABILITY:-nexus}"
 APP_ENV="${APP_ENV:-dev}"
 SKIP_ENDPOINTS="${SKIP_ENDPOINTS:-false}"
 SKIP_ADDONS="${SKIP_ADDONS:-false}"
+
+# Network profile drives VPC topology and which AWS-service access path the
+# nexus-backend uses at runtime. The operator reads this profile from a VPC
+# tag and projects it into the backend pod env vars. Valid values:
+#   higher-cost   = full PrivateLink (interface endpoints + S3/DDB gateway)
+#   moderate      = S3/DDB gateway + 1 NAT instance per AZ (HA)
+#   lowest-cost   = S3/DDB gateway + single NAT instance (no HA)
+#   public-nodes  = nodes in public subnets, no NAT, no endpoints (dev only)
+NETWORK_PROFILE="${NETWORK_PROFILE:-higher-cost}"
+NAT_INSTANCE_TYPE="${NAT_INSTANCE_TYPE:-t4g.nano}"
+NAT_AMI_OWNER="${NAT_AMI_OWNER:-568608671756}"        # fck-nat publisher
+NAT_AMI_NAME_FILTER="${NAT_AMI_NAME_FILTER:-fck-nat-al2023-hvm-*}"
+# AMI architecture is derived from the NAT instance type. Graviton families
+# (t4g, c6g, m6g, m7gd, c6gn, ...) end with "g" optionally followed by extra
+# letters right before the dot. Everything else is x86_64. Override
+# NAT_AMI_ARCH=... for unusual instance types.
+if [ -z "$NAT_AMI_ARCH" ]; then
+    if [[ "$NAT_INSTANCE_TYPE" =~ g[a-z]*\. ]]; then
+        NAT_AMI_ARCH="arm64"
+    else
+        NAT_AMI_ARCH="x86_64"
+    fi
+fi
 
 VPC_ID="${VPC_ID:-}"
 PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
@@ -61,6 +90,8 @@ while [[ $# -gt 0 ]]; do
         --env)              APP_ENV="$2"; shift 2 ;;
         --skip-endpoints)   SKIP_ENDPOINTS=true; shift ;;
         --skip-addons)      SKIP_ADDONS=true; shift ;;
+        --network-profile)  NETWORK_PROFILE="$2"; shift 2 ;;
+        --nat-instance-type) NAT_INSTANCE_TYPE="$2"; shift 2 ;;
         --auto-approve)     AUTO_APPROVE=yes; shift ;;
         --help|-h)
             echo "Usage: $0 [cluster-name] [OPTIONS]"
@@ -92,8 +123,16 @@ while [[ $# -gt 0 ]]; do
             echo "  --capability NAME          Capability name for app role (default: nexus)"
             echo "  --env ENV                  Environment for app role (default: dev)"
             echo ""
+            echo "Network profile (cost tier):"
+            echo "  --network-profile NAME     One of:"
+            echo "                               higher-cost  - full PrivateLink (default, ~\$120-250/mo)"
+            echo "                               moderate     - S3/DDB gateway + NAT instance per AZ (~\$12-18/mo)"
+            echo "                               lowest-cost  - S3/DDB gateway + single NAT instance (~\$3-5/mo)"
+            echo "                               public-nodes - nodes get public IPs, no NAT (~\$0/mo, dev only)"
+            echo "  --nat-instance-type TYPE   NAT EC2 instance type (default: t4g.nano)"
+            echo ""
             echo "Toggles:"
-            echo "  --skip-endpoints           Skip VPC endpoint creation"
+            echo "  --skip-endpoints           Skip VPC endpoint creation (legacy alias)"
             echo "  --skip-addons              Skip EBS CSI and LB controller installation"
             echo "  --auto-approve             Skip all confirmation prompts"
             echo "  --help                     Show this help"
@@ -117,6 +156,56 @@ if [ -z "$SUBNETS" ] && { [ -n "$PUBLIC_SUBNETS" ] || [ -n "$PRIVATE_SUBNETS" ];
     else
         SUBNETS="$PRIVATE_SUBNETS"
     fi
+fi
+
+case "$NETWORK_PROFILE" in
+    higher-cost|moderate|lowest-cost|public-nodes) ;;
+    *)
+        echo "❌ Invalid --network-profile: '$NETWORK_PROFILE'"
+        echo "   Expected one of: higher-cost, moderate, lowest-cost, public-nodes"
+        exit 1
+        ;;
+esac
+
+# Derive networking switches from the profile.
+#   CREATE_NAT_INSTANCES : whether to launch NAT EC2 instances (moderate, lowest-cost)
+#   NAT_PER_AZ           : true=one NAT per AZ (HA), false=single NAT (no HA)
+#   CREATE_INTERFACE_EPS : whether to provision interface VPC endpoints
+#   CREATE_GATEWAY_EPS   : whether to provision S3/DynamoDB gateway endpoints
+#   NODES_IN_PUBLIC      : whether to launch worker nodes in public subnets
+CREATE_NAT_INSTANCES=false
+NAT_PER_AZ=false
+CREATE_INTERFACE_EPS=true
+CREATE_GATEWAY_EPS=true
+NODES_IN_PUBLIC=false
+case "$NETWORK_PROFILE" in
+    higher-cost)
+        CREATE_INTERFACE_EPS=true
+        CREATE_GATEWAY_EPS=true
+        ;;
+    moderate)
+        CREATE_NAT_INSTANCES=true
+        NAT_PER_AZ=true
+        CREATE_INTERFACE_EPS=false
+        CREATE_GATEWAY_EPS=true
+        ;;
+    lowest-cost)
+        CREATE_NAT_INSTANCES=true
+        NAT_PER_AZ=false
+        CREATE_INTERFACE_EPS=false
+        CREATE_GATEWAY_EPS=true
+        ;;
+    public-nodes)
+        CREATE_INTERFACE_EPS=false
+        CREATE_GATEWAY_EPS=false
+        NODES_IN_PUBLIC=true
+        ;;
+esac
+
+# Legacy --skip-endpoints flag: force everything off (kept for backwards compat).
+if [ "$SKIP_ENDPOINTS" == "true" ]; then
+    CREATE_INTERFACE_EPS=false
+    CREATE_GATEWAY_EPS=false
 fi
 
 GREEN='\033[0;32m'
@@ -216,10 +305,10 @@ if [ -z "$SUBNETS" ]; then
         fi
     fi
 
-    # ── Auto-create VPC (NO NAT gateway) ─────────────────────────────
+    # ── Auto-create VPC (topology driven by --network-profile) ──────
     if [ -z "$SUBNETS" ]; then
         echo ""
-        echo "🏗️  Creating EKS-ready VPC (private, VPC-endpoint-based)..."
+        echo "🏗️  Creating EKS-ready VPC (network-profile: $NETWORK_PROFILE)..."
 
         AZ1=$(aws ec2 describe-availability-zones --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'AvailabilityZones[0].ZoneName' --output text)
@@ -228,7 +317,7 @@ if [ -z "$SUBNETS" ]; then
         echo "   AZs: $AZ1, $AZ2"
 
         VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
-            --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${CLUSTER_NAME}-vpc}]" \
+            --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${CLUSTER_NAME}-vpc},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Vpc.VpcId' --output text)
         aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support \
@@ -287,15 +376,42 @@ if [ -z "$SUBNETS" ]; then
             --query 'Subnet.SubnetId' --output text)
         echo "   Private: $PRIV_SUB1 ($AZ1), $PRIV_SUB2 ($AZ2)  [Nodes]"
 
-        PRIV_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-            --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt}]" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'RouteTable.RouteTableId' --output text)
-        aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB1" \
-            --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
-        aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB2" \
-            --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
-        echo "   Private RT: $PRIV_RT (no default route -- VPC endpoints only)"
+        # Profile-aware private route table layout:
+        #   higher-cost / lowest-cost / public-nodes => single private RT (PRIV_RT_AZ1=PRIV_RT_AZ2=PRIV_RT)
+        #   moderate                                => one RT per AZ for AZ-local NAT routing
+        if [ "$NAT_PER_AZ" == "true" ]; then
+            PRIV_RT_AZ1=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ1}}]" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'RouteTable.RouteTableId' --output text)
+            aws ec2 associate-route-table --route-table-id "$PRIV_RT_AZ1" --subnet-id "$PRIV_SUB1" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+
+            PRIV_RT_AZ2=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ2}}]" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'RouteTable.RouteTableId' --output text)
+            aws ec2 associate-route-table --route-table-id "$PRIV_RT_AZ2" --subnet-id "$PRIV_SUB2" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+            PRIV_RT="$PRIV_RT_AZ1"   # primary handle used by gateway endpoint attachment
+            echo "   Private RTs: $PRIV_RT_AZ1 ($AZ1), $PRIV_RT_AZ2 ($AZ2)"
+        else
+            PRIV_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt}]" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'RouteTable.RouteTableId' --output text)
+            aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB1" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+            aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB2" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
+            PRIV_RT_AZ1="$PRIV_RT"
+            PRIV_RT_AZ2="$PRIV_RT"
+            if [ "$CREATE_NAT_INSTANCES" == "true" ]; then
+                echo "   Private RT: $PRIV_RT (default route to NAT instance — pending creation)"
+            else
+                echo "   Private RT: $PRIV_RT (no default route -- VPC endpoints only)"
+            fi
+        fi
 
         PUBLIC_SUBNETS="${PUB_SUB1},${PUB_SUB2}"
         PRIVATE_SUBNETS="${PRIV_SUB1},${PRIV_SUB2}"
@@ -320,6 +436,14 @@ if [ -z "$PRIV_RT" ] && [ -n "$VPC_ID" ]; then
         --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
 fi
 
+# Stamp/refresh the network-profile tag on existing VPCs so the operator can
+# validate against it. Idempotent (create-tags is upsert).
+if [ -n "$VPC_ID" ]; then
+    aws ec2 create-tags --resources "$VPC_ID" \
+        --tags "Key=nexus:network-profile,Value=${NETWORK_PROFILE}" \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+fi
+
 # Resolve PRIVATE_SUBNETS if not set (needed for interface endpoints)
 if [ -z "$PRIVATE_SUBNETS" ] && [ -n "$VPC_ID" ]; then
     PRIVATE_SUBNETS=$(aws ec2 describe-subnets \
@@ -331,37 +455,218 @@ if [ -z "$PRIVATE_SUBNETS" ] && [ -n "$VPC_ID" ]; then
     fi
 fi
 
+# If running against a pre-existing VPC and per-AZ RTs were not created in this
+# run, default both PRIV_RT_AZ1 and PRIV_RT_AZ2 to PRIV_RT so the NAT-wiring
+# code below treats them as a single shared RT.
+[ -z "$PRIV_RT_AZ1" ] && PRIV_RT_AZ1="$PRIV_RT"
+[ -z "$PRIV_RT_AZ2" ] && PRIV_RT_AZ2="$PRIV_RT"
+
+#=============================================================================
+# Step 0a: Create NAT Instance(s) (hybrid profiles: moderate, lowest-cost)
+#=============================================================================
+#
+# Provisions one or two t4g.nano NAT instances using the fck-nat AMI. Each NAT
+# is launched via an Auto Scaling Group (min=max=1) so it self-heals on EC2
+# instance failure. Source/dest-check is disabled on each ENI, and the matching
+# private route table gets a default route via that ENI.
+
+create_nat_asg() {
+    # Usage: create_nat_asg <public_subnet_id> <az_label> <priv_rt_id> <suffix>
+    local pub_subnet="$1"
+    local az_label="$2"
+    local priv_rt="$3"
+    local suffix="$4"
+
+    local asg_name="${CLUSTER_NAME}-nat-${suffix}"
+    local lt_name="${CLUSTER_NAME}-nat-lt-${suffix}"
+    local sg_name="${CLUSTER_NAME}-nat-sg"
+
+    # Reuse NAT security group across all NAT instances in the VPC.
+    NAT_SG=$(aws ec2 describe-security-groups \
+        --filters "Name=group-name,Values=$sg_name" "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || true)
+    if [ -z "$NAT_SG" ] || [ "$NAT_SG" == "None" ]; then
+        NAT_SG=$(aws ec2 create-security-group \
+            --group-name "$sg_name" \
+            --description "NAT instance traffic (fck-nat) - managed by deploy/eks scripts" \
+            --vpc-id "$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'GroupId' --output text)
+        aws ec2 create-tags --resources "$NAT_SG" \
+            --tags "Key=Name,Value=$sg_name" "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+
+        VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'Vpcs[0].CidrBlock' --output text)
+        # Allow all traffic from inside the VPC; default egress is 0.0.0.0/0.
+        aws ec2 authorize-security-group-ingress --group-id "$NAT_SG" \
+            --protocol -1 --cidr "$VPC_CIDR" \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+        echo "   NAT SG: $NAT_SG (ingress all from $VPC_CIDR)"
+    fi
+
+    # Look up the latest fck-nat AMI matching the NAT instance type's architecture.
+    local nat_ami
+    nat_ami=$(aws ec2 describe-images \
+        --owners "$NAT_AMI_OWNER" \
+        --filters "Name=name,Values=$NAT_AMI_NAME_FILTER" "Name=architecture,Values=$NAT_AMI_ARCH" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'Images|sort_by(@,&CreationDate)|[-1].ImageId' --output text 2>/dev/null)
+    if [ -z "$nat_ami" ] || [ "$nat_ami" == "None" ]; then
+        echo "   ⚠ fck-nat AMI not found in $REGION (owner=$NAT_AMI_OWNER, filter=$NAT_AMI_NAME_FILTER, arch=$NAT_AMI_ARCH)."
+        echo "     See https://fck-nat.dev/ for region availability. Falling back to NAT-less RT."
+        return 1
+    fi
+    echo "   NAT AMI: $nat_ami ($NAT_AMI_ARCH, for $NAT_INSTANCE_TYPE)"
+
+    # Idempotent: skip ASG creation if it already exists.
+    local existing_asg
+    existing_asg=$(aws autoscaling describe-auto-scaling-groups \
+        --auto-scaling-group-names "$asg_name" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text 2>/dev/null || true)
+    if [ "$existing_asg" == "$asg_name" ]; then
+        echo "   ASG $asg_name already exists, reusing"
+    else
+        local lt_data
+        lt_data=$(cat <<EOF
+{"ImageId":"$nat_ami","InstanceType":"$NAT_INSTANCE_TYPE","SecurityGroupIds":["$NAT_SG"],"TagSpecifications":[{"ResourceType":"instance","Tags":[{"Key":"Name","Value":"${CLUSTER_NAME}-nat-${suffix}"},{"Key":"nexus:nat-instance","Value":"true"},{"Key":"nexus:network-profile","Value":"$NETWORK_PROFILE"}]}]}
+EOF
+)
+        # If launch template already exists from a previous run, reuse it.
+        if aws ec2 describe-launch-templates --launch-template-names "$lt_name" \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1; then
+            echo "   Launch template $lt_name already exists, reusing"
+        else
+            aws ec2 create-launch-template \
+                --launch-template-name "$lt_name" \
+                --launch-template-data "$lt_data" \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
+            echo "   Launch template: $lt_name"
+        fi
+
+        aws autoscaling create-auto-scaling-group \
+            --auto-scaling-group-name "$asg_name" \
+            --launch-template "LaunchTemplateName=$lt_name,Version=\$Latest" \
+            --min-size 1 --max-size 1 --desired-capacity 1 \
+            --vpc-zone-identifier "$pub_subnet" \
+            --tags "Key=Name,Value=$asg_name,PropagateAtLaunch=false" \
+                   "Key=nexus:nat-instance,Value=true,PropagateAtLaunch=false" \
+                   "Key=nexus:network-profile,Value=$NETWORK_PROFILE,PropagateAtLaunch=false" \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
+        echo "   ASG: $asg_name (min=max=1, in $pub_subnet)"
+    fi
+
+    # Wait for the NAT instance to be running and its ENI to be attached.
+    echo -n "   Waiting for NAT instance to come up"
+    local nat_instance="" nat_eni=""
+    for attempt in $(seq 1 60); do
+        nat_instance=$(aws ec2 describe-instances \
+            --filters "Name=tag:aws:autoscaling:groupName,Values=$asg_name" \
+                      "Name=instance-state-name,Values=pending,running" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null || true)
+        if [ -n "$nat_instance" ] && [ "$nat_instance" != "None" ]; then
+            local state
+            state=$(aws ec2 describe-instances --instance-ids "$nat_instance" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || true)
+            if [ "$state" == "running" ]; then
+                nat_eni=$(aws ec2 describe-instances --instance-ids "$nat_instance" \
+                    --region "$REGION" --profile "$AWS_PROFILE" \
+                    --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text 2>/dev/null)
+                break
+            fi
+        fi
+        echo -n "."
+        sleep 5
+    done
+    echo ""
+    if [ -z "$nat_eni" ] || [ "$nat_eni" == "None" ]; then
+        echo "   ⚠ NAT instance for $asg_name not running after 5 min — skipping route"
+        return 1
+    fi
+
+    # Disable source/dest-check so the NAT can forward traffic.
+    aws ec2 modify-instance-attribute --instance-id "$nat_instance" \
+        --no-source-dest-check \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+    aws ec2 create-tags --resources "$nat_eni" \
+        --tags "Key=nexus:nat-instance,Value=true" "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+
+    # Wire (or replace) the default route on the target private RT to point at the NAT ENI.
+    aws ec2 delete-route --route-table-id "$priv_rt" --destination-cidr-block 0.0.0.0/0 \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+    aws ec2 create-route --route-table-id "$priv_rt" --destination-cidr-block 0.0.0.0/0 \
+        --network-interface-id "$nat_eni" \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
+    echo "   Route: 0.0.0.0/0 via $nat_eni on $priv_rt"
+    return 0
+}
+
+if [ "$CREATE_NAT_INSTANCES" == "true" ] && [ -n "$VPC_ID" ]; then
+    echo "=== Creating NAT instance(s) for network-profile=$NETWORK_PROFILE ==="
+
+    # Need public subnets to launch NAT instances into. Use the script-created
+    # ones when available, otherwise pick from the existing VPC.
+    if [ -z "$PUB_SUB1" ] || [ -z "$PUB_SUB2" ]; then
+        PUB_SUBS_RESOLVED=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=true" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'Subnets[].SubnetId' --output text 2>/dev/null)
+        PUB_SUB1=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $1}')
+        PUB_SUB2=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $2}')
+        if [ -z "$PUB_SUB2" ]; then PUB_SUB2="$PUB_SUB1"; fi
+    fi
+
+    if [ "$NAT_PER_AZ" == "true" ]; then
+        create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT_AZ1" "az1" || true
+        create_nat_asg "$PUB_SUB2" "${AZ2:-az2}" "$PRIV_RT_AZ2" "az2" || true
+    else
+        create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT" "single" || true
+    fi
+    echo ""
+fi
+
 #=============================================================================
 # Step 0b: Create VPC Endpoints
 #=============================================================================
 
-if [ "$SKIP_ENDPOINTS" != "true" ] && [ -n "$VPC_ID" ]; then
-    echo "=== Creating VPC Endpoints ==="
+if { [ "$CREATE_INTERFACE_EPS" == "true" ] || [ "$CREATE_GATEWAY_EPS" == "true" ]; } && [ -n "$VPC_ID" ]; then
+    echo "=== Creating VPC Endpoints (profile: $NETWORK_PROFILE) ==="
 
-    VPCE_SG=$(aws ec2 create-security-group \
-        --group-name "${CLUSTER_NAME}-vpce-sg" \
-        --description "Allow HTTPS from VPC for VPC endpoints" \
-        --vpc-id "$VPC_ID" \
-        --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'GroupId' --output text 2>/dev/null || true)
+    # The endpoint security group is only needed for Interface endpoints.
+    # Gateway endpoints (S3, DynamoDB) attach to route tables and don't use SGs.
+    VPCE_SG=""
+    if [ "$CREATE_INTERFACE_EPS" == "true" ]; then
+        VPCE_SG=$(aws ec2 create-security-group \
+            --group-name "${CLUSTER_NAME}-vpce-sg" \
+            --description "Allow HTTPS from VPC for VPC endpoints" \
+            --vpc-id "$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'GroupId' --output text 2>/dev/null || true)
 
-    if [ -n "$VPCE_SG" ] && [ "$VPCE_SG" != "None" ]; then
-        VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'Vpcs[0].CidrBlock' --output text)
-        aws ec2 authorize-security-group-ingress --group-id "$VPCE_SG" \
-            --protocol tcp --port 443 --cidr "$VPC_CIDR" \
-            --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
-        aws ec2 create-tags --resources "$VPCE_SG" \
-            --tags "Key=Name,Value=${CLUSTER_NAME}-vpce-sg" \
-            --region "$REGION" --profile "$AWS_PROFILE"
-        echo "   Security Group: $VPCE_SG"
-    else
-        VPCE_SG=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${CLUSTER_NAME}-vpce-sg" "Name=vpc-id,Values=$VPC_ID" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
-        echo "   Security Group (existing): $VPCE_SG"
+        if [ -n "$VPCE_SG" ] && [ "$VPCE_SG" != "None" ]; then
+            VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'Vpcs[0].CidrBlock' --output text)
+            aws ec2 authorize-security-group-ingress --group-id "$VPCE_SG" \
+                --protocol tcp --port 443 --cidr "$VPC_CIDR" \
+                --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
+            aws ec2 create-tags --resources "$VPCE_SG" \
+                --tags "Key=Name,Value=${CLUSTER_NAME}-vpce-sg" \
+                --region "$REGION" --profile "$AWS_PROFILE"
+            echo "   Security Group: $VPCE_SG"
+        else
+            VPCE_SG=$(aws ec2 describe-security-groups \
+                --filters "Name=group-name,Values=${CLUSTER_NAME}-vpce-sg" "Name=vpc-id,Values=$VPC_ID" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
+            echo "   Security Group (existing): $VPCE_SG"
+        fi
     fi
 
     EXISTING_ENDPOINTS=$(aws ec2 describe-vpc-endpoints \
@@ -373,26 +678,42 @@ if [ "$SKIP_ENDPOINTS" != "true" ] && [ -n "$VPC_ID" ]; then
 
     GATEWAY_SERVICES="s3 dynamodb"
 
+    # Build the list of route tables that the S3/DDB gateway endpoint should
+    # attach to (varies between single-RT and per-AZ-RT topologies).
+    GW_RT_IDS="$PRIV_RT"
+    if [ -n "$PRIV_RT_AZ2" ] && [ "$PRIV_RT_AZ2" != "$PRIV_RT" ]; then
+        GW_RT_IDS="$PRIV_RT_AZ1 $PRIV_RT_AZ2"
+    fi
+
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         SVC_FULL="com.amazonaws.${REGION}.$(echo "$line" | sed "s/com\.amazonaws\.[^.]*\.//;s/ //g")"
         SVC_SHORT=$(echo "$SVC_FULL" | sed "s/com\.amazonaws\.${REGION}\.//")
-
-        if echo "$EXISTING_ENDPOINTS" | grep -q "$SVC_FULL"; then
-            echo "   ✓ $SVC_SHORT (exists)"
-            continue
-        fi
 
         IS_GATEWAY=false
         for gw in $GATEWAY_SERVICES; do
             [ "$SVC_SHORT" == "$gw" ] && IS_GATEWAY=true
         done
 
+        # Profile gates: gateway endpoints only when enabled; interface
+        # endpoints only on higher-cost (PrivateLink) profile.
+        if [ "$IS_GATEWAY" == "true" ] && [ "$CREATE_GATEWAY_EPS" != "true" ]; then
+            continue
+        fi
+        if [ "$IS_GATEWAY" != "true" ] && [ "$CREATE_INTERFACE_EPS" != "true" ]; then
+            continue
+        fi
+
+        if echo "$EXISTING_ENDPOINTS" | grep -q "$SVC_FULL"; then
+            echo "   ✓ $SVC_SHORT (exists)"
+            continue
+        fi
+
         if [ "$IS_GATEWAY" == "true" ]; then
             if aws ec2 create-vpc-endpoint --vpc-endpoint-type Gateway \
                 --vpc-id "$VPC_ID" --service-name "$SVC_FULL" \
-                --route-table-ids "$PRIV_RT" \
-                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}}]" \
+                --route-table-ids $GW_RT_IDS \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
                 echo "   ✓ $SVC_SHORT (gateway)"
             else
@@ -404,7 +725,7 @@ if [ "$SKIP_ENDPOINTS" != "true" ] && [ -n "$VPC_ID" ]; then
                 --subnet-ids $PRIV_SUBNET_LIST \
                 --security-group-ids "$VPCE_SG" \
                 --private-dns-enabled \
-                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}}]" \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
                 echo "   ✓ $SVC_SHORT (interface)"
             else
@@ -786,11 +1107,24 @@ echo "Release: $AMI_VERSION"
 NODEGROUP_NAME="eks-optimized-nodes"
 echo "This takes 3-5 minutes..."
 
+# Pick subnets for the nodegroup based on profile. public-nodes places nodes
+# in public subnets so they get public IPs and reach AWS without NAT. All
+# other profiles route node egress through private subnets (interface
+# endpoints or NAT instances).
+if [ "$NODES_IN_PUBLIC" == "true" ] && [ -n "$PUBLIC_SUBNETS" ]; then
+    NODE_SUBNETS="$PUBLIC_SUBNETS"
+elif [ -n "$PRIVATE_SUBNETS" ]; then
+    NODE_SUBNETS="$PRIVATE_SUBNETS"
+else
+    NODE_SUBNETS="$SUBNETS"
+fi
+echo "Nodegroup subnets: $NODE_SUBNETS (profile=$NETWORK_PROFILE)"
+
 aws eks create-nodegroup \
     --cluster-name "$CLUSTER_NAME" \
     --nodegroup-name "$NODEGROUP_NAME" \
     --scaling-config "minSize=$NODE_COUNT_MIN,maxSize=$NODE_COUNT_MAX,desiredSize=$NODE_COUNT_DESIRED" \
-    --subnets $(echo $SUBNETS | tr ',' ' ') \
+    --subnets $(echo $NODE_SUBNETS | tr ',' ' ') \
     --instance-types "$NODE_INSTANCE_TYPE" \
     --node-role "$NODE_ROLE_ARN" \
     --ami-type AL2023_x86_64_STANDARD \
@@ -1104,7 +1438,23 @@ if [ "$SKIP_ADDONS" != "true" ]; then
 echo "  LB Ctrl:    $LBC_ROLE_NAME"
 fi
 echo ""
-echo "🌐 VPC ENDPOINTS: $([ "$SKIP_ENDPOINTS" == "true" ] && echo "Skipped" || echo "Created (no NAT gateway)")"
+echo "🌐 NETWORK PROFILE: $NETWORK_PROFILE"
+if [ "$CREATE_NAT_INSTANCES" == "true" ]; then
+    if [ "$NAT_PER_AZ" == "true" ]; then
+        echo "  NAT:        $NAT_INSTANCE_TYPE per AZ (HA)"
+    else
+        echo "  NAT:        $NAT_INSTANCE_TYPE (single, no HA)"
+    fi
+fi
+if [ "$CREATE_GATEWAY_EPS" == "true" ]; then
+    echo "  Gateway:    S3, DynamoDB"
+fi
+if [ "$CREATE_INTERFACE_EPS" == "true" ]; then
+    echo "  Interface:  Full PrivateLink set"
+fi
+if [ "$NODES_IN_PUBLIC" == "true" ]; then
+    echo "  Nodes:      Public subnets (public IPs)"
+fi
 echo ""
 echo "📦 ADDONS:"
 if [ "$SKIP_ADDONS" != "true" ]; then

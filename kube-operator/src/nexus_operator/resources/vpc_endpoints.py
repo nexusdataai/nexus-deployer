@@ -1,11 +1,19 @@
 """
-VPC Endpoint Provisioner for private EKS clusters.
+VPC Endpoint Provisioner + NetworkTopologyValidator for private EKS clusters.
 
-Discovers the cluster VPC from EKS and ensures Gateway and Interface
-VPC endpoints exist for all AWS services the capability needs.
-Runs as Step 0 in the provisioning flow, before any AWS resource creation.
+The provisioner (legacy path) discovers the cluster VPC from EKS and ensures
+Gateway/Interface VPC endpoints exist for the AWS services the capability needs.
+It is kept for backwards compatibility but is no longer wired into the default
+reconcile flow — the cluster provisioning script in nexus-deployer/deploy/eks/
+now owns VPC + endpoint + NAT lifecycle. Set ``OPERATOR_PROVISION_LEGACY=true``
+to re-enable provisioning for clusters that pre-date the script.
+
+The validator (default path) inspects the VPC and confirms its topology
+matches ``spec.awsAccessMode`` on NexusNetworkConfig. It never creates or
+modifies AWS resources; on drift it reports the missing pieces via status.
 """
 import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from botocore.exceptions import ClientError
@@ -35,6 +43,11 @@ INTERFACE_SERVICES = [
 SG_TAG_KEY = "nexus-operator"
 SG_TAG_VALUE = "vpc-endpoints"
 SG_NAME = "totogi-vpc-endpoints"
+
+VPC_PROFILE_TAG = "nexus:network-profile"
+NAT_INSTANCE_TAG = "nexus:nat-instance"
+
+VALID_MODES = ("higher-cost", "moderate", "lowest-cost", "public-nodes")
 
 
 class VPCEndpointProvisioner:
@@ -250,3 +263,179 @@ class VPCEndpointProvisioner:
                 return {"name": service_name, "status": "exists", "type": "Interface", "endpoint_id": ""}
             logger.error(f"Failed to create VPC endpoint for {service_name}: {e}")
             return {"name": service_name, "status": "failed", "type": "Interface", "endpoint_id": ""}
+
+
+def is_legacy_provisioning_enabled() -> bool:
+    """Whether the operator should provision the VPC topology (legacy mode)."""
+    return os.environ.get("OPERATOR_PROVISION_LEGACY", "").strip().lower() in ("1", "true", "yes")
+
+
+class NetworkTopologyValidator:
+    """Validates that the cluster VPC topology matches ``spec.awsAccessMode``.
+
+    Never creates or modifies AWS resources. Returns a dict the operator
+    writes verbatim into ``status.validation`` plus a list of pseudo-endpoint
+    descriptors so existing status fields (``endpoints``, ``totalEndpoints``,
+    ``healthyEndpoints``) keep working.
+    """
+
+    def __init__(self, region: str, cluster_name: str, mode: str):
+        self.region = region
+        self.cluster_name = cluster_name
+        self.mode = mode if mode in VALID_MODES else "higher-cost"
+        self.ec2 = vpc_boto3_client("ec2", region_name=region)
+        self.eks = vpc_boto3_client("eks", region_name=region)
+
+    async def validate(self) -> Dict[str, Any]:
+        """Returns ``{"validation": {...}, "endpoints": [...], "actualProfileTag": str}``."""
+        try:
+            cluster = self.eks.describe_cluster(name=self.cluster_name)["cluster"]
+            vpc_id = cluster["resourcesVpcConfig"]["vpcId"]
+            subnet_ids = cluster["resourcesVpcConfig"].get("subnetIds", [])
+        except Exception as e:
+            return self._fail("describe_cluster failed", [str(e)])
+
+        # Read the VPC's nexus:network-profile tag — the script stamps this so
+        # the operator can detect topology drift independently of spec.
+        actual_profile = self._read_vpc_profile_tag(vpc_id)
+
+        endpoints = self._list_vpc_endpoints(vpc_id)
+        gateway_services = {e["service"] for e in endpoints if e["type"] == "Gateway"}
+        interface_services = {e["service"] for e in endpoints if e["type"] == "Interface"}
+
+        missing: List[str] = []
+        if self.mode == "higher-cost":
+            for svc in GATEWAY_SERVICES:
+                full = f"com.amazonaws.{self.region}.{svc}"
+                if full not in gateway_services:
+                    missing.append(f"gateway:{svc}")
+            for svc in INTERFACE_SERVICES:
+                full = f"com.amazonaws.{self.region}.{svc}"
+                if full not in interface_services:
+                    missing.append(f"interface:{svc}")
+
+        elif self.mode in ("moderate", "lowest-cost"):
+            for svc in GATEWAY_SERVICES:
+                full = f"com.amazonaws.{self.region}.{svc}"
+                if full not in gateway_services:
+                    missing.append(f"gateway:{svc}")
+            nat_count = self._count_nat_instances(vpc_id)
+            required_nats = 2 if self.mode == "moderate" else 1
+            if nat_count < required_nats:
+                missing.append(f"nat-instance:expected={required_nats},found={nat_count}")
+            nat_routes = self._count_nat_default_routes(vpc_id, subnet_ids)
+            if nat_routes == 0:
+                missing.append("private-rt:no-default-route-to-nat")
+
+        elif self.mode == "public-nodes":
+            # Worker subnets must have MapPublicIpOnLaunch=true so node ENIs
+            # get a public IP and reach AWS via the IGW directly.
+            if not self._all_subnets_public(subnet_ids):
+                missing.append("subnets:not-all-public")
+
+        ok = len(missing) == 0
+        validation = {
+            "ok": ok,
+            "expected": self.mode,
+            "actual": actual_profile or "unknown",
+            "missing": missing,
+        }
+        return {
+            "validation": validation,
+            "endpoints": endpoints,
+            "actualProfileTag": actual_profile,
+        }
+
+    # ── helpers ─────────────────────────────────────────────────────────
+
+    def _fail(self, reason: str, missing: List[str]) -> Dict[str, Any]:
+        return {
+            "validation": {
+                "ok": False,
+                "expected": self.mode,
+                "actual": "unknown",
+                "missing": [reason, *missing],
+            },
+            "endpoints": [],
+            "actualProfileTag": None,
+        }
+
+    def _read_vpc_profile_tag(self, vpc_id: str) -> Optional[str]:
+        try:
+            resp = self.ec2.describe_vpcs(VpcIds=[vpc_id])
+            for tag in resp.get("Vpcs", [{}])[0].get("Tags", []):
+                if tag.get("Key") == VPC_PROFILE_TAG:
+                    return tag.get("Value")
+        except ClientError as e:
+            logger.warning(f"Failed to read VPC tag: {e}")
+        return None
+
+    def _list_vpc_endpoints(self, vpc_id: str) -> List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        try:
+            paginator = self.ec2.get_paginator("describe_vpc_endpoints")
+            for page in paginator.paginate(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]):
+                for ep in page.get("VpcEndpoints", []):
+                    out.append({
+                        "service": ep.get("ServiceName", ""),
+                        "endpointId": ep.get("VpcEndpointId", ""),
+                        "type": ep.get("VpcEndpointType", ""),
+                        "state": ep.get("State", "unknown"),
+                    })
+        except ClientError as e:
+            logger.warning(f"describe_vpc_endpoints failed: {e}")
+        return out
+
+    def _count_nat_instances(self, vpc_id: str) -> int:
+        try:
+            resp = self.ec2.describe_instances(Filters=[
+                {"Name": "vpc-id", "Values": [vpc_id]},
+                {"Name": f"tag:{NAT_INSTANCE_TAG}", "Values": ["true"]},
+                {"Name": "instance-state-name", "Values": ["running", "pending"]},
+            ])
+            return sum(len(r.get("Instances", [])) for r in resp.get("Reservations", []))
+        except ClientError as e:
+            logger.warning(f"describe_instances (NAT) failed: {e}")
+            return 0
+
+    def _count_nat_default_routes(self, vpc_id: str, cluster_subnets: List[str]) -> int:
+        """Count private route tables whose 0.0.0.0/0 route targets a NAT ENI."""
+        try:
+            rts = self.ec2.describe_route_tables(
+                Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+            ).get("RouteTables", [])
+        except ClientError as e:
+            logger.warning(f"describe_route_tables failed: {e}")
+            return 0
+
+        count = 0
+        for rt in rts:
+            for route in rt.get("Routes", []):
+                if route.get("DestinationCidrBlock") != "0.0.0.0/0":
+                    continue
+                eni_id = route.get("NetworkInterfaceId")
+                if not eni_id:
+                    continue
+                try:
+                    enis = self.ec2.describe_network_interfaces(NetworkInterfaceIds=[eni_id])
+                    for eni in enis.get("NetworkInterfaces", []):
+                        for tag in eni.get("TagSet", []):
+                            if tag.get("Key") == NAT_INSTANCE_TAG and tag.get("Value") == "true":
+                                count += 1
+                                break
+                except ClientError:
+                    pass
+        return count
+
+    def _all_subnets_public(self, subnet_ids: List[str]) -> bool:
+        if not subnet_ids:
+            return False
+        try:
+            resp = self.ec2.describe_subnets(SubnetIds=subnet_ids)
+            for sn in resp.get("Subnets", []):
+                if not sn.get("MapPublicIpOnLaunch", False):
+                    return False
+            return True
+        except ClientError as e:
+            logger.warning(f"describe_subnets failed: {e}")
+            return False

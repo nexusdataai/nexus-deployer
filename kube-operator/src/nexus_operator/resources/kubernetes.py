@@ -134,6 +134,7 @@ class KubernetesResourceCreator:
         use_clusterip: bool = False,
         bssmagic_service: Optional[str] = None,
         redis_service: Optional[str] = None,
+        aws_access_mode: str = "higher-cost",
     ) -> str:
         """
         Deploy backend Deployment and Service.
@@ -189,6 +190,16 @@ class KubernetesResourceCreator:
             client.V1EnvVar(name="SFDC_SIMULATOR_ENABLED", value="true"),
             client.V1EnvVar(name="SFDC_SIMULATOR_BUCKET", value=naming.sfdc_simulator_bucket()),
         ]
+
+        # AWS access mode — drives whether boto3 picks an explicit interface
+        # endpoint URL (higher-cost) or relies on default public hostnames
+        # routed via NAT instance / public IP (moderate, lowest-cost,
+        # public-nodes).
+        env_vars.append(client.V1EnvVar(name="AWS_ACCESS_MODE", value=aws_access_mode))
+        if aws_access_mode in ("moderate", "lowest-cost", "public-nodes"):
+            env_vars.append(client.V1EnvVar(
+                name="AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS", value="true",
+            ))
         
         # FDW + BSSMagic integration env vars (enables Ontos page and CRM service)
         if bssmagic_service:
@@ -355,6 +366,7 @@ class KubernetesResourceCreator:
         storage_class: Optional[str] = None,
         region: str = "us-east-1",
         extra_env: Optional[list] = None,
+        aws_access_mode: str = "higher-cost",
     ) -> str:
         """
         Deploy BSS Magic runtime as a single StatefulSet with embedded PostgreSQL.
@@ -393,7 +405,14 @@ class KubernetesResourceCreator:
             client.V1EnvVar(name="POSTGRES_DB", value="bssmagic"),
             # PGDATA must be a subdirectory of the PVC mount to avoid ext4 lost+found conflict
             client.V1EnvVar(name="PGDATA", value="/var/lib/postgresql/data/pgdata"),
+            # AWS access mode — propagated so any embedded boto3 / awscli
+            # init-container respects the cluster's network profile.
+            client.V1EnvVar(name="AWS_ACCESS_MODE", value=aws_access_mode),
         ]
+        if aws_access_mode in ("moderate", "lowest-cost", "public-nodes"):
+            bssmagic_env.append(client.V1EnvVar(
+                name="AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS", value="true",
+            ))
 
         # S3 dump config (used by restore-if-needed.sh to upload snapshots)
         if dump_s3_bucket:

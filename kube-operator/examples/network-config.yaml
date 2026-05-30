@@ -20,3 +20,12 @@ metadata:
 spec:
   clusterName: __CLUSTER_NAME__
   region: __REGION__
+  # Must match deploy/eks/create-hardened-eks-cluster.sh --network-profile.
+  # The operator validates the cluster topology against this value and projects
+  # AWS_ACCESS_MODE / AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS into backend pods.
+  #
+  #   higher-cost   ~$120-250/mo - full PrivateLink (default)
+  #   moderate      ~$12-18/mo   - S3/DDB gateway + NAT instance per AZ
+  #   lowest-cost   ~$3-5/mo     - S3/DDB gateway + single NAT instance
+  #   public-nodes  ~$0/mo       - nodes carry public IPs (dev only)
+  awsAccessMode: higher-cost

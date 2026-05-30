@@ -8,11 +8,17 @@ from .secrets import SecretsProvisioner
 from .iam import IAMProvisioner
 from .kubernetes import KubernetesResourceCreator
 from .cognito import CognitoProvisioner
-from .vpc_endpoints import VPCEndpointProvisioner
+from .vpc_endpoints import (
+    VPCEndpointProvisioner,
+    NetworkTopologyValidator,
+    is_legacy_provisioning_enabled,
+)
 from .mimir import MimirProvisioner
 
 __all__ = [
     "VPCEndpointProvisioner",
+    "NetworkTopologyValidator",
+    "is_legacy_provisioning_enabled",
     "DynamoDBProvisioner",
     "S3Provisioner",
     "GlueProvisioner",

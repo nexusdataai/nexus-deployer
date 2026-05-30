@@ -39,12 +39,44 @@ spec:
                   type: string
                   description: "AWS region"
                   default: us-east-1
+                awsAccessMode:
+                  type: string
+                  enum:
+                    - higher-cost
+                    - moderate
+                    - lowest-cost
+                    - public-nodes
+                  default: higher-cost
+                  description: |
+                    AWS service access topology declared by the cluster provisioning
+                    script (deploy/eks/create-hardened-eks-cluster.sh --network-profile).
+                    The operator validates the cluster matches this declaration and
+                    projects the matching env vars into backend pods. It does NOT
+                    create or modify VPC resources; topology lifecycle belongs to the
+                    provisioning script.
             status:
               type: object
               properties:
                 phase:
                   type: string
                   description: "Pending, Provisioning, Ready, Error"
+                activeMode:
+                  type: string
+                  description: "The awsAccessMode last validated by the operator"
+                validation:
+                  type: object
+                  description: "Result of validating the cluster topology against awsAccessMode"
+                  properties:
+                    ok:
+                      type: boolean
+                    expected:
+                      type: string
+                    actual:
+                      type: string
+                    missing:
+                      type: array
+                      items:
+                        type: string
                 endpoints:
                   type: array
                   items:
@@ -72,6 +104,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
+        - name: Mode
+          type: string
+          jsonPath: .status.activeMode
         - name: Endpoints
           type: integer
           jsonPath: .status.totalEndpoints

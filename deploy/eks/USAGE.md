@@ -1,5 +1,59 @@
 # Quick Usage Guide - Hardened EKS Cluster Creation
 
+## Network profile (cost tier)
+
+Pick a `--network-profile` based on your environment and budget.
+
+```bash
+# Production with full PrivateLink (default)
+./create-hardened-eks-cluster.sh --name nexus-prod --network-profile higher-cost
+
+# Production HA hybrid (S3/DDB gateway + NAT per AZ, ~$12-18/mo)
+./create-hardened-eks-cluster.sh --name nexus-stg --network-profile moderate
+
+# Lowest-cost hybrid (single NAT instance, ~$3-5/mo; not AZ-tolerant)
+./create-hardened-eks-cluster.sh --name nexus-dev --network-profile lowest-cost
+
+# Dev sandbox, no NAT, nodes carry public IPs (~$0/mo)
+./create-hardened-eks-cluster.sh --name nexus-dev --network-profile public-nodes
+```
+
+## Switching profiles on a running cluster
+
+`create-hardened-eks-cluster.sh` is for fresh deployments. For in-place
+migration of an existing live cluster, use the companion helper:
+
+```bash
+# Phase A — provision NAT + tag VPC + print next steps (idempotent)
+./migrate-network-profile.sh --name nexus-dev --target-profile lowest-cost
+
+# Phase B — smoke-test the NAT independently (commands printed by the helper)
+kubectl run nat-probe --rm -it --image=amazonlinux:2023 --restart=Never -- bash -lc \
+    "curl -sS https://sts.us-east-1.amazonaws.com -o /dev/null -w 'STS: %{http_code}\n'"
+
+# Phase C — flip the operator-watched CR
+kubectl patch nexusnetworkconfig vpc-endpoints --type=merge \
+    -p '{"spec":{"awsAccessMode":"lowest-cost"}}'
+kubectl annotate nexuscapability nexus-ai-dev reconcile=$(date +%s) --overwrite
+
+# Phase D — verify
+kubectl port-forward svc/nexus-ai-dev-backend 8000:8000 &
+curl -s http://localhost:8000/api/v1/health/aws | jq .
+```
+
+The helper handles infra (AWS) changes. Pod restart + CR patch are kept manual
+so they're explicitly gated behind human verification of the NAT smoke test.
+
+Rollback (any phase):
+
+```bash
+./migrate-network-profile.sh --name nexus-dev --target-profile higher-cost
+# Tears down the NAT, restamps the VPC tag, then you flip the CR back manually.
+```
+
+`--dry-run` shows the planned actions without changing AWS. See `README.md` for
+the cost table and per-mode topology.
+
 ## 🚀 Non-Interactive Mode (For Automation)
 
 **Perfect for CI/CD pipelines - NO keyboard input required!**

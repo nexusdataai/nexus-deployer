@@ -282,6 +282,59 @@ else
 fi
 
 #=============================================================================
+# Step 6b: Delete NAT instance ASGs / launch templates (hybrid profiles)
+#=============================================================================
+#
+# Created by create-hardened-eks-cluster.sh for moderate/lowest-cost network
+# profiles. Idempotent — silently skip resources that don't exist (cluster
+# was created on a profile that didn't use NAT instances).
+
+if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+    echo ""
+    echo "=== Step 6b: Deleting NAT instance ASGs / launch templates ==="
+
+    for suffix in az1 az2 single; do
+        asg_name="${CLUSTER_NAME}-nat-${suffix}"
+        if aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$asg_name" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text 2>/dev/null | grep -q "$asg_name"; then
+            aws autoscaling update-auto-scaling-group \
+                --auto-scaling-group-name "$asg_name" \
+                --min-size 0 --max-size 0 --desired-capacity 0 \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+            aws autoscaling delete-auto-scaling-group \
+                --auto-scaling-group-name "$asg_name" --force-delete \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+            echo -e "   ${GREEN}✓ ASG $asg_name deleted${NC}"
+        fi
+
+        lt_name="${CLUSTER_NAME}-nat-lt-${suffix}"
+        if aws ec2 describe-launch-templates --launch-template-names "$lt_name" \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1; then
+            aws ec2 delete-launch-template --launch-template-name "$lt_name" \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+            echo -e "   ${GREEN}✓ Launch template $lt_name deleted${NC}"
+        fi
+    done
+
+    # Also terminate any straggler NAT instances tagged by us, in case the
+    # ASG was already deleted but instances lingered.
+    NAT_INSTANCES=$(aws ec2 describe-instances \
+        --filters "Name=tag:nexus:nat-instance,Values=true" "Name=vpc-id,Values=$VPC_ID" \
+                  "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'Reservations[].Instances[].InstanceId' --output text 2>/dev/null)
+    if [ -n "$NAT_INSTANCES" ]; then
+        aws ec2 terminate-instances --instance-ids $NAT_INSTANCES \
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+        echo -e "   ${GREEN}✓ Terminated NAT instances: $NAT_INSTANCES${NC}"
+    fi
+
+    # NAT security group cleanup happens in Step 8's generic SG sweep.
+fi
+
+#=============================================================================
 # Step 7: Delete VPC endpoints
 #=============================================================================
 

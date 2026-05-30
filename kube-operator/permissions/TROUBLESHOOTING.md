@@ -6,6 +6,67 @@ operator and capability deployments.
 
 ---
 
+## 0. AWS Access Mode (network profile)
+
+The cluster VPC topology is owned by the provisioning script
+[`deploy/eks/create-hardened-eks-cluster.sh`](../../deploy/eks/create-hardened-eks-cluster.sh).
+The operator only validates that the topology matches the declared
+`NexusNetworkConfig.spec.awsAccessMode` and projects the matching env vars
+(`AWS_ACCESS_MODE`, `AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS`) into backend pods.
+
+### Quick checks
+
+```bash
+# Inspect the CR (Mode column comes from status.activeMode)
+kubectl get nexusnetworkconfigs.nexus.ai vpc-endpoints
+
+# Read full status (phase, validation.missing, endpoints)
+kubectl describe nexusnetworkconfigs.nexus.ai vpc-endpoints
+
+# Verify the backend pod is running the expected mode
+kubectl port-forward svc/nexus-ai-dev-backend 8000:8000 &
+curl -s http://localhost:8000/api/v1/health/aws | jq .
+# {
+#   "aws_access_mode": "lowest-cost",
+#   "explicit_endpoints_disabled": true,
+#   "region": "us-east-1",
+#   "sts_identity": { "account": "111122223333", "arn": "...", "userId": "..." }
+# }
+```
+
+### Common failures
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `phase=Error`, `validation.missing=["interface:sts",...]` | `awsAccessMode=higher-cost` but interface endpoints were never provisioned | Re-run `create-hardened-eks-cluster.sh --network-profile higher-cost --vpc-id <existing>` |
+| `phase=Error`, `validation.missing=["nat-instance:expected=2,found=1"]` | `awsAccessMode=moderate` but only single NAT was provisioned (AZ2 ASG didn't come up) | `aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names <cluster>-nat-az2` and check `Instances[].HealthStatus`; fall back to `lowest-cost` if AMI is unavailable in that AZ |
+| Backend pod still uses old endpoints after flipping mode | Operator hasn't re-reconciled the capability yet | `kubectl annotate nexuscapability nexus-ai-dev reconcile=$(date +%s) --overwrite` |
+| `validation.actual != validation.expected` | VPC tag `nexus:network-profile` is stale (cluster created on a different profile) | Re-run the provisioning script with the matching `--network-profile`; or update the tag manually: `aws ec2 create-tags --resources <vpc-id> --tags Key=nexus:network-profile,Value=<mode>` |
+| `OPERATOR_PROVISION_LEGACY=true` on a script-provisioned cluster | Operator may try to re-create endpoints that the script already owns | Set the env var to `false` in `deployment.yaml` and roll the operator |
+
+### Switching modes — step by step
+
+```bash
+# 1. Provisioning script: rewires topology in place (idempotent)
+./deploy/eks/create-hardened-eks-cluster.sh \
+    --name nexus-dev --network-profile lowest-cost --vpc-id $(
+      aws eks describe-cluster --name nexus-dev --query 'cluster.resourcesVpcConfig.vpcId' --output text
+    )
+
+# 2. Operator: flip the declared mode
+kubectl patch nexusnetworkconfig vpc-endpoints --type=merge \
+    -p '{"spec":{"awsAccessMode":"lowest-cost"}}'
+
+# 3. Wait for revalidation (operator timer fires every 5 min, or annotate to force)
+kubectl annotate nexuscapability nexus-ai-dev reconcile=$(date +%s) --overwrite
+
+# 4. Confirm
+kubectl get nexusnetworkconfig vpc-endpoints
+curl -s http://localhost:8000/api/v1/health/aws | jq .aws_access_mode
+```
+
+---
+
 ## 1. Quick Reference — Available Check Commands
 
 All commands are run from the `kube-operator/` directory.

@@ -159,93 +159,170 @@ def _update_step(steps: List[Dict], step_name: str, status: str,
 
 
 # ══════════════════════════════════════════════════════════════════════
-# NexusNetworkConfig handlers -- VPC Endpoint lifecycle
+# NexusNetworkConfig handlers -- topology validation / projection
 # ══════════════════════════════════════════════════════════════════════
+#
+# The cluster provisioning script in nexus-deployer/deploy/eks/ owns the VPC,
+# subnet, NAT-instance, and VPC-endpoint lifecycle. The operator no longer
+# provisions; it only validates that the cluster topology matches
+# ``spec.awsAccessMode`` and writes the result to status. Legacy provisioning
+# is still available behind OPERATOR_PROVISION_LEGACY=true for clusters that
+# pre-date the script.
 
-@kopf.on.create("nexus.ai", "v1", "nexusnetworkconfigs")
-async def create_network_config(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
-    """Provision VPC Gateway and Interface endpoints for the cluster."""
-    from .resources import VPCEndpointProvisioner
+VALID_AWS_ACCESS_MODES = ("higher-cost", "moderate", "lowest-cost", "public-nodes")
+
+
+def _resolve_aws_access_mode(crd_api: Any = None) -> str:
+    """Return the cluster-wide awsAccessMode from the singleton NexusNetworkConfig.
+
+    Falls back to ``AWS_ACCESS_MODE_DEFAULT`` env (or ``higher-cost``) when the
+    CR is missing — keeps brand-new clusters working before the operator has
+    seen NexusNetworkConfig.
+    """
+    default = os.getenv("AWS_ACCESS_MODE_DEFAULT", "higher-cost")
+    if default not in VALID_AWS_ACCESS_MODES:
+        default = "higher-cost"
+    try:
+        if crd_api is None:
+            from kubernetes import client as k8s_client, config as k8s_config
+            try:
+                k8s_config.load_incluster_config()
+            except Exception:
+                k8s_config.load_kube_config()
+            crd_api = k8s_client.CustomObjectsApi()
+        cr = crd_api.get_cluster_custom_object(
+            "nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints",
+        )
+        mode = cr.get("spec", {}).get("awsAccessMode", default)
+        if mode not in VALID_AWS_ACCESS_MODES:
+            return default
+        return mode
+    except ApiException:
+        return default
+    except Exception as e:
+        logger.warning(f"_resolve_aws_access_mode fallback to {default}: {e}")
+        return default
+
+
+async def _reconcile_network_config(spec: dict, name: str, patch: kopf.Patch, logger_: logging.Logger) -> None:
+    """Validate the cluster topology against spec.awsAccessMode and write status.
+
+    Shared by ``@kopf.on.create``, ``@kopf.on.update``, and ``@kopf.on.timer``
+    so all three paths produce identical status writes.
+    """
+    from .resources import (
+        VPCEndpointProvisioner,
+        NetworkTopologyValidator,
+        is_legacy_provisioning_enabled,
+    )
 
     region = spec.get("region", "us-east-1")
     cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
+    mode = spec.get("awsAccessMode") or os.getenv("AWS_ACCESS_MODE_DEFAULT", "higher-cost")
+    if mode not in VALID_AWS_ACCESS_MODES:
+        mode = "higher-cost"
 
-    logger.info(f"NexusNetworkConfig '{name}': provisioning VPC endpoints for cluster {cluster_name}")
-    patch.status["phase"] = "Provisioning"
-    patch.status["message"] = "Creating VPC endpoints..."
-
-    try:
-        vpc_ep = VPCEndpointProvisioner(region, cluster_name=cluster_name)
-        results = await vpc_ep.provision_all()
-
-        endpoints = []
-        for r in results:
-            endpoints.append({
-                "service": r["name"],
-                "endpointId": r.get("endpoint_id", ""),
-                "type": r["type"],
-                "state": r["status"],
-            })
-
-        healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created"))
-        patch.status["endpoints"] = endpoints
-        patch.status["totalEndpoints"] = len(endpoints)
-        patch.status["healthyEndpoints"] = healthy
-        patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
-
-        if healthy == len(endpoints):
-            patch.status["phase"] = "Ready"
-            patch.status["message"] = f"All {healthy} endpoints healthy"
-            logger.info(f"NexusNetworkConfig '{name}': Ready ({healthy}/{len(endpoints)} endpoints)")
-        else:
-            failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
+    # Legacy provisioning path — only used for the one pre-existing cluster
+    # whose VPC topology is still operator-owned. Gated by env var.
+    if is_legacy_provisioning_enabled():
+        logger_.warning(f"NexusNetworkConfig '{name}': legacy provisioning enabled (OPERATOR_PROVISION_LEGACY=true)")
+        try:
+            vpc_ep = VPCEndpointProvisioner(region, cluster_name=cluster_name)
+            results = await vpc_ep.provision_all()
+            endpoints = [
+                {
+                    "service": r["name"],
+                    "endpointId": r.get("endpoint_id", ""),
+                    "type": r["type"],
+                    "state": r["status"],
+                }
+                for r in results
+            ]
+            healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created"))
+            patch.status["endpoints"] = endpoints
+            patch.status["totalEndpoints"] = len(endpoints)
+            patch.status["healthyEndpoints"] = healthy
+            patch.status["activeMode"] = mode
+            patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
+            if healthy == len(endpoints):
+                patch.status["phase"] = "Ready"
+                patch.status["message"] = f"Legacy provisioning OK ({healthy}/{len(endpoints)} endpoints)"
+            else:
+                patch.status["phase"] = "Error"
+                patch.status["message"] = f"{len(endpoints) - healthy} endpoint(s) unhealthy"
+        except Exception as e:
             patch.status["phase"] = "Error"
-            patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy: {', '.join(failed[:3])}"
-            logger.warning(f"NexusNetworkConfig '{name}': {len(failed)} unhealthy endpoints")
+            patch.status["message"] = f"Legacy provisioning failed: {str(e)[:180]}"
+            logger_.error(f"NexusNetworkConfig '{name}' legacy provisioning failed: {e}")
+        return
 
+    # Default path: validate-only.
+    logger_.info(f"NexusNetworkConfig '{name}': validating topology for awsAccessMode={mode}")
+    try:
+        validator = NetworkTopologyValidator(region, cluster_name=cluster_name, mode=mode)
+        result = await validator.validate()
     except Exception as e:
         patch.status["phase"] = "Error"
-        patch.status["message"] = str(e)[:200]
-        logger.error(f"NexusNetworkConfig '{name}': provisioning failed: {e}")
+        patch.status["activeMode"] = mode
+        patch.status["validation"] = {
+            "ok": False, "expected": mode, "actual": "unknown",
+            "missing": [f"validator-error: {str(e)[:120]}"],
+        }
+        patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
+        patch.status["message"] = f"Topology validation failed: {str(e)[:160]}"
+        logger_.error(f"NexusNetworkConfig '{name}' validation failed: {e}")
+        return
+
+    endpoints = result["endpoints"]
+    healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created", "available", "Available"))
+    validation = result["validation"]
+
+    patch.status["activeMode"] = mode
+    patch.status["validation"] = validation
+    patch.status["endpoints"] = endpoints
+    patch.status["totalEndpoints"] = len(endpoints)
+    patch.status["healthyEndpoints"] = healthy
+    patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
+
+    actual_tag = result.get("actualProfileTag")
+    if actual_tag and actual_tag != mode:
+        patch.status["phase"] = "Error"
+        patch.status["message"] = (
+            f"VPC tag nexus:network-profile={actual_tag} but spec.awsAccessMode={mode}. "
+            "Re-run deploy/eks/create-hardened-eks-cluster.sh with matching --network-profile."
+        )
+        logger_.warning(f"NexusNetworkConfig '{name}': profile drift {actual_tag} vs {mode}")
+    elif validation["ok"]:
+        patch.status["phase"] = "Ready"
+        patch.status["message"] = f"Topology matches awsAccessMode={mode}"
+        logger_.info(f"NexusNetworkConfig '{name}': Ready (mode={mode})")
+    else:
+        patch.status["phase"] = "Error"
+        missing_preview = ", ".join(validation.get("missing", [])[:3])
+        patch.status["message"] = f"Topology missing for mode={mode}: {missing_preview}"
+        logger_.warning(f"NexusNetworkConfig '{name}': topology incomplete: {validation.get('missing')}")
+
+
+@kopf.on.create("nexus.ai", "v1", "nexusnetworkconfigs")
+async def create_network_config(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
+    """Validate topology and write status on CR creation."""
+    patch.status["phase"] = "Validating"
+    patch.status["message"] = "Validating cluster topology..."
+    await _reconcile_network_config(spec, name, patch, logger)
+
+
+@kopf.on.update("nexus.ai", "v1", "nexusnetworkconfigs")
+async def update_network_config(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
+    """Re-validate on spec changes (e.g., flipping awsAccessMode)."""
+    patch.status["phase"] = "Validating"
+    patch.status["message"] = "Re-validating cluster topology..."
+    await _reconcile_network_config(spec, name, patch, logger)
 
 
 @kopf.on.timer("nexus.ai", "v1", "nexusnetworkconfigs", interval=300, initial_delay=60)
 async def check_network_health(spec: dict, name: str, logger: logging.Logger, patch: kopf.Patch, **kwargs):
-    """Periodic health check -- re-verify all VPC endpoints every 5 minutes."""
-    from .resources import VPCEndpointProvisioner
-
-    region = spec.get("region", "us-east-1")
-    cluster_name = spec.get("clusterName", os.getenv("CLUSTER_NAME", ""))
-
-    try:
-        vpc_ep = VPCEndpointProvisioner(region, cluster_name=cluster_name)
-        results = await vpc_ep.provision_all()
-
-        endpoints = []
-        for r in results:
-            endpoints.append({
-                "service": r["name"],
-                "endpointId": r.get("endpoint_id", ""),
-                "type": r["type"],
-                "state": r["status"],
-            })
-
-        healthy = sum(1 for e in endpoints if e["state"] in ("exists", "created"))
-        patch.status["endpoints"] = endpoints
-        patch.status["totalEndpoints"] = len(endpoints)
-        patch.status["healthyEndpoints"] = healthy
-        patch.status["lastChecked"] = datetime.now(timezone.utc).isoformat()
-        patch.status["phase"] = "Ready" if healthy == len(endpoints) else "Error"
-
-        if healthy < len(endpoints):
-            failed = [e["service"] for e in endpoints if e["state"] not in ("exists", "created")]
-            patch.status["message"] = f"{len(failed)} endpoint(s) unhealthy"
-            logger.warning(f"NexusNetworkConfig '{name}' health check: {len(failed)} unhealthy")
-        else:
-            patch.status["message"] = f"All {healthy} endpoints healthy"
-
-    except Exception as e:
-        logger.warning(f"NexusNetworkConfig '{name}' health check failed: {e}")
+    """Periodic re-validation -- every 5 minutes."""
+    await _reconcile_network_config(spec, name, patch, logger)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -280,8 +357,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     version = spec.get("version", "")
     environment = spec.get("environment", "")
     region = spec.get("region", "us-east-1")
-    
-    logger.info(f"Capability: {capability_name} v{version} ({environment}) in {region}")
+
+    aws_access_mode = _resolve_aws_access_mode()
+    logger.info(f"Capability: {capability_name} v{version} ({environment}) in {region} [awsAccessMode={aws_access_mode}]")
     
     # Resolve account ID for globally unique resource names (S3 buckets)
     sts_client = vpc_boto3_client("sts", region_name=region)
@@ -654,6 +732,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 use_clusterip=use_ingress,
                 bssmagic_service=bssmagic_svc_for_backend,
                 redis_service=redis_service_name,
+                aws_access_mode=aws_access_mode,
             )
             
             _update_step(steps, "Backend", "done", resources=[
@@ -689,6 +768,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 storage_class=bssmagic_spec.get("storageClass"),
                 region=region,
                 extra_env=bssmagic_spec.get("env"),
+                aws_access_mode=aws_access_mode,
             )
 
             _update_step(steps, "BssMagic", "done", resources=[
@@ -828,7 +908,9 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     capability_name = spec.get("capabilityName", "")
     environment = spec.get("environment", "")
     region = spec.get("region", "us-east-1")
-    
+
+    aws_access_mode = _resolve_aws_access_mode()
+
     sts_client = vpc_boto3_client("sts", region_name=region)
     account_id = sts_client.get_caller_identity()["Account"]
     naming = ResourceNaming(capability_name, environment, account_id=account_id)
@@ -885,6 +967,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     use_clusterip=use_ingress,
                     bssmagic_service=bssmagic_svc,
                     redis_service=redis_svc,
+                    aws_access_mode=aws_access_mode,
                 )
 
         # If bssmagic config changed, update bssmagic deployment
@@ -904,6 +987,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     storage_class=bssmagic_spec.get("storageClass"),
                     region=region,
                     extra_env=bssmagic_spec.get("env"),
+                    aws_access_mode=aws_access_mode,
                 )
 
         # If frontend or ingress config changed, update frontend deployment

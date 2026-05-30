@@ -2,6 +2,73 @@
 
 This directory contains scripts for creating and managing hardened EKS clusters.
 
+## Network profiles & cost tiers
+
+`create-hardened-eks-cluster.sh` accepts `--network-profile NAME` to pick the
+VPC topology used for AWS-service access from worker nodes. The chosen profile
+is stamped on the VPC as the tag `nexus:network-profile`, which the nexus
+operator reads at reconcile time to validate the topology and project the
+matching env vars (`AWS_ACCESS_MODE`, `AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS`)
+into the backend pod.
+
+| Profile        | S3 / DynamoDB        | Other AWS services  | HA  | Approx. monthly cost (us-east-1) |
+|----------------|----------------------|---------------------|-----|----------------------------------|
+| `higher-cost`  | Gateway Endpoint     | Interface Endpoints | Yes | ~$120 – $250 (default)           |
+| `moderate`     | Gateway Endpoint     | NAT instance per AZ | Yes | ~$12 – $18                       |
+| `lowest-cost`  | Gateway Endpoint     | Single NAT instance | No  | ~$3 – $5                         |
+| `public-nodes` | Public AWS over IGW  | Public AWS over IGW | n/a | ~$0 (dev only)                   |
+
+NAT instances use the open-source [fck-nat AMI](https://fck-nat.dev/) on a
+`t4g.nano` (override with `--nat-instance-type`). Each NAT runs inside an Auto
+Scaling Group with `min=max=desired=1` so it self-heals on instance failure.
+
+Example invocations:
+
+```bash
+# Default (full PrivateLink) — production-grade isolation
+./create-hardened-eks-cluster.sh --name nexus-dev
+
+# Cheapest viable hybrid — dev / pre-prod
+./create-hardened-eks-cluster.sh --name nexus-dev --network-profile lowest-cost
+
+# HA hybrid — production at low cost
+./create-hardened-eks-cluster.sh --name nexus-dev --network-profile moderate
+
+# Dev sandbox — zero NAT cost, nodes carry public IPs
+./create-hardened-eks-cluster.sh --name nexus-dev --network-profile public-nodes
+```
+
+### Switching profiles on a live cluster
+
+`create-hardened-eks-cluster.sh` is for fresh deployments — running it against
+an existing cluster prompts to delete and recreate. For in-place migration
+**without downtime** use the companion helper:
+
+```bash
+./migrate-network-profile.sh --name nexus-dev --target-profile lowest-cost
+```
+
+The helper:
+
+1. Detects the current profile from the VPC tag `nexus:network-profile`.
+2. Idempotently provisions / tears down NAT instance Auto Scaling Groups
+   (uses the same fck-nat `t4g.nano` setup as the create script).
+3. Adds or removes the `0.0.0.0/0` default route on private RTs.
+4. Re-stamps the VPC tag.
+5. Prints the `kubectl patch` + reconcile-annotate commands for the
+   operator side (Phases C–F of the migration — runs on the cluster, not in
+   AWS, so they're left to the user to copy-paste after verification).
+
+It does **not** delete VPC interface endpoints (do that manually after
+verifying the new mode end-to-end) and does **not** patch the operator CR
+(safer to gate on human confirmation between the infra change and the pod
+restart). See [USAGE.md](USAGE.md#switching-profiles-on-a-running-cluster)
+for the full step-by-step.
+
+The operator validates the new topology, writes `status.activeMode`, and
+restarts backend pods with the matching env vars.
+
+
 ## 📁 Files
 
 ### `create-hardened-eks-cluster.sh`

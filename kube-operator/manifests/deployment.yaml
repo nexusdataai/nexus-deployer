@@ -66,6 +66,15 @@ spec:
               value: ""  # REQUIRED: Set to your EKS cluster name for IRSA
             - name: LOG_LEVEL
               value: "INFO"
+            # Fallback awsAccessMode used when NexusNetworkConfig is not yet
+            # applied to the cluster. Must be one of:
+            #   higher-cost (default) | moderate | lowest-cost | public-nodes
+            - name: AWS_ACCESS_MODE_DEFAULT
+              value: "higher-cost"
+            # Set to "true" only on legacy clusters where the operator owns
+            # VPC endpoint provisioning (pre-deploy/eks --network-profile).
+            - name: OPERATOR_PROVISION_LEGACY
+              value: "false"
           resources:
             requests:
               cpu: 100m
