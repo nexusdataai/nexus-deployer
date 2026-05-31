@@ -241,11 +241,84 @@ AWS_PROFILE="your-profile"
 
 ---
 
+## DR / Backup-Restore prerequisite — install Velero
+
+Velero captures Kubernetes state (Deployments, Services, ConfigMaps,
+NexusCapability CR, the admin Cognito Secret, etc.) and PersistentVolume
+contents (BSSMagic Postgres data, Redis AOF) into an S3 bucket. The
+`backup_restore.py` DR tool calls Velero to produce the K8s portion of
+the cross-account DR tarball — so Velero must be installed on **both** the
+source cluster (where you back up from) and the target cluster (where you
+restore into).
+
+This is a one-time setup per cluster. It does not affect application
+traffic or cost meaningfully (Velero pod is ~50m CPU / 128Mi memory; the
+S3 bucket holds compressed snapshots, typically <1 GB for nexus-dev).
+
+```bash
+# 1. Create a velero bucket in the SAME account as the cluster
+ACCOUNT=$(aws sts get-caller-identity --profile ptr-tech --query Account --output text)
+REGION=us-east-1
+aws s3 mb "s3://nexus-velero-backups-${ACCOUNT}" --region $REGION --profile ptr-tech
+
+# 2. Install the velero CLI on your workstation (skip if already installed)
+#    Linux/amd64:
+curl -sL https://github.com/vmware-tanzu/velero/releases/download/v1.14.1/velero-v1.14.1-linux-amd64.tar.gz \
+    | tar xz -C /tmp
+sudo mv /tmp/velero-v1.14.1-linux-amd64/velero /usr/local/bin/
+
+# 3. Install Velero into the cluster (kopia for filesystem snapshots; works
+#    across accounts because Kopia re-encrypts on upload — no KMS sharing)
+velero install \
+    --provider aws \
+    --plugins velero/velero-plugin-for-aws:v1.10.0 \
+    --bucket nexus-velero-backups-${ACCOUNT} \
+    --backup-location-config region=${REGION} \
+    --snapshot-location-config region=${REGION} \
+    --use-node-agent \
+    --uploader-type kopia \
+    --default-volumes-to-fs-backup
+```
+
+Verify:
+
+```bash
+kubectl -n velero get pods                    # velero + node-agent-* pods Ready
+velero version --client-only && velero version
+```
+
+**On both source and target clusters.** Bucket names differ per account
+(suffix uses the local account ID).
+
+The DR tool then does:
+
+```bash
+# Backup (source side)
+velero backup create nexus-ai-dev-$(date +%Y%m%d-%H%M%S) \
+    --include-namespaces nexus-ai-dev \
+    --include-cluster-resources=false \
+    --wait
+
+# Restore (target side, with namespace rename)
+velero restore create --from-backup <name> \
+    --namespace-mappings nexus-ai-dev:nexus-ai-test \
+    --restore-volumes
+```
+
+Both calls are wrapped by `nexus-backend/scripts/backup-restore/kubernetes_velero.py`
+so you normally don't run them directly. See
+[`nexus-backend/scripts/backup-restore/README.md`](../../../nexus-backend/scripts/backup-restore/README.md)
+for the full operator runbook.
+
+---
+
 ## 📁 Files
 
 | File | Purpose |
 |------|---------|
 | `create-hardened-eks-cluster.sh` | Main creation script |
+| `migrate-network-profile.sh` | In-place network profile change |
+| `delete-eks-cluster.sh` | Cluster teardown |
 | `cis-level2-full-hardening.sh` | CIS hardening to apply |
 | `README.md` | Detailed documentation |
 | `USAGE.md` | This quick reference |
