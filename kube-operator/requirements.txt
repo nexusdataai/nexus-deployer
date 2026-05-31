@@ -1,22 +1,48 @@
-# Totogi Operator Dependencies
-# Kubernetes Operator Framework
-kopf>=1.36.0
+# Nexus Operator Dependencies
+#
+# Pinned to exact versions matching the May 22 2026 baseline image to avoid
+# auth-breaking patch-level surprises in the kubernetes-client library
+# (e.g. 36.0.0 → 36.0.1 broke EKS in-cluster auth for kopf). When upgrading
+# any of these, do it ONE library at a time with a full smoke test in
+# nexus-dev — see kube-operator/permissions/TROUBLESHOOTING.md.
 
-# Kubernetes Python Client
-kubernetes>=28.1.0
+# Kubernetes Operator Framework
+kopf==1.44.5
+
+# Kubernetes Python Client (pin to 36.0.0; 36.0.1 has known auth regression)
+kubernetes==36.0.0
 
 # AWS SDK
-boto3>=1.34.0
-botocore>=1.34.0
+boto3==1.43.13
+botocore==1.43.13
 
 # Data validation
-pydantic>=2.0.0
+pydantic==2.13.4
 
 # YAML processing
-pyyaml>=6.0
+PyYAML==6.0.3
 
 # Async support
-aiohttp>=3.9.0
+aiohttp==3.13.5
+
+# Transitive deps explicitly pinned (so `pip install --no-cache` is reproducible)
+aiohappyeyeballs==2.6.2
+aiosignal==1.4.0
+attrs==26.1.0
+certifi==2026.5.20
+click==8.4.1
+frozenlist==1.8.0
+idna==3.16
+iso8601==2.1.0
+multidict==6.7.1
+propcache==0.5.2
+python-dateutil==2.9.0.post0
+python-json-logger==4.1.0
+requests==2.34.2
+s3transfer==0.17.0
+six==1.17.0
+urllib3==2.7.0
+yarl==1.24.2
 
 # Development dependencies (install with: pip install -r requirements-dev.txt)
 # pytest>=7.0.0

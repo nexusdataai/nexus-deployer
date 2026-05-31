@@ -11,6 +11,7 @@ from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from ..utils.aws_vpc_endpoints import vpc_boto3_client
+from ..utils.k8s_client import authed_api_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -18,11 +19,12 @@ logger = logging.getLogger(__name__)
 
 class KubernetesResourceCreator:
     """Creates Kubernetes resources for Nexus capability deployments."""
-    
+
     def __init__(self, namespace: str):
         self.namespace = namespace
-        self.core_api = client.CoreV1Api()
-        self.apps_api = client.AppsV1Api()
+        api_client = authed_api_client()
+        self.core_api = client.CoreV1Api(api_client=api_client)
+        self.apps_api = client.AppsV1Api(api_client=api_client)
 
     def _read_backend_api_key(self, naming: ResourceNaming) -> str:
         """Read API_KEY from the existing backend deployment's env vars."""

@@ -184,12 +184,8 @@ def _resolve_aws_access_mode(crd_api: Any = None) -> str:
         default = "higher-cost"
     try:
         if crd_api is None:
-            from kubernetes import client as k8s_client, config as k8s_config
-            try:
-                k8s_config.load_incluster_config()
-            except Exception:
-                k8s_config.load_kube_config()
-            crd_api = k8s_client.CustomObjectsApi()
+            from .utils.k8s_client import authed_custom_objects_api
+            crd_api = authed_custom_objects_api()
         cr = crd_api.get_cluster_custom_object(
             "nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints",
         )
@@ -387,12 +383,8 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         patch.status["steps"] = list(steps)
 
         try:
-            from kubernetes import client as k8s_client, config as k8s_config
-            try:
-                k8s_config.load_incluster_config()
-            except Exception:
-                k8s_config.load_kube_config()
-            crd_api = k8s_client.CustomObjectsApi()
+            from .utils.k8s_client import authed_custom_objects_api
+            crd_api = authed_custom_objects_api()
             nc = crd_api.get_cluster_custom_object("nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints")
             nc_status = nc.get("status", {})
             nc_phase = nc_status.get("phase", "Unknown")
