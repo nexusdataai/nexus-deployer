@@ -24,14 +24,20 @@ REGION="${REGION:-us-east-1}"
 MEMBER_ACCOUNTS="${MEMBER_ACCOUNTS:-}"
 MEMBER_EMAILS="${MEMBER_EMAILS:-}"
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
+SINGLE_INVITE=no
+TARGET_ACCOUNT_ID=""
+TARGET_EMAIL=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --profile)           AWS_PROFILE="$2"; shift 2 ;;
-        --region)            REGION="$2"; shift 2 ;;
-        --member-accounts)   MEMBER_ACCOUNTS="$2"; shift 2 ;;
-        --member-emails)     MEMBER_EMAILS="$2"; shift 2 ;;
-        --auto-approve)      AUTO_APPROVE=yes; shift ;;
+        --profile)            AWS_PROFILE="$2"; shift 2 ;;
+        --region)             REGION="$2"; shift 2 ;;
+        --member-accounts)    MEMBER_ACCOUNTS="$2"; shift 2 ;;
+        --member-emails)      MEMBER_EMAILS="$2"; shift 2 ;;
+        --auto-approve)       AUTO_APPROVE=yes; shift ;;
+        --single-invite)      SINGLE_INVITE=yes; shift ;;
+        --target-account-id)  TARGET_ACCOUNT_ID="$2"; shift 2 ;;
+        --target-email)       TARGET_EMAIL="$2"; shift 2 ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -43,6 +49,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --member-accounts IDs          Comma-separated existing account IDs to invite"
             echo "  --member-emails EMAILS         Comma-separated emails to create new accounts"
             echo "  --auto-approve                 Skip confirmation prompts"
+            echo ""
+            echo "Single-invite mode (skips org/OU/service-access setup):"
+            echo "  --single-invite                Only send one invite, emit HandshakeId on stdout"
+            echo "  --target-account-id ID         (single-invite) Account ID to invite"
+            echo "  --target-email EMAIL           (single-invite) Root email of the target account"
             echo ""
             exit 0
             ;;
@@ -204,6 +215,54 @@ invite_member_accounts() {
     done
 }
 
+invite_single_account() {
+    # Used by onboard-account.sh in --single-invite mode.
+    # Emits a final stdout line "HANDSHAKE_ID=<id>" that the orchestrator parses.
+    [[ -n "${TARGET_ACCOUNT_ID}" ]] || die "--target-account-id is required with --single-invite"
+    [[ -n "${TARGET_EMAIL}" ]]      || die "--target-email is required with --single-invite"
+
+    info "Single-invite: account ${TARGET_ACCOUNT_ID} (${TARGET_EMAIL})..."
+
+    local status
+    status=$(${AWS_CMD} organizations describe-account \
+        --account-id "${TARGET_ACCOUNT_ID}" \
+        --query 'Account.Status' \
+        --output text 2>/dev/null || echo "NOT_MEMBER")
+
+    if [[ "${status}" == "ACTIVE" ]]; then
+        info "Account ${TARGET_ACCOUNT_ID} is already an active member; no invite needed."
+        echo "HANDSHAKE_ID=ALREADY_MEMBER"
+        return
+    fi
+
+    # Reuse an existing OPEN handshake for this account if one already exists,
+    # to keep the operation idempotent across re-runs.
+    local existing_hid
+    existing_hid=$(${AWS_CMD} organizations list-handshakes-for-organization \
+        --filter "ActionType=INVITE" \
+        --query "Handshakes[?contains(Parties[].Id, \`${TARGET_ACCOUNT_ID}\`) && State=='OPEN'].Id | [0]" \
+        --output text 2>/dev/null || echo "None")
+
+    if [[ -n "${existing_hid}" && "${existing_hid}" != "None" ]]; then
+        info "Re-using existing OPEN invite handshake: ${existing_hid}"
+        echo "HANDSHAKE_ID=${existing_hid}"
+        return
+    fi
+
+    # AWS Organizations HandshakeParty accepts only {Id, Type}.
+    # With Type=ACCOUNT, Id is the 12-digit account ID; email is NOT part
+    # of the target object. We keep TARGET_EMAIL for logging/manifest only.
+    local hid
+    hid=$(${AWS_CMD} organizations invite-account-to-organization \
+        --target "{\"Id\":\"${TARGET_ACCOUNT_ID}\",\"Type\":\"ACCOUNT\"}" \
+        --notes "Nexus AI onboarding via onboard-account.sh (email=${TARGET_EMAIL})" \
+        --query 'Handshake.Id' --output text) \
+        || die "invite-account-to-organization failed for ${TARGET_ACCOUNT_ID}."
+
+    info "Invite sent. HandshakeId=${hid}"
+    echo "HANDSHAKE_ID=${hid}"
+}
+
 create_new_accounts() {
     if [[ -z "${MEMBER_EMAILS}" ]]; then return; fi
 
@@ -266,6 +325,13 @@ main() {
     info "Master Account: ${MASTER_ACCOUNT_ID}"
     info "Region:         ${REGION}"
     info ""
+
+    if [[ "${SINGLE_INVITE}" == "yes" ]]; then
+        # Fast path used by onboard-account.sh: only send one invite, skip
+        # all org/OU/service-access setup (those must already be in place).
+        invite_single_account
+        return
+    fi
 
     if ! confirm "Proceed with organization setup?"; then
         info "Aborted."
