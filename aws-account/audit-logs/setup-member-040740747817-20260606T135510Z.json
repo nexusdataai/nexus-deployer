@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "tool": "setup-member-account.sh",
+  "timestamp_utc": "20260606T135510Z",
+  "overall_status": "succeeded",
+  "overall_detail": "All phases completed.\n",
+  "dry_run": false,
+  "account_id": "040740747817",
+  "management_account_id": "654654554404",
+  "allowed_region": "us-east-1",
+  "external_id": "nexus-provision-2026",
+  "provisioner_role_arn": "arn:aws:iam::040740747817:role/NexusClusterProvisioner\n",
+  "iam_admin_user": "papu\n",
+  "monthly_budget_usd": 100,
+  "budget_email": "papu.bhattacharya@ptrtechnology.com\n",
+  "root_key_revoked": true,
+  "region_lockdown_applied": true,
+  "phases": [{"step":"phase0_validate","status":"ok","detail":"caller=arn:aws:iam::040740747817:user/papu\n"},{"step":"phase1_identity","status":"ok","detail":"password policy + access analyzer (+ iam admin user papu)\n"},{"step":"phase2_security","status":"ok","detail":"S3 BPA, EBS encryption, IMDSv2, CloudTrail, GuardDuty, Security Hub, Config\n"},{"step":"phase3_region_lockdown","status":"ok","detail":"default VPCs deleted, non-us-east-1 opt-in regions disabled\n"},{"step":"phase4_billing","status":"ok","detail":"cost tags + budget ($100/mo, papu.bhattacharya@ptrtechnology.com)\n"},{"step":"phase5_provisioner_role","status":"ok","detail":"arn:aws:iam::040740747817:role/NexusClusterProvisioner (ExternalId=nexus-provision-2026)\n"},{"step":"phase6_revoke_root_key","status":"ok","detail":"root AK AKIA**** deleted\n"}]
+}
