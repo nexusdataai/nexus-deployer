@@ -24,13 +24,22 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PERMISSIONS_DIR="${SCRIPT_DIR}/../../kube-operator/permissions"
+PERMISSIONS_DIR="${SCRIPT_DIR}/permissions"
 
 # Defaults
 CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}"
 REGION="${REGION:-us-east-1}"
-K8S_VERSION="${K8S_VERSION:-1.32}"
-NODE_INSTANCE_TYPE="${NODE_INSTANCE_TYPE:-c6a.xlarge}"
+# 'latest' is a sentinel that auto-discovers the newest version in
+# STANDARD support after AWS auth succeeds (see resolution block below).
+# Users can pin explicitly with --k8s-version 1.33 or K8S_VERSION=1.33.
+K8S_VERSION="${K8S_VERSION:-latest}"
+# EKS support tier for newly-created clusters. AWS API/CLI defaults to
+# EXTENDED (incurs extra $/hr); we flip the default to STANDARD here so
+# the cluster will auto-upgrade at end-of-standard-support instead of
+# entering paid extended support. Override with --support-type EXTENDED
+# if you actually want the extended-support behavior.
+SUPPORT_TYPE="${SUPPORT_TYPE:-STANDARD}"
+NODE_INSTANCE_TYPE="${NODE_INSTANCE_TYPE:-m6a.large}"
 NODE_COUNT_MIN="${NODE_COUNT_MIN:-2}"
 NODE_COUNT_MAX="${NODE_COUNT_MAX:-4}"
 NODE_COUNT_DESIRED="${NODE_COUNT_DESIRED:-2}"
@@ -76,6 +85,7 @@ while [[ $# -gt 0 ]]; do
         --region)           REGION="$2"; shift 2 ;;
         --profile)          AWS_PROFILE="$2"; shift 2 ;;
         --k8s-version)      K8S_VERSION="$2"; shift 2 ;;
+        --support-type)     SUPPORT_TYPE="$2"; shift 2 ;;
         --instance-type)    NODE_INSTANCE_TYPE="$2"; shift 2 ;;
         --nodes-min)        NODE_COUNT_MIN="$2"; shift 2 ;;
         --nodes-max)        NODE_COUNT_MAX="$2"; shift 2 ;;
@@ -103,7 +113,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --name NAME               Cluster name (default: nexus-dev)"
             echo "  --region REGION            AWS region (default: us-east-1)"
             echo "  --profile PROFILE          AWS CLI profile (default: ptr-tech)"
-            echo "  --k8s-version VER          Kubernetes version (default: 1.32)"
+            echo "  --k8s-version VER          Kubernetes version ('latest' auto-picks newest STANDARD-support version; default: latest)"
+            echo "  --support-type TYPE        EKS upgrade policy: STANDARD or EXTENDED (default: STANDARD)"
             echo ""
             echo "Networking:"
             echo "  --vpc-id VPC_ID            Use an existing VPC"
@@ -112,7 +123,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --subnets S1,S2,...         All subnets as a flat list"
             echo ""
             echo "Nodes:"
-            echo "  --instance-type TYPE       Node instance type (default: c6a.xlarge)"
+            echo "  --instance-type TYPE       Node instance type (default: m6a.large)"
             echo "  --nodes-min N              Min node count (default: 2)"
             echo "  --nodes-max N              Max node count (default: 4)"
             echo "  --nodes-desired N          Desired node count (default: 2)"
@@ -213,6 +224,48 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# ── Common tag helpers ──────────────────────────────────────────────────────
+#
+# Every AWS resource provisioned by this script gets the same operational
+# tag set so the AWS console / Resource Explorer / cost allocation can
+# filter on a single key (`nexus:cluster`) to find everything that belongs
+# together.
+#
+# Three flavours because AWS CLI has three different syntaxes for tags:
+#   - eks_tags_shorthand   ->  --tags  for `aws eks create-*`     (k=v,k=v,...)
+#   - iam_tags_args         ->  --tags  for `aws iam create-*`      (Key=k,Value=v space-separated)
+#   - ec2_common_tags       ->  inline inside ResourceType=,Tags=[...] for EC2/VPC
+#
+# Shared cross-cluster resources (AmazonEKSAutoClusterRole, EKS_Node_Role,
+# AWSLoadBalancerControllerIAMPolicy) deliberately get only `nexus:managed-by`
+# via iam_shared_tags_args -- they live one-per-account and a per-cluster
+# tag here would be misleading after a second cluster is created.
+eks_tags_shorthand() {
+    printf "nexus:cluster=%s,nexus:capability=%s,nexus:env=%s,nexus:managed-by=create-hardened-eks-cluster.sh,nexus:k8s-version=%s,nexus:network-profile=%s" \
+        "$CLUSTER_NAME" "$CAPABILITY" "$APP_ENV" "$K8S_VERSION" "$NETWORK_PROFILE"
+}
+
+iam_tags_args() {
+    # $1 (optional): the role/policy Name tag value to include
+    local name="$1"
+    if [ -n "$name" ]; then
+        printf "Key=Name,Value=%s Key=nexus:cluster,Value=%s Key=nexus:capability,Value=%s Key=nexus:env,Value=%s Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
+            "$name" "$CLUSTER_NAME" "$CAPABILITY" "$APP_ENV"
+    else
+        printf "Key=nexus:cluster,Value=%s Key=nexus:capability,Value=%s Key=nexus:env,Value=%s Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
+            "$CLUSTER_NAME" "$CAPABILITY" "$APP_ENV"
+    fi
+}
+
+iam_shared_tags_args() {
+    printf "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh"
+}
+
+ec2_common_tags() {
+    printf "{Key=nexus:cluster,Value=%s},{Key=nexus:capability,Value=%s},{Key=nexus:env,Value=%s},{Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh}" \
+        "$CLUSTER_NAME" "$CAPABILITY" "$APP_ENV"
+}
+
 # ── Prerequisites ────────────────────────────────────────────────────
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query 'Account' --output text 2>/dev/null || true)
 if [ -z "$AWS_ACCOUNT_ID" ]; then
@@ -220,6 +273,44 @@ if [ -z "$AWS_ACCOUNT_ID" ]; then
     echo "   Make sure you are logged in. Run: ../aws-login.sh or nexus-backend/aws-sso-login.sh"
     exit 1
 fi
+
+# ── Resolve K8S_VERSION when set to 'latest' ────────────────────────────────
+#
+# Queries EKS for the newest version still in STANDARD support and uses
+# that. STANDARD support means AWS guarantees free upgrades; once a
+# version falls out of standard, it enters EXTENDED support (paid).
+# Together with --upgrade-policy supportType=STANDARD on create-cluster,
+# this gives you a cluster that will auto-upgrade rather than enter
+# paid extended support.
+if [ "$K8S_VERSION" = "latest" ]; then
+    echo "🔍 Discovering latest STANDARD-support EKS version..."
+    DISCOVERED_VER=$(aws eks describe-cluster-versions \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query "clusterVersions[?status=='STANDARD_SUPPORT'].clusterVersion" \
+        --output text 2>/dev/null \
+        | tr '\t' '\n' | sort -V | tail -n 1)
+    if [ -n "$DISCOVERED_VER" ]; then
+        K8S_VERSION="$DISCOVERED_VER"
+        echo "   Using: EKS $K8S_VERSION"
+    else
+        echo "❌ Could not auto-discover EKS version. Possible causes:"
+        echo "   - your AWS CLI is older than 2.17 and lacks 'eks describe-cluster-versions'"
+        echo "   - your role lacks eks:DescribeClusterVersions"
+        echo "   - the API returned no STANDARD_SUPPORT versions (very unusual)"
+        echo "   Re-run with an explicit version, e.g.:"
+        echo "     ./create-hardened-eks-cluster.sh --k8s-version 1.33 ..."
+        exit 1
+    fi
+fi
+
+case "$SUPPORT_TYPE" in
+    STANDARD|EXTENDED) ;;
+    *)
+        echo "❌ Invalid --support-type: '$SUPPORT_TYPE'"
+        echo "   Expected one of: STANDARD, EXTENDED"
+        exit 1
+        ;;
+esac
 
 if ! command -v kubectl &>/dev/null; then
     echo "❌ kubectl not found. Install it: https://kubernetes.io/docs/tasks/tools/"
@@ -243,7 +334,9 @@ fi
 
 if [ ! -d "$PERMISSIONS_DIR" ]; then
     echo "❌ Permissions directory not found: $PERMISSIONS_DIR"
-    echo "   Expected kube-operator/permissions/ relative to deploy/eks/"
+    echo "   Expected a permissions/ sub-directory next to this script with:"
+    echo "     vpc-endpoints.md, operator-trust-policy.json, operator-policy.json,"
+    echo "     app-trust-policy.json, app-policy.json, ebs-csi-trust-policy.json"
     exit 1
 fi
 
@@ -288,12 +381,16 @@ if [ -z "$SUBNETS" ]; then
         echo "   Subnets: $SUBNETS"
     else
         echo "🔍 Looking for existing VPC/subnets in $REGION..."
+        # `|| EXISTING_VPC=""` keeps `set -e` from killing the script when the
+        # caller lacks ec2:DescribeVpcs (or hits any other API error). We
+        # deliberately leave stderr unredirected so the operator sees the
+        # real reason (e.g. UnauthorizedOperation) instead of a silent exit.
         EXISTING_VPC=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
             --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'Vpcs[0].VpcId' --output text 2>/dev/null)
+            --query 'Vpcs[0].VpcId' --output text) || EXISTING_VPC=""
         if [ -z "$EXISTING_VPC" ] || [ "$EXISTING_VPC" == "None" ]; then
             EXISTING_VPC=$(aws ec2 describe-vpcs --region "$REGION" --profile "$AWS_PROFILE" \
-                --query 'Vpcs[0].VpcId' --output text 2>/dev/null)
+                --query 'Vpcs[0].VpcId' --output text) || EXISTING_VPC=""
         fi
         if [ -n "$EXISTING_VPC" ] && [ "$EXISTING_VPC" != "None" ]; then
             SUBNETS=$(pick_eks_subnets "$EXISTING_VPC")
@@ -317,7 +414,7 @@ if [ -z "$SUBNETS" ]; then
         echo "   AZs: $AZ1, $AZ2"
 
         VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
-            --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${CLUSTER_NAME}-vpc},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
+            --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${CLUSTER_NAME}-vpc},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Vpc.VpcId' --output text)
         aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support \
@@ -328,7 +425,7 @@ if [ -z "$SUBNETS" ]; then
         VPC_CREATED=true
 
         IGW_ID=$(aws ec2 create-internet-gateway \
-            --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${CLUSTER_NAME}-igw}]" \
+            --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${CLUSTER_NAME}-igw},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'InternetGateway.InternetGatewayId' --output text)
         aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" \
@@ -337,7 +434,7 @@ if [ -z "$SUBNETS" ]; then
 
         PUB_SUB1=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.1.0/24 \
             --availability-zone "$AZ1" \
-            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-${AZ1}},{Key=kubernetes.io/role/elb,Value=1}]" \
+            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-${AZ1}},{Key=kubernetes.io/role/elb,Value=1},{Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Subnet.SubnetId' --output text)
         aws ec2 modify-subnet-attribute --subnet-id "$PUB_SUB1" --map-public-ip-on-launch \
@@ -345,7 +442,7 @@ if [ -z "$SUBNETS" ]; then
 
         PUB_SUB2=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.2.0/24 \
             --availability-zone "$AZ2" \
-            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-${AZ2}},{Key=kubernetes.io/role/elb,Value=1}]" \
+            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-${AZ2}},{Key=kubernetes.io/role/elb,Value=1},{Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Subnet.SubnetId' --output text)
         aws ec2 modify-subnet-attribute --subnet-id "$PUB_SUB2" --map-public-ip-on-launch \
@@ -353,7 +450,7 @@ if [ -z "$SUBNETS" ]; then
         echo "   Public:  $PUB_SUB1 ($AZ1), $PUB_SUB2 ($AZ2)  [ALB only]"
 
         PUB_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-            --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-rt}]" \
+            --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-public-rt},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'RouteTable.RouteTableId' --output text)
         aws ec2 create-route --route-table-id "$PUB_RT" --destination-cidr-block 0.0.0.0/0 \
@@ -365,13 +462,13 @@ if [ -z "$SUBNETS" ]; then
 
         PRIV_SUB1=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.10.0/24 \
             --availability-zone "$AZ1" \
-            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ1}},{Key=kubernetes.io/role/internal-elb,Value=1}]" \
+            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ1}},{Key=kubernetes.io/role/internal-elb,Value=1},{Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Subnet.SubnetId' --output text)
 
         PRIV_SUB2=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block 10.0.11.0/24 \
             --availability-zone "$AZ2" \
-            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ2}},{Key=kubernetes.io/role/internal-elb,Value=1}]" \
+            --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-${AZ2}},{Key=kubernetes.io/role/internal-elb,Value=1},{Key=kubernetes.io/cluster/${CLUSTER_NAME},Value=shared},$(ec2_common_tags)]" \
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'Subnet.SubnetId' --output text)
         echo "   Private: $PRIV_SUB1 ($AZ1), $PRIV_SUB2 ($AZ2)  [Nodes]"
@@ -381,14 +478,14 @@ if [ -z "$SUBNETS" ]; then
         #   moderate                                => one RT per AZ for AZ-local NAT routing
         if [ "$NAT_PER_AZ" == "true" ]; then
             PRIV_RT_AZ1=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ1}}]" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ1}},$(ec2_common_tags)]" \
                 --region "$REGION" --profile "$AWS_PROFILE" \
                 --query 'RouteTable.RouteTableId' --output text)
             aws ec2 associate-route-table --route-table-id "$PRIV_RT_AZ1" --subnet-id "$PRIV_SUB1" \
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
 
             PRIV_RT_AZ2=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ2}}]" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt-${AZ2}},$(ec2_common_tags)]" \
                 --region "$REGION" --profile "$AWS_PROFILE" \
                 --query 'RouteTable.RouteTableId' --output text)
             aws ec2 associate-route-table --route-table-id "$PRIV_RT_AZ2" --subnet-id "$PRIV_SUB2" \
@@ -397,7 +494,7 @@ if [ -z "$SUBNETS" ]; then
             echo "   Private RTs: $PRIV_RT_AZ1 ($AZ1), $PRIV_RT_AZ2 ($AZ2)"
         else
             PRIV_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt}]" \
+                --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${CLUSTER_NAME}-private-rt},$(ec2_common_tags)]" \
                 --region "$REGION" --profile "$AWS_PROFILE" \
                 --query 'RouteTable.RouteTableId' --output text)
             aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUB1" \
@@ -441,6 +538,10 @@ fi
 if [ -n "$VPC_ID" ]; then
     aws ec2 create-tags --resources "$VPC_ID" \
         --tags "Key=nexus:network-profile,Value=${NETWORK_PROFILE}" \
+               "Key=nexus:cluster,Value=${CLUSTER_NAME}" \
+               "Key=nexus:capability,Value=${CAPABILITY}" \
+               "Key=nexus:env,Value=${APP_ENV}" \
+               "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
 fi
 
@@ -494,7 +595,12 @@ create_nat_asg() {
             --region "$REGION" --profile "$AWS_PROFILE" \
             --query 'GroupId' --output text)
         aws ec2 create-tags --resources "$NAT_SG" \
-            --tags "Key=Name,Value=$sg_name" "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+            --tags "Key=Name,Value=$sg_name" \
+                   "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+                   "Key=nexus:cluster,Value=${CLUSTER_NAME}" \
+                   "Key=nexus:capability,Value=${CAPABILITY}" \
+                   "Key=nexus:env,Value=${APP_ENV}" \
+                   "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
             --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
 
         VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
@@ -521,18 +627,49 @@ create_nat_asg() {
     fi
     echo "   NAT AMI: $nat_ami ($NAT_AMI_ARCH, for $NAT_INSTANCE_TYPE)"
 
-    # Idempotent: skip ASG creation if it already exists.
-    local existing_asg
+    # Idempotent reuse, but only if the existing ASG still maps onto a
+    # subnet that exists in the CURRENT VPC. A stale ASG left over from a
+    # prior cluster attempt may reference a since-deleted subnet, in which
+    # case every launch attempt fails silently. Detect that and rebuild.
+    local existing_asg existing_subnets
     existing_asg=$(aws autoscaling describe-auto-scaling-groups \
         --auto-scaling-group-names "$asg_name" \
         --region "$REGION" --profile "$AWS_PROFILE" \
         --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text 2>/dev/null || true)
     if [ "$existing_asg" == "$asg_name" ]; then
-        echo "   ASG $asg_name already exists, reusing"
-    else
+        existing_subnets=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$asg_name" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'AutoScalingGroups[0].VPCZoneIdentifier' --output text 2>/dev/null || echo "")
+        if echo ",${existing_subnets}," | grep -q ",${pub_subnet},"; then
+            echo "   ASG $asg_name already exists with current subnet; reusing"
+        else
+            echo "   ASG $asg_name exists but maps to stale subnets ($existing_subnets); deleting and rebuilding..."
+            aws autoscaling delete-auto-scaling-group \
+                --auto-scaling-group-name "$asg_name" --force-delete \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+            # Wait for AWS to fully release the ASG name (usually a few seconds).
+            local del_tries=0
+            while aws autoscaling describe-auto-scaling-groups \
+                --auto-scaling-group-names "$asg_name" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text 2>/dev/null \
+                | grep -q "$asg_name"; do
+                del_tries=$((del_tries + 1))
+                [ $del_tries -gt 30 ] && break
+                sleep 2
+            done
+            # Stale launch template (same name) often references the dead
+            # subnet too; drop it so the rebuild below recreates it cleanly.
+            aws ec2 delete-launch-template --launch-template-name "$lt_name" \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+            existing_asg=""
+        fi
+    fi
+    if [ "$existing_asg" != "$asg_name" ]; then
         local lt_data
         lt_data=$(cat <<EOF
-{"ImageId":"$nat_ami","InstanceType":"$NAT_INSTANCE_TYPE","SecurityGroupIds":["$NAT_SG"],"TagSpecifications":[{"ResourceType":"instance","Tags":[{"Key":"Name","Value":"${CLUSTER_NAME}-nat-${suffix}"},{"Key":"nexus:nat-instance","Value":"true"},{"Key":"nexus:network-profile","Value":"$NETWORK_PROFILE"}]}]}
+{"ImageId":"$nat_ami","InstanceType":"$NAT_INSTANCE_TYPE","SecurityGroupIds":["$NAT_SG"],"TagSpecifications":[{"ResourceType":"instance","Tags":[{"Key":"Name","Value":"${CLUSTER_NAME}-nat-${suffix}"},{"Key":"nexus:nat-instance","Value":"true"},{"Key":"nexus:network-profile","Value":"$NETWORK_PROFILE"},{"Key":"nexus:cluster","Value":"${CLUSTER_NAME}"},{"Key":"nexus:capability","Value":"${CAPABILITY}"},{"Key":"nexus:env","Value":"${APP_ENV}"},{"Key":"nexus:managed-by","Value":"create-hardened-eks-cluster.sh"}]}]}
 EOF
 )
         # If launch template already exists from a previous run, reuse it.
@@ -555,6 +692,10 @@ EOF
             --tags "Key=Name,Value=$asg_name,PropagateAtLaunch=false" \
                    "Key=nexus:nat-instance,Value=true,PropagateAtLaunch=false" \
                    "Key=nexus:network-profile,Value=$NETWORK_PROFILE,PropagateAtLaunch=false" \
+                   "Key=nexus:cluster,Value=$CLUSTER_NAME,PropagateAtLaunch=false" \
+                   "Key=nexus:capability,Value=$CAPABILITY,PropagateAtLaunch=false" \
+                   "Key=nexus:env,Value=$APP_ENV,PropagateAtLaunch=false" \
+                   "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh,PropagateAtLaunch=false" \
             --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
         echo "   ASG: $asg_name (min=max=1, in $pub_subnet)"
     fi
@@ -594,7 +735,13 @@ EOF
         --no-source-dest-check \
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
     aws ec2 create-tags --resources "$nat_eni" \
-        --tags "Key=nexus:nat-instance,Value=true" "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+        --tags "Key=Name,Value=${CLUSTER_NAME}-nat-${suffix}-eni" \
+               "Key=nexus:nat-instance,Value=true" \
+               "Key=nexus:network-profile,Value=$NETWORK_PROFILE" \
+               "Key=nexus:cluster,Value=${CLUSTER_NAME}" \
+               "Key=nexus:capability,Value=${CAPABILITY}" \
+               "Key=nexus:env,Value=${APP_ENV}" \
+               "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
 
     # Wire (or replace) the default route on the target private RT to point at the NAT ENI.
@@ -658,6 +805,11 @@ if { [ "$CREATE_INTERFACE_EPS" == "true" ] || [ "$CREATE_GATEWAY_EPS" == "true" 
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
             aws ec2 create-tags --resources "$VPCE_SG" \
                 --tags "Key=Name,Value=${CLUSTER_NAME}-vpce-sg" \
+                       "Key=nexus:cluster,Value=${CLUSTER_NAME}" \
+                       "Key=nexus:capability,Value=${CAPABILITY}" \
+                       "Key=nexus:env,Value=${APP_ENV}" \
+                       "Key=nexus:network-profile,Value=${NETWORK_PROFILE}" \
+                       "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
                 --region "$REGION" --profile "$AWS_PROFILE"
             echo "   Security Group: $VPCE_SG"
         else
@@ -713,7 +865,7 @@ if { [ "$CREATE_INTERFACE_EPS" == "true" ] || [ "$CREATE_GATEWAY_EPS" == "true" 
             if aws ec2 create-vpc-endpoint --vpc-endpoint-type Gateway \
                 --vpc-id "$VPC_ID" --service-name "$SVC_FULL" \
                 --route-table-ids $GW_RT_IDS \
-                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}},$(ec2_common_tags)]" \
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
                 echo "   ✓ $SVC_SHORT (gateway)"
             else
@@ -725,7 +877,7 @@ if { [ "$CREATE_INTERFACE_EPS" == "true" ] || [ "$CREATE_GATEWAY_EPS" == "true" 
                 --subnet-ids $PRIV_SUBNET_LIST \
                 --security-group-ids "$VPCE_SG" \
                 --private-dns-enabled \
-                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}}]" \
+                --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${CLUSTER_NAME}-${SVC_SHORT}},{Key=nexus:network-profile,Value=${NETWORK_PROFILE}},$(ec2_common_tags)]" \
                 --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
                 echo "   ✓ $SVC_SHORT (interface)"
             else
@@ -757,6 +909,7 @@ if [ -z "$CLUSTER_ROLE_ARN" ]; then
                     "Action": "sts:AssumeRole"
                 }]
             }' \
+            --tags $(iam_shared_tags_args) Key=nexus:role-scope,Value=shared-eks-cluster \
             --profile "$AWS_PROFILE" --query 'Role.Arn' --output text)
         aws iam attach-role-policy --role-name "$EKS_CLUSTER_ROLE_NAME" \
             --policy-arn arn:aws:iam::aws:policy/AmazonEKSClusterPolicy --profile "$AWS_PROFILE"
@@ -782,6 +935,7 @@ if [ -z "$NODE_ROLE_ARN" ]; then
                     "Action": "sts:AssumeRole"
                 }]
             }' \
+            --tags $(iam_shared_tags_args) Key=nexus:role-scope,Value=shared-eks-node \
             --profile "$AWS_PROFILE" --query 'Role.Arn' --output text)
         for policy in AmazonEKSWorkerNodePolicy AmazonEKS_CNI_Policy \
                       AmazonEC2ContainerRegistryReadOnly AmazonSSMManagedInstanceCore; do
@@ -804,7 +958,7 @@ echo "╚═══════════════════════�
 echo ""
 echo "Cluster:      $CLUSTER_NAME"
 echo "Region:       $REGION"
-echo "K8s Version:  $K8S_VERSION"
+echo "K8s Version:  $K8S_VERSION  (support: $SUPPORT_TYPE)"
 echo "AWS Profile:  $AWS_PROFILE"
 echo "AWS Account:  $AWS_ACCOUNT_ID"
 echo "VPC:          $VPC_ID"
@@ -816,6 +970,14 @@ echo "Environment:  $APP_ENV"
 echo "Nodes:        ${NODE_COUNT_DESIRED} (min:${NODE_COUNT_MIN} max:${NODE_COUNT_MAX}) x ${NODE_INSTANCE_TYPE}"
 echo "Endpoints:    $([ "$SKIP_ENDPOINTS" == "true" ] && echo "SKIPPED" || echo "Enabled")"
 echo "Addons:       $([ "$SKIP_ADDONS" == "true" ] && echo "SKIPPED" || echo "EBS CSI + LB Controller")"
+echo ""
+echo "Tag keys applied to every provisioned resource:"
+echo "  nexus:cluster        = $CLUSTER_NAME      (primary filter in console / cost-explorer)"
+echo "  nexus:capability     = $CAPABILITY"
+echo "  nexus:env            = $APP_ENV"
+echo "  nexus:managed-by     = create-hardened-eks-cluster.sh"
+echo "  nexus:k8s-version    = $K8S_VERSION    (EKS resources only)"
+echo "  nexus:network-profile= $NETWORK_PROFILE     (VPC + NAT + endpoints + EKS)"
 
 if [ "$AUTO_APPROVE" == "yes" ]; then
     echo -e "${GREEN}Mode: NON-INTERACTIVE (AUTO_APPROVE=yes)${NC}"
@@ -880,7 +1042,9 @@ if ! aws eks create-cluster \
     --role-arn "$CLUSTER_ROLE_ARN" \
     --resources-vpc-config "subnetIds=$SUBNETS,endpointPublicAccess=true,endpointPrivateAccess=true" \
     --access-config authenticationMode=API_AND_CONFIG_MAP \
+    --upgrade-policy "supportType=${SUPPORT_TYPE}" \
     --logging '{"clusterLogging":[{"types":["api","audit","authenticator","controllerManager","scheduler"],"enabled":true}]}' \
+    --tags "$(eks_tags_shorthand)" \
     --region "$REGION" \
     --profile "$AWS_PROFILE" > /dev/null; then
     echo "❌ Failed to create EKS cluster. See error above."
@@ -976,6 +1140,7 @@ else
         --url "$OIDC_ISSUER" \
         --client-id-list sts.amazonaws.com \
         --thumbprint-list "$THUMBPRINT" \
+        --tags $(iam_tags_args "${CLUSTER_NAME}-oidc") \
         --profile "$AWS_PROFILE" > /dev/null
     echo -e "${GREEN}✓ OIDC provider registered${NC}"
 fi
@@ -1010,6 +1175,7 @@ create_irsa_role() {
     aws iam create-role \
         --role-name "$role_name" \
         --assume-role-policy-document "$trust_json" \
+        --tags $(iam_tags_args "$role_name") \
         --profile "$AWS_PROFILE" > /dev/null
 
     if [ -n "$policy_file" ] && [ -f "$policy_file" ]; then
@@ -1120,7 +1286,7 @@ else
 fi
 echo "Nodegroup subnets: $NODE_SUBNETS (profile=$NETWORK_PROFILE)"
 
-aws eks create-nodegroup \
+NG_CREATE_OUT=$(aws eks create-nodegroup \
     --cluster-name "$CLUSTER_NAME" \
     --nodegroup-name "$NODEGROUP_NAME" \
     --scaling-config "minSize=$NODE_COUNT_MIN,maxSize=$NODE_COUNT_MAX,desiredSize=$NODE_COUNT_DESIRED" \
@@ -1131,8 +1297,23 @@ aws eks create-nodegroup \
     --release-version "$AMI_VERSION" \
     --capacity-type ON_DEMAND \
     --update-config maxUnavailablePercentage=50 \
+    --tags "$(eks_tags_shorthand)" \
+    --labels "nexus.cluster=${CLUSTER_NAME},nexus.capability=${CAPABILITY},nexus.env=${APP_ENV}" \
     --region "$REGION" \
-    --profile "$AWS_PROFILE" > /dev/null 2>&1
+    --profile "$AWS_PROFILE" 2>&1) || NG_CREATE_RC=$?
+NG_CREATE_RC=${NG_CREATE_RC:-0}
+if [ "$NG_CREATE_RC" -ne 0 ]; then
+    # ResourceInUse is fine -- nodegroup already exists from a previous
+    # partial run; we'll wait for it below. Any other non-zero is fatal
+    # and we surface the AWS error instead of looping forever on 0 nodes.
+    if echo "$NG_CREATE_OUT" | grep -qiE 'ResourceInUseException|already exists'; then
+        echo "   Nodegroup $NODEGROUP_NAME already exists; waiting for it to become ACTIVE..."
+    else
+        echo -e "${RED}❌ create-nodegroup failed (exit $NG_CREATE_RC):${NC}"
+        echo "$NG_CREATE_OUT"
+        exit 1
+    fi
+fi
 
 echo "Waiting for nodes to join..."
 while true; do
@@ -1172,6 +1353,7 @@ if [ "$SKIP_ADDONS" != "true" ]; then
             --addon-name aws-ebs-csi-driver \
             --service-account-role-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/AmazonEKS_EBS_CSI_DriverRole" \
             --resolve-conflicts OVERWRITE \
+            --tags "$(eks_tags_shorthand)" \
             --region "$REGION" --profile "$AWS_PROFILE" > /dev/null
         echo "   Waiting for EBS CSI addon to become ACTIVE..."
         COUNT=0
@@ -1205,6 +1387,7 @@ if [ "$SKIP_ADDONS" != "true" ]; then
         LBC_POLICY_ARN=$(aws iam create-policy \
             --policy-name "$LBC_POLICY_NAME" \
             --policy-document file:///tmp/lbc-iam-policy.json \
+            --tags $(iam_shared_tags_args) \
             --profile "$AWS_PROFILE" --query 'Policy.Arn' --output text)
         echo "   Policy: $LBC_POLICY_ARN"
     else
@@ -1236,6 +1419,7 @@ TRUSTEOF
         aws iam create-role \
             --role-name "$LBC_ROLE_NAME" \
             --assume-role-policy-document "$LBC_TRUST" \
+            --tags $(iam_tags_args "$LBC_ROLE_NAME") \
             --profile "$AWS_PROFILE" > /dev/null
         aws iam attach-role-policy \
             --role-name "$LBC_ROLE_NAME" \
@@ -1423,7 +1607,7 @@ echo "╚═══════════════════════�
 echo ""
 echo "📋 CLUSTER:"
 echo "  Name:       $CLUSTER_NAME"
-echo "  Version:    EKS $K8S_VERSION"
+echo "  Version:    EKS $K8S_VERSION  (support: $SUPPORT_TYPE)"
 echo "  Region:     $REGION"
 echo "  Account:    $AWS_ACCOUNT_ID"
 echo "  VPC:        $VPC_ID"

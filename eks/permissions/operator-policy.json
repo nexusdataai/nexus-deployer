@@ -1,0 +1,182 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DynamoDBManagement",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable",
+          "dynamodb:DescribeTable",
+          "dynamodb:UpdateTable",
+          "dynamodb:TagResource",
+          "dynamodb:ListTables"
+        ],
+        "Resource": "arn:aws:dynamodb:<region>:<account-id>:table/*"
+      },
+      {
+        "Sid": "S3Management",
+        "Effect": "Allow",
+        "Action": [
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:PutBucketPolicy",
+          "s3:PutBucketTagging",
+          "s3:PutLifecycleConfiguration",
+          "s3:PutBucketVersioning",
+          "s3:GetBucketVersioning",
+          "s3:PutBucketEncryption",
+          "s3:GetBucketEncryption",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketLocation",
+          "s3:ListBucket",
+          "s3:ListAllMyBuckets"
+        ],
+        "Resource": "arn:aws:s3:::*"
+      },
+      {
+        "Sid": "SSMManagement",
+        "Effect": "Allow",
+        "Action": [
+          "ssm:PutParameter",
+          "ssm:DeleteParameter",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
+          "ssm:AddTagsToResource"
+        ],
+        "Resource": "arn:aws:ssm:<region>:<account-id>:parameter/*"
+      },
+      {
+        "Sid": "SecretsManagerManagement",
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:ListSecrets"
+        ],
+        "Resource": "arn:aws:secretsmanager:<region>:<account-id>:secret:*"
+      },
+      {
+        "Sid": "GlueManagement",
+        "Effect": "Allow",
+        "Action": [
+          "glue:CreateDatabase",
+          "glue:DeleteDatabase",
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:CreateTable",
+          "glue:DeleteTable",
+          "glue:UpdateTable",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:CreatePartition",
+          "glue:BatchCreatePartition",
+          "glue:UpdatePartition",
+          "glue:DeletePartition",
+          "glue:GetPartition",
+          "glue:GetPartitions",
+          "glue:BatchGetPartition",
+          "glue:DeleteUserDefinedFunction",
+          "glue:GetUserDefinedFunction",
+          "glue:GetUserDefinedFunctions"
+        ],
+        "Resource": [
+          "arn:aws:glue:<region>:<account-id>:catalog",
+          "arn:aws:glue:<region>:<account-id>:database/*",
+          "arn:aws:glue:<region>:<account-id>:table/*",
+          "arn:aws:glue:<region>:<account-id>:userDefinedFunction/*"
+        ]
+      },
+      {
+        "Sid": "AthenaManagement",
+        "Effect": "Allow",
+        "Action": [
+          "athena:GetWorkGroup",
+          "athena:UpdateWorkGroup",
+          "athena:CreateWorkGroup",
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:StopQueryExecution"
+        ],
+        "Resource": "arn:aws:athena:<region>:<account-id>:workgroup/*"
+      },
+      {
+        "Sid": "IAMRoleManagement",
+        "Effect": "Allow",
+        "Action": [
+          "iam:GetRole",
+          "iam:PutRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:GetOpenIDConnectProvider",
+          "iam:TagRole",
+          "iam:PassRole"
+        ],
+        "Resource": "arn:aws:iam::<account-id>:role/*"
+      },
+      {
+        "Sid": "EKSAccess",
+        "Effect": "Allow",
+        "Action": [
+          "eks:DescribeCluster",
+          "eks:ListClusters"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "CognitoManagement",
+        "Effect": "Allow",
+        "Action": [
+          "cognito-idp:CreateUserPool",
+          "cognito-idp:DeleteUserPool",
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:ListUserPools",
+          "cognito-idp:CreateGroup",
+          "cognito-idp:GetGroup",
+          "cognito-idp:CreateUserPoolClient",
+          "cognito-idp:DeleteUserPoolClient",
+          "cognito-idp:DescribeUserPoolClient",
+          "cognito-idp:ListUserPoolClients",
+          "cognito-idp:CreateUserPoolDomain",
+          "cognito-idp:DeleteUserPoolDomain",
+          "cognito-idp:DescribeUserPoolDomain",
+          "cognito-idp:ListUsersInGroup",
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminSetUserPassword",
+          "cognito-idp:TagResource",
+          "cognito-idp:UntagResource"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "VPCEndpointManagement",
+        "Effect": "Allow",
+        "Action": [
+          "ec2:CreateVpcEndpoint",
+          "ec2:DescribeVpcEndpoints",
+          "ec2:ModifyVpcEndpoint",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:CreateSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs",
+          "ec2:CreateTags",
+          "ec2:DescribeNetworkInterfaces"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  

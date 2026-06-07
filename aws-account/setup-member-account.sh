@@ -138,7 +138,12 @@ ROOT_AK="${ROOT_AK:-}"
 ROOT_SK="${ROOT_SK:-}"
 ROOT_TOKEN="${ROOT_TOKEN:-}"
 MANAGEMENT_ACCOUNT_ID="${MANAGEMENT_ACCOUNT_ID:-}"
-EXTERNAL_ID="${EXTERNAL_ID:-nexus-provision-$(date +%Y)}"
+# Empty by default: trust scoped by Principal only (any identity in the
+# management account with sts:AssumeRole IAM perms, e.g. an SSO user with
+# AdministratorAccess). Set to a non-empty secret to add an extra
+# sts:ExternalId check; the assume-role caller must then pass
+# --external-id <value>.
+EXTERNAL_ID="${EXTERNAL_ID:-}"
 ALLOWED_REGION="${ALLOWED_REGION:-us-east-1}"
 BUDGET_EMAIL="${BUDGET_EMAIL:-}"
 MONTHLY_BUDGET_USD="${MONTHLY_BUDGET_USD:-100}"
@@ -670,7 +675,8 @@ delete_default_vpcs() {
         local igws
         igws=$(aws_as_root ec2 describe-internet-gateways --region "${r}" \
             --filters "Name=attachment.vpc-id,Values=${vpc_id}" \
-            --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null)
+            --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null) \
+            || igws=""
         for igw in ${igws}; do
             aws_as_root ec2 detach-internet-gateway --region "${r}" \
                 --internet-gateway-id "${igw}" --vpc-id "${vpc_id}" 2>/dev/null || true
@@ -681,7 +687,8 @@ delete_default_vpcs() {
         local subnets
         subnets=$(aws_as_root ec2 describe-subnets --region "${r}" \
             --filters "Name=vpc-id,Values=${vpc_id}" \
-            --query 'Subnets[].SubnetId' --output text 2>/dev/null)
+            --query 'Subnets[].SubnetId' --output text 2>/dev/null) \
+            || subnets=""
         for subnet in ${subnets}; do
             aws_as_root ec2 delete-subnet --region "${r}" \
                 --subnet-id "${subnet}" 2>/dev/null || true
@@ -820,11 +827,35 @@ phase5_provisioner_role() {
     local policy_arn="arn:aws:iam::${ACCOUNT_ID}:policy/${policy_name}"
     local boundary_arn="arn:aws:iam::${ACCOUNT_ID}:policy/${boundary_name}"
 
+    # Build the trust policy. When EXTERNAL_ID is non-empty we use the
+    # existing on-disk template (with Condition: sts:ExternalId). When
+    # empty (default for SSO/management-side flows), we emit a Condition-
+    # free trust inline so an SSO assume-role call without --external-id
+    # is accepted.
     local trust_policy
-    trust_policy=$(sed \
-        -e "s|\${MASTER_ACCOUNT_ID}|${MANAGEMENT_ACCOUNT_ID}|g" \
-        -e "s|\${EXTERNAL_ID}|${EXTERNAL_ID}|g" \
-        "${POLICIES_DIR}/cross-account-provisioner-role.json")
+    if [[ -n "${EXTERNAL_ID}" ]]; then
+        trust_policy=$(sed \
+            -e "s|\${MASTER_ACCOUNT_ID}|${MANAGEMENT_ACCOUNT_ID}|g" \
+            -e "s|\${EXTERNAL_ID}|${EXTERNAL_ID}|g" \
+            "${POLICIES_DIR}/cross-account-provisioner-role.json")
+    else
+        trust_policy=$(cat <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowMasterAccountAssume",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${MANAGEMENT_ACCOUNT_ID}:root"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+)
+    fi
     local perms_policy
     perms_policy=$(cat "${POLICIES_DIR}/cross-account-provisioner-policy.json")
 
@@ -849,33 +880,55 @@ phase5_provisioner_role() {
             || warn "    Role create failed."
     fi
 
-    # 5b: Customer-managed permissions policy (versioned).
-    if aws_as_root iam get-policy --policy-arn "${policy_arn}" >/dev/null 2>&1; then
-        info "  Updating policy ${policy_name} (creating new version, deleting old non-default versions)..."
-        # Delete non-default versions first; AWS caps at 5 versions.
-        local versions
-        versions=$(aws_as_root iam list-policy-versions --policy-arn "${policy_arn}" \
-            --query 'Versions[?!IsDefaultVersion].VersionId' --output text 2>/dev/null)
-        for v in ${versions}; do
-            aws_as_root iam delete-policy-version --policy-arn "${policy_arn}" \
-                --version-id "${v}" >/dev/null 2>&1 || true
-        done
-        aws_as_root iam create-policy-version \
-            --policy-arn "${policy_arn}" \
-            --policy-document "${perms_policy}" \
-            --set-as-default \
-            >/dev/null 2>&1 \
-            && info "    Policy ${policy_name} updated." \
-            || warn "    Policy version update failed."
+    # 5b: Customer-managed permissions policy (idempotent ensure-create +
+    # always-version-update).
+    #
+    # Prior logic used `iam:GetPolicy` as a gate between create and update.
+    # That broke when GetPolicy returned non-zero for any reason (transient
+    # error, missing iam:GetPolicy on root context, etc.) -- the script
+    # then took the create-branch, create failed with EntityAlreadyExists,
+    # and the new JSON never reached AWS. Result: a stale v1 stays as the
+    # default, the role has almost no permissions, and downstream assume
+    # calls hit UnauthorizedOperation on the first ec2:DescribeVpcs.
+    #
+    # New pattern: ALWAYS try create (tolerate EntityAlreadyExists), then
+    # ALWAYS push a fresh version and set it as default. Same JSON ends up
+    # attached whether it's a brand-new policy or an existing one.
+    info "  Ensuring policy ${policy_name} exists..."
+    aws_as_root iam create-policy \
+        --policy-name "${policy_name}" \
+        --policy-document "${perms_policy}" \
+        --description "Permissions for nexus-ai cluster provisioning via NexusClusterProvisioner. Managed by setup-member-account.sh." \
+        >/dev/null 2>&1 || true
+
+    info "  Pushing latest policy version (deleting old non-default versions; AWS caps at 5)..."
+    local versions
+    versions=$(aws_as_root iam list-policy-versions --policy-arn "${policy_arn}" \
+        --query 'Versions[?!IsDefaultVersion].VersionId' --output text 2>/dev/null) \
+        || versions=""
+    for v in ${versions}; do
+        aws_as_root iam delete-policy-version --policy-arn "${policy_arn}" \
+            --version-id "${v}" >/dev/null 2>&1 || true
+    done
+    # Capture stderr so the actual AWS error (LimitExceeded for >6144-char
+    # policy, NoSuchEntity, etc.) is surfaced in the WARN instead of being
+    # swallowed by >/dev/null. Otherwise this fails silently from the
+    # operator's perspective.
+    local pv_err pv_rc=0
+    pv_err=$(aws_as_root iam create-policy-version \
+        --policy-arn "${policy_arn}" \
+        --policy-document "${perms_policy}" \
+        --set-as-default 2>&1 >/dev/null) || pv_rc=$?
+    if [ ${pv_rc} -eq 0 ]; then
+        info "    Policy ${policy_name} now at latest version."
     else
-        info "  Creating policy ${policy_name}..."
-        aws_as_root iam create-policy \
-            --policy-name "${policy_name}" \
-            --policy-document "${perms_policy}" \
-            --description "Permissions for nexus-ai cluster provisioning via NexusClusterProvisioner. Managed by setup-member-account.sh." \
-            >/dev/null 2>&1 \
-            && info "    Policy ${policy_name} created." \
-            || warn "    Policy create failed."
+        warn "    Could not push new policy version: ${pv_err}"
+        warn "    Common causes:"
+        warn "      - JSON exceeds 6144 non-whitespace chars (managed-policy limit)"
+        warn "      - Policy is at 5-version cap (delete old versions in console)"
+        warn "    Recovery: log in to ${ACCOUNT_ID} as root in the AWS console and"
+        warn "             update ${policy_name} manually with the contents of"
+        warn "             ${POLICIES_DIR}/cross-account-provisioner-policy.json"
     fi
 
     info "  Attaching policy to role..."
@@ -884,32 +937,34 @@ phase5_provisioner_role() {
         --policy-arn "${policy_arn}" \
         >/dev/null 2>&1 || true
 
-    # 5c: Permission boundary (same JSON used as a boundary).
-    if aws_as_root iam get-policy --policy-arn "${boundary_arn}" >/dev/null 2>&1; then
-        info "  Updating boundary ${boundary_name}..."
-        local bversions
-        bversions=$(aws_as_root iam list-policy-versions --policy-arn "${boundary_arn}" \
-            --query 'Versions[?!IsDefaultVersion].VersionId' --output text 2>/dev/null)
-        for v in ${bversions}; do
-            aws_as_root iam delete-policy-version --policy-arn "${boundary_arn}" \
-                --version-id "${v}" >/dev/null 2>&1 || true
-        done
-        aws_as_root iam create-policy-version \
-            --policy-arn "${boundary_arn}" \
-            --policy-document "${perms_policy}" \
-            --set-as-default \
-            >/dev/null 2>&1 \
-            && info "    Boundary updated." \
-            || warn "    Boundary version update failed."
+    # 5c: Permission boundary (same JSON used as a boundary; same idempotent
+    # ensure-create + always-version-update pattern).
+    info "  Ensuring boundary ${boundary_name} exists..."
+    aws_as_root iam create-policy \
+        --policy-name "${boundary_name}" \
+        --policy-document "${perms_policy}" \
+        --description "Permission boundary capping NexusClusterProvisioner privileges. Managed by setup-member-account.sh." \
+        >/dev/null 2>&1 || true
+
+    info "  Pushing latest boundary version..."
+    local bversions
+    bversions=$(aws_as_root iam list-policy-versions --policy-arn "${boundary_arn}" \
+        --query 'Versions[?!IsDefaultVersion].VersionId' --output text 2>/dev/null) \
+        || bversions=""
+    for v in ${bversions}; do
+        aws_as_root iam delete-policy-version --policy-arn "${boundary_arn}" \
+            --version-id "${v}" >/dev/null 2>&1 || true
+    done
+    local bv_err bv_rc=0
+    bv_err=$(aws_as_root iam create-policy-version \
+        --policy-arn "${boundary_arn}" \
+        --policy-document "${perms_policy}" \
+        --set-as-default 2>&1 >/dev/null) || bv_rc=$?
+    if [ ${bv_rc} -eq 0 ]; then
+        info "    Boundary ${boundary_name} now at latest version."
     else
-        info "  Creating boundary ${boundary_name}..."
-        aws_as_root iam create-policy \
-            --policy-name "${boundary_name}" \
-            --policy-document "${perms_policy}" \
-            --description "Permission boundary capping NexusClusterProvisioner privileges. Managed by setup-member-account.sh." \
-            >/dev/null 2>&1 \
-            && info "    Boundary created." \
-            || warn "    Boundary create failed."
+        warn "    Could not push new boundary version: ${bv_err}"
+        warn "    Same recovery as the policy above."
     fi
 
     info "  Attaching permission boundary to role..."
@@ -920,9 +975,13 @@ phase5_provisioner_role() {
 
     PROVISIONER_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${role_name}"
     info "  Role ARN: ${PROVISIONER_ROLE_ARN}"
-    info "  External ID: ${EXTERNAL_ID}"
+    if [[ -n "${EXTERNAL_ID}" ]]; then
+        info "  External ID: ${EXTERNAL_ID}"
+    else
+        info "  External ID: (none -- trust scoped by Principal only)"
+    fi
 
-    record_step "phase5_provisioner_role" "ok" "${PROVISIONER_ROLE_ARN} (ExternalId=${EXTERNAL_ID})"
+    record_step "phase5_provisioner_role" "ok" "${PROVISIONER_ROLE_ARN} (ExternalId=${EXTERNAL_ID:-none})"
 }
 
 # ── Phase 6: Revoke bootstrap root access key ───────────────────────────────
@@ -961,7 +1020,7 @@ main() {
     info "Member Account:        ${ACCOUNT_ID}"
     info "Management Account:    ${MANAGEMENT_ACCOUNT_ID}"
     info "Allowed Region:        ${ALLOWED_REGION}"
-    info "External ID:           ${EXTERNAL_ID}"
+    info "External ID:           ${EXTERNAL_ID:-(none -- trust by Principal only)}"
     info "Budget Email:          ${BUDGET_EMAIL:-(unset; skipping budgets)}"
     info "Monthly Budget USD:    ${MONTHLY_BUDGET_USD}"
     info "Create IAM admin user: ${CREATE_IAM_ADMIN_USER:-(skip)}"
@@ -990,7 +1049,7 @@ main() {
     info "Member account ${ACCOUNT_ID} is cluster-ready."
     info "=========================================="
     info "  NexusClusterProvisioner ARN: ${PROVISIONER_ROLE_ARN}"
-    info "  External ID:                 ${EXTERNAL_ID}"
+    info "  External ID:                 ${EXTERNAL_ID:-(not required)}"
     info "  Manifest:                    ${MANIFEST_PATH}"
     info ""
     info "Next steps (from the MANAGEMENT account):"
@@ -998,7 +1057,9 @@ main() {
     info "       member-${ACCOUNT_ID}=${PROVISIONER_ROLE_ARN}"
     info "  2. Assume into the member account:"
     info "       ./aws-login/assume-role-to-profile.sh --member-${ACCOUNT_ID} --console-url"
-    info "       (pass --external-id ${EXTERNAL_ID} if your assume-role wrapper supports it)"
+    if [[ -n "${EXTERNAL_ID}" ]]; then
+        info "       (this role requires --external-id ${EXTERNAL_ID})"
+    fi
     info "  3. Run the cluster creator using the resulting profile:"
     info "       AWS_PROFILE=member-${ACCOUNT_ID} \\"
     info "         ./deploy/eks/create-hardened-eks-cluster.sh --name <cluster> --auto-approve"

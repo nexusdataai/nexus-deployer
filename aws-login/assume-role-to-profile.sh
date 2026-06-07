@@ -5,13 +5,18 @@ ENV_FILE="$SCRIPT_DIR/.env.roles.local"
 
 usage() {
   echo "Usage:"
-  echo "  $0 --<profile-name> [--console-url] [--duration N] [--region R]"
-  echo "  $0 <role-arn> <profile-name> [--console-url] [--duration N] [--region R]"
+  echo "  $0 --<profile-name> [--console-url] [--duration N] [--region R] [--external-id ID]"
+  echo "  $0 <role-arn> <profile-name> [--console-url] [--duration N] [--region R] [--external-id ID]"
   echo ""
   echo "Options:"
-  echo "  --console-url   Generate AWS Console sign-in URL for the assumed role"
-  echo "  --duration N    STS session duration in seconds (default: 3600, role MaxSessionDuration permitting)"
-  echo "  --region R      Region for the console destination URL (default: \$AWS_REGION or us-east-1)"
+  echo "  --console-url    Generate AWS Console sign-in URL for the assumed role"
+  echo "  --duration N     STS session duration in seconds (default: 3600, role MaxSessionDuration permitting)"
+  echo "  --region R       Region for the console destination URL (default: \$AWS_REGION or us-east-1)"
+  echo "  --external-id ID Pass sts:ExternalId on the assume-role call (overrides any value in the env file)"
+  echo ""
+  echo "Env file format ($ENV_FILE):"
+  echo "  <profile>=<role-arn>                    # no ExternalId"
+  echo "  <profile>=<role-arn>|<external-id>      # require this ExternalId on assume"
   if [ -f "$ENV_FILE" ]; then
     local profiles
     profiles=$(grep -E '^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=' "$ENV_FILE" 2>/dev/null \
@@ -26,11 +31,13 @@ usage() {
 
 ROLE_ARN=""
 PROFILE_NAME=""
+PROFILE_EXTERNAL_ID=""    # from env file (key=arn|external-id)
+EXTERNAL_ID_CLI=""        # from --external-id flag
 PRINT_CONSOLE_URL=false
 DURATION_SECONDS=3600
 REGION="${AWS_REGION:-us-east-1}"
 
-if [[ "$1" == --* ]] && [[ "$1" != "--console-url" ]] && [[ "$1" != "--duration" ]] && [[ "$1" != "--region" ]]; then
+if [[ "$1" == --* ]] && [[ "$1" != "--console-url" ]] && [[ "$1" != "--duration" ]] && [[ "$1" != "--region" ]] && [[ "$1" != "--external-id" ]]; then
   PROFILE_NAME="${1#--}"
   shift
   if [ -z "$PROFILE_NAME" ]; then
@@ -42,16 +49,26 @@ if [[ "$1" == --* ]] && [[ "$1" != "--console-url" ]] && [[ "$1" != "--duration"
     echo "❌ Roles file not found: $ENV_FILE"
     echo "   Expected format (one per line):"
     echo "     profile1=arn:aws:iam::111111111111:role/RoleName"
-    echo "     profile2=arn:aws:iam::222222222222:role/OtherRole"
+    echo "     profile2=arn:aws:iam::222222222222:role/OtherRole|optional-external-id"
     exit 1
   fi
-  ROLE_ARN=$(grep -E "^[[:space:]]*${PROFILE_NAME}[[:space:]]*=" "$ENV_FILE" 2>/dev/null \
+  RAW_VALUE=$(grep -E "^[[:space:]]*${PROFILE_NAME}[[:space:]]*=" "$ENV_FILE" 2>/dev/null \
     | head -n1 \
     | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')
-  if [ -z "$ROLE_ARN" ]; then
+  if [ -z "$RAW_VALUE" ]; then
     echo "❌ Profile '$PROFILE_NAME' not found in $ENV_FILE"
     usage
     exit 1
+  fi
+  # Optional inline ExternalId: "<arn>|<external-id>"
+  if [[ "$RAW_VALUE" == *"|"* ]]; then
+    ROLE_ARN="${RAW_VALUE%%|*}"
+    PROFILE_EXTERNAL_ID="${RAW_VALUE#*|}"
+    # Trim inner whitespace around the separator.
+    ROLE_ARN="${ROLE_ARN%"${ROLE_ARN##*[![:space:]]}"}"
+    PROFILE_EXTERNAL_ID="${PROFILE_EXTERNAL_ID#"${PROFILE_EXTERNAL_ID%%[![:space:]]*}"}"
+  else
+    ROLE_ARN="$RAW_VALUE"
   fi
 elif [ -n "$1" ] && [[ "$1" != --* ]] && [ -n "$2" ] && [[ "$2" != --* ]]; then
   ROLE_ARN="$1"
@@ -67,17 +84,30 @@ while [[ "$#" -gt 0 ]]; do
     --console-url) PRINT_CONSOLE_URL=true ;;
     --duration)    DURATION_SECONDS="$2"; shift ;;
     --region)      REGION="$2"; shift ;;
+    --external-id) EXTERNAL_ID_CLI="$2"; shift ;;
     *) echo "❌ Unknown parameter: $1"; usage; exit 1 ;;
   esac
   shift
 done
 
-echo "Assuming role: $ROLE_ARN (profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s)..."
+# CLI flag wins over env-file value.
+EXTERNAL_ID="${EXTERNAL_ID_CLI:-$PROFILE_EXTERNAL_ID}"
+
+if [ -n "$EXTERNAL_ID" ]; then
+  echo "Assuming role: $ROLE_ARN (profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s, ExternalId: $EXTERNAL_ID)..."
+else
+  echo "Assuming role: $ROLE_ARN (profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s)..."
+fi
+
+ASSUME_ARGS=(
+  --role-arn "$ROLE_ARN"
+  --role-session-name "$PROFILE_NAME-session"
+  --duration-seconds "$DURATION_SECONDS"
+)
+[ -n "$EXTERNAL_ID" ] && ASSUME_ARGS+=(--external-id "$EXTERNAL_ID")
 
 CREDS=$(aws sts assume-role \
-  --role-arn "$ROLE_ARN" \
-  --role-session-name "$PROFILE_NAME-session" \
-  --duration-seconds "$DURATION_SECONDS" \
+  "${ASSUME_ARGS[@]}" \
   --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
   --output text)
 
