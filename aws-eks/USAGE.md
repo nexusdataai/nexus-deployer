@@ -305,9 +305,9 @@ velero restore create --from-backup <name> \
     --restore-volumes
 ```
 
-Both calls are wrapped by `nexus-backend/scripts/backup-restore/kubernetes_velero.py`
+Both calls are wrapped by `nexus-deployer/backup-restore/kubernetes_velero.py`
 so you normally don't run them directly. See
-[`nexus-backend/scripts/backup-restore/README.md`](../../../nexus-backend/scripts/backup-restore/README.md)
+[`nexus-deployer/backup-restore/README.md`](../backup-restore/README.md)
 for the full operator runbook.
 
 ---
