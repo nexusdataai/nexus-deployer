@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Test script for full ADFS authentication flow including role selection."""
+"""Test script for full ADFS authentication flow including role selection.
+
+Credentials are read from environment variables; do not hard-code them. If
+ADFS_TEST_USERNAME / ADFS_TEST_PASSWORD are unset, this script exits early.
+"""
 import sys
 import os
 
@@ -8,11 +12,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.services.aws_auth_service import AWSAuthService
 
-# Test credentials
-ADFS_URL = "adfs.devfactory.com/adfs/ls/idpinitiatedsignon"
-USERNAME = r"devfactory\papubhattacharya"
-PASSWORD = "Promodeagro@1977"
-REGION = "us-east-1"
+# Test credentials (env-driven; never commit real values)
+ADFS_URL = os.environ.get("ADFS_TEST_URL", "adfs.example.com/adfs/ls/idpinitiatedsignon")
+USERNAME = os.environ.get("ADFS_TEST_USERNAME", "")
+PASSWORD = os.environ.get("ADFS_TEST_PASSWORD", "")  # pragma: allowlist secret
+REGION = os.environ.get("ADFS_TEST_REGION", "us-east-1")
+
+if not USERNAME or not PASSWORD:
+    sys.stderr.write(
+        "Set ADFS_TEST_USERNAME and ADFS_TEST_PASSWORD before running this script.\n"
+    )
+    sys.exit(2)
 
 def test_full_adfs_flow():
     """Test the complete ADFS authentication flow."""

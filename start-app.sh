@@ -62,8 +62,17 @@ echo -e "${YELLOW}[3/6] Starting backend server...${NC}"
 cd backend
 source venv/bin/activate
 
-# Start backend in background
-nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload > ../backend.log 2>&1 &
+# Generate (or reuse) the loopback self-signed cert for HTTPS so the backend
+# never serves cleartext (CWE-319). Cert lives under ~/.nexus/local-tls/.
+TLS_PATHS=$(python -c "from app.utils.local_tls import ensure_local_tls; c,k,_=ensure_local_tls(); print(c); print(k)")
+CERT_PATH=$(echo "$TLS_PATHS" | sed -n '1p')
+KEY_PATH=$(echo "$TLS_PATHS" | sed -n '2p')
+
+# Start backend in background (HTTPS on 127.0.0.1:8001)
+nohup python -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 8001 --reload \
+    --ssl-keyfile "$KEY_PATH" --ssl-certfile "$CERT_PATH" \
+    > ../backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > ../backend.pid
 
@@ -81,7 +90,7 @@ BACKEND_READY=false
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     ATTEMPT=$((ATTEMPT + 1))
     
-    if curl -s http://localhost:8001/api/health > /dev/null 2>&1; then
+    if curl -sk https://127.0.0.1:8001/api/health > /dev/null 2>&1; then
         BACKEND_READY=true
         echo -e "  ${GREEN}Backend is ready! (attempt $ATTEMPT/$MAX_ATTEMPTS)${NC}"
         break
@@ -157,7 +166,7 @@ echo -e "${GREEN}========================================"
 echo -e "  Startup Complete!"
 echo -e "========================================${NC}"
 echo ""
-echo -e "${CYAN}Backend:  http://localhost:8001${NC}"
+echo -e "${CYAN}Backend:  https://127.0.0.1:8001${NC}"
 echo -e "${CYAN}Frontend: http://localhost:5173${NC}"
 echo -e "${CYAN}Desktop:  Electron app window${NC}"
 echo ""

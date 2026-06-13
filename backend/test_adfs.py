@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
-"""Test script for pure Python ADFS authentication - matching aws-adfs library approach."""
+"""Test script for pure Python ADFS authentication - matching aws-adfs library approach.
+
+Credentials are read from environment variables; do not hard-code them. If
+ADFS_TEST_USERNAME / ADFS_TEST_PASSWORD are unset, this script exits early.
+"""
+import os
+import sys
 import requests
 import urllib3
 import base64
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import re
 
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Test credentials
-ADFS_HOST = "adfs.devfactory.com"
-USERNAME = r"devfactory\papubhattacharya"
-PASSWORD = "Promodeagro@1977"
+# Test credentials (env-driven; never commit real values)
+ADFS_HOST = os.environ.get("ADFS_TEST_HOST", "adfs.example.com")
+USERNAME = os.environ.get("ADFS_TEST_USERNAME", "")
+PASSWORD = os.environ.get("ADFS_TEST_PASSWORD", "")  # pragma: allowlist secret
+
+if not USERNAME or not PASSWORD:
+    sys.stderr.write(
+        "Set ADFS_TEST_USERNAME and ADFS_TEST_PASSWORD before running this script.\n"
+    )
+    sys.exit(2)
 
 def test_adfs_auth():
     """Test ADFS authentication using the same approach as aws-adfs library."""

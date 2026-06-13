@@ -19,6 +19,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -326,3 +327,6 @@ kube-operator/.env.local
 aws-login/.last-eks
 kube-operator/.env.local.dev
 kube-operator/.env.local.prod
+
+# Port-review markdown reports (transient)
+scratch/
