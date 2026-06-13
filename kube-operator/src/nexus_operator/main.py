@@ -669,7 +669,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 naming=naming,
                 maxmemory=redis_spec.get("maxmemory", "2gb"),
                 storage_size=redis_spec.get("storageSize", "2Gi"),
-                storage_class=redis_spec.get("storageClass"),
+                storage_class=redis_spec.get("storageClass", "gp2"),
             )
 
             _update_step(steps, "Redis", "done", resources=["redis", "redis-svc"])
@@ -964,7 +964,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     naming=naming,
                     maxmemory=redis_spec.get("maxmemory", "2gb"),
                     storage_size=redis_spec.get("storageSize", "2Gi"),
-                    storage_class=redis_spec.get("storageClass"),
+                    storage_class=redis_spec.get("storageClass", "gp2"),
                 )
 
         # If backend config changed, update backend deployment

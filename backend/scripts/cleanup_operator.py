@@ -9,7 +9,7 @@ This script is FULLY AUTONOMOUS and uses only Python APIs:
 
 The script removes all resources created during operator deployment:
 - Kubernetes resources (namespace, RBAC, CRD, deployments)
-- IAM roles (NexusOperatorRole)
+- IAM roles (nexus-operator-role)
 - ECR repository (optional)
 - aws-auth ConfigMap entry
 - Access Entry (optional)
@@ -73,7 +73,7 @@ OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
 OPERATOR_CLUSTER_ROLE = "nexus-operator"
 OPERATOR_CLUSTER_ROLE_BINDING = "nexus-operator"
 CRD_NAME = "nexuscapabilities.nexus.ai"
-IAM_ROLE_NAME = "NexusOperatorRole"
+IAM_ROLE_NAME = "nexus-operator-role"
 ECR_REPO_NAME = "nexus-operator"
 
 

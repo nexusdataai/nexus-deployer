@@ -16,7 +16,7 @@ metadata:
     # IRSA: do not apply as-is. Substitute ${ACCOUNT_ID} (see permissions/ADMIN-SETUP.md), e.g.:
     #   export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     #   sed -e "s|\${ACCOUNT_ID}|${ACCOUNT_ID}|g" manifests/rbac.yaml | kubectl apply -f -
-    eks.amazonaws.com/role-arn: "arn:aws:iam::${ACCOUNT_ID}:role/NexusOperatorRole"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::${ACCOUNT_ID}:role/nexus-operator-role"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -98,6 +98,13 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # CRD discovery (kopf walks customresourcedefinitions at startup to
+  # find the schemas of the CRs it watches; without this the operator
+  # spins in a 403 retry loop and never reaches Ready).
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
