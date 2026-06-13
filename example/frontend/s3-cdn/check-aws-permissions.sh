@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# StarHub QA Dashboard - AWS Permissions Checker
+# Nexus AI QA Dashboard - AWS Permissions Checker
 # This script checks what AWS permissions you have for Cognito setup
 
 set -e
@@ -104,7 +104,7 @@ setup_aws_access() {
 }
 
 echo "================================================================"
-echo "    StarHub QA Dashboard - AWS Permissions Checker"
+echo "    Nexus AI QA Dashboard - AWS Permissions Checker"
 echo "    Target Account: $TARGET_ACCOUNT_ID"
 echo "================================================================"
 echo ""

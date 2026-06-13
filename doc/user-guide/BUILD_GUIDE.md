@@ -38,7 +38,7 @@ pip install pyinstaller
 ## Project Structure
 
 ```
-starhub-deployer/
+nexus-deployer/
 ├── frontend/           # React application
 │   ├── dist/          # Built frontend (created during build)
 │   └── package.json

@@ -7,7 +7,7 @@ certificate at first launch, persist it under the user's data directory,
 and start uvicorn with TLS enabled.
 
 The Electron main process pins the certificate's SPKI hash via the
-`STARHUB_LOCAL_TLS_SPKI` environment variable and the
+`NEXUS_LOCAL_TLS_SPKI` environment variable and the
 `ignore-certificate-errors-spki-list` Chromium switch, so renderer
 fetches succeed without trusting any other certificate.
 """
@@ -30,7 +30,7 @@ SPKI_FILENAME = "spki.txt"
 
 def get_local_tls_dir() -> Path:
     """Return the directory holding the local TLS material."""
-    override = os.getenv("STARHUB_LOCAL_TLS_DIR")
+    override = os.getenv("NEXUS_LOCAL_TLS_DIR")
     if override:
         return Path(override).expanduser()
     return Path.home() / ".nexus" / "local-tls"
@@ -61,7 +61,7 @@ def _generate_cert(cert_path: Path, key_path: Path, spki_path: Path) -> str:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "StarHub Deployer (local)"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Nexus AI Deployer (local)"),
     ])
     now = datetime.now(timezone.utc)
     cert = (

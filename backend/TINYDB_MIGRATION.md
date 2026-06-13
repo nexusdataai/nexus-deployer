@@ -2,7 +2,7 @@
 
 ## Overview
 
-The starhub-deployer application has been migrated from file-based JSON state management to TinyDB for improved reliability, queryability, and maintainability.
+The nexus-deployer application has been migrated from file-based JSON state management to TinyDB for improved reliability, queryability, and maintainability.
 
 ## What Changed
 

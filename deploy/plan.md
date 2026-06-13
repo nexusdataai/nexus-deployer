@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines a comprehensive plan for creating an automated deployment system for business capabilities in the StarHub/Totogi Customer Toolkit. The system will deploy complete business capabilities (frontend and backend) to any AWS environment using a layered, incremental approach with proper separation of concerns.
+This document outlines a comprehensive plan for creating an automated deployment system for business capabilities in the Nexus AI Customer Toolkit. The system will deploy complete business capabilities (frontend and backend) to any AWS environment using a layered, incremental approach with proper separation of concerns.
 
 ## Table of Contents
 
@@ -241,7 +241,7 @@ Create a modular, reusable deployment automation system that:
 ## Directory Structure
 
 ```
-/opt/mycode/trilogy/starhub-deployer/deploy/
+/opt/mycode/nexus/nexus-deployer/deploy/
 ├── deploy-capability-layered.sh      # Main orchestrator script
 ├── plan.md                           # This deployment plan
 ├── README.md                         # User documentation

@@ -23,7 +23,7 @@ This guide covers four things in order. Read **Part 1** at least once even if yo
 | Pod name | `nexus-ai-prod-bssmagic-0` |
 | Namespace | `nexus-ai-prod` |
 | Persistent storage | PVC mounted at `/var/lib/postgresql/data` (PostgreSQL data + FDW config survive restarts) |
-| Image | `764119721991.dkr.ecr.us-east-1.amazonaws.com/prod/bssmagic-runtime:<tag>` plus the StarHub overlay in `starhub-deployer/bssmagic-image/Dockerfile` |
+| Image | `764119721991.dkr.ecr.us-east-1.amazonaws.com/prod/bssmagic-runtime:<tag>` plus the Nexus AI overlay in `nexus-deployer/bssmagic-image/Dockerfile` |
 | Container name | `bssmagic-runtime` |
 | Secrets mount | Kubernetes Secret rendered from AWS Secrets Manager `nexus-ai/prod/bssmagic-credentials`, mounted at `/credentials` (read-only) |
 
@@ -143,7 +143,7 @@ JOIN pg_authid u ON u.oid = um.umuser;
 ```
 
 **Pass criteria:**
-- A server named like `starhub_itxp2dev` (or whatever the deployment named it) appears.
+- A server named like `nexus_itxp2dev` (or whatever the deployment named it) appears.
 - Its `srvoptions` contain `login_server`, `client_id`, `client_secret`, `instance_url`, `api_version`, `wrapper=fdw_salesforce.salesforce_fdw.SalesforceForeignDataWrapper`.
 - The user mapping (typically for `postgres`) contains `username` and `password` for the SFDC user.
 
@@ -157,7 +157,7 @@ The backend has a single endpoint that exercises all 6 layers in one call. Run i
 BPOD="$(kubectl -n nexus-ai-prod get pods --no-headers \
   | awk '/backend/ && !/frontend/ && $2=="1/1"' | head -1 | awk '{print $1}')"
 
-kubectl -n nexus-ai-prod exec "$BPOD" -c starhub-backend -- sh -lc '
+kubectl -n nexus-ai-prod exec "$BPOD" -c nexus-backend -- sh -lc '
   curl -sS --max-time 30 http://localhost:8000/api/v1/diagnostics/sfdc/full \
     | python -m json.tool
 '
@@ -323,7 +323,7 @@ kubectl -n nexus-ai-prod exec nexus-ai-prod-bssmagic-0 -c bssmagic-runtime -- \
 # 3) Backend full diagnostic still PASS
 BPOD="$(kubectl -n nexus-ai-prod get pods --no-headers \
   | awk '/backend/ && !/frontend/ && $2=="1/1"' | head -1 | awk '{print $1}')"
-kubectl -n nexus-ai-prod exec "$BPOD" -c starhub-backend -- sh -lc '
+kubectl -n nexus-ai-prod exec "$BPOD" -c nexus-backend -- sh -lc '
   curl -sS --max-time 30 http://localhost:8000/api/v1/diagnostics/sfdc/full | python -m json.tool
 '
 
@@ -376,7 +376,7 @@ backend → Postgres FDW → Axway gateway (OAuth client_credentials, KeyId, Pro
 
 ```
 backend → Postgres FDW → Salesforce login.salesforce.com (OAuth password grant or JWT bearer)
-                       → Salesforce instance URL (e.g. https://starhub.my.salesforce.com)
+                       → Salesforce instance URL (e.g. https://nexus.my.salesforce.com)
 ```
 
 This is **purely a configuration change** — the same `salesforce_fdw.py` wrapper supports both modes by reading different `srvoptions` and `umoptions` on the foreign server / user mapping. No image rebuild, no code deploy.
@@ -391,7 +391,7 @@ This is **purely a configuration change** — the same `salesforce_fdw.py` wrapp
 | Single egress point for compliance | Add EKS pod → Salesforce IP to the corporate egress whitelist; document for security review |
 | Ability to swap SFDC orgs without telling consumers | Now coupled directly to the SFDC instance URL |
 
-**Caveats specific to StarHub's environment:**
+**Caveats specific to Nexus AI's environment:**
 - The pod is in a private subnet. Outbound to `login.salesforce.com` and the instance URL (`*.my.salesforce.com`) must be permitted via NAT or proxy. **Confirm with infra before flipping.**
 - Direct mode uses SFDC username/password/security-token (OAuth password grant) or JWT bearer (preferred). The connected app on the SFDC side must be configured. You'll need: Consumer Key, Consumer Secret, a user with API access, optionally that user's security token, and the connected app's IP whitelist must include the pod's NAT egress IP.
 
@@ -415,7 +415,7 @@ Get these values before you touch anything:
 | Integration user **password** | issued at user-creation; rotate as needed |
 | **Security Token** for that user (concat to password) | SFDC user's "Reset My Security Token" if IP whitelist is not configured; **not** required if connected app uses IP whitelist or relaxed IP restrictions |
 | **Login URL** | `https://login.salesforce.com` (production) or `https://test.salesforce.com` (sandbox) |
-| **Instance URL** | e.g. `https://starhub.my.salesforce.com` — visible in the SFDC URL bar after login |
+| **Instance URL** | e.g. `https://nexus.my.salesforce.com` — visible in the SFDC URL bar after login |
 | **API Version** | Keep what's there today (`v63.0` per current FDW server options) |
 
 Also have the SFDC admin **add the pod's NAT egress IP** to the connected app's IP whitelist OR set "Relax IP restrictions" with security-token-based auth.
@@ -425,12 +425,12 @@ Also have the SFDC admin **add the pod's NAT egress IP** to the connected app's 
 ```bash
 # Variables — fill these in from 4.4
 SF_LOGIN_URL='https://login.salesforce.com'
-SF_INSTANCE_URL='https://starhub.my.salesforce.com'
+SF_INSTANCE_URL='https://nexus.my.salesforce.com'
 SF_CLIENT_ID='<CONSUMER_KEY>'
 SF_CLIENT_SECRET='<CONSUMER_SECRET>'
-SF_USERNAME='svc-callsense@starhub.com'
+SF_USERNAME='svc-callsense@nexus.com'
 SF_PASSWORD='<password><security_token_if_required>'
-FDW_SERVER='starhub_itxp2dev'  # confirm with the SELECT from 2.3
+FDW_SERVER='nexus_itxp2dev'  # confirm with the SELECT from 2.3
 
 # 1) Update the foreign server: point at direct SFDC, drop Axway-specific options
 kubectl -n nexus-ai-prod exec nexus-ai-prod-bssmagic-0 -c bssmagic-runtime -- \
@@ -514,9 +514,9 @@ spec:
                 done
                 # Re-apply direct-SFDC FDW config
                 psql -U postgres -d bssmagic <<'SQL'
-                ALTER SERVER starhub_itxp2dev OPTIONS (
+                ALTER SERVER nexus_itxp2dev OPTIONS (
                   SET login_server 'https://login.salesforce.com',
-                  SET instance_url 'https://starhub.my.salesforce.com'
+                  SET instance_url 'https://nexus.my.salesforce.com'
                 );
                 -- keep client_id / client_secret values unchanged here so they
                 -- can come from the StatefulSet env which init-bssmagic
@@ -535,7 +535,7 @@ Single command, no restart needed:
 
 ```bash
 # Set FDW_SERVER, plus the prod Axway values you flipped to yesterday
-FDW_SERVER='starhub_itxp2dev'
+FDW_SERVER='nexus_itxp2dev'
 AXWAY_LOGIN='https://apim.aws.starhubsg.sh.inc/auth/realms/API/protocol/openid-connect/token'
 AXWAY_INSTANCE='https://apim.aws.starhubsg.sh.inc/common/document-management/prod/v1/retrieve-query-data'
 AXWAY_CLIENT_ID='cloudsense-prod'

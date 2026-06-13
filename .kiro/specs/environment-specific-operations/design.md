@@ -6,7 +6,7 @@ This design introduces an Environment Selector modal component that allows users
 
 ## Architecture
 
-The solution follows the existing React component architecture in the starhub-deployer frontend:
+The solution follows the existing React component architecture in the nexus-deployer frontend:
 
 ```
 CapabilitySelection.tsx
@@ -259,5 +259,5 @@ Each property from the Correctness Properties section will be implemented as a s
 ### Test File Location
 
 Tests will be co-located with the component:
-- `starhub-deployer/frontend/src/components/EnvironmentSelectorModal.test.tsx`
-- `starhub-deployer/frontend/src/components/CapabilitySelection.test.tsx` (updates)
+- `nexus-deployer/frontend/src/components/EnvironmentSelectorModal.test.tsx`
+- `nexus-deployer/frontend/src/components/CapabilitySelection.test.tsx` (updates)

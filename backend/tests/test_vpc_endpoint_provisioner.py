@@ -90,7 +90,7 @@ def test_discover_cluster_network_uses_cluster_security_group():
     _wire_ec2(ec2)
 
     p = VpcEndpointProvisioner(eks_client=eks, ec2_client=ec2, region="us-east-1")
-    info = p.discover_cluster_network("starhub-test1")
+    info = p.discover_cluster_network("nexus-test1")
     assert info["vpc_id"] == "vpc-abc"
     assert info["security_group_ids"] == ["sg-cluster"]
     assert info["route_table_ids"] == ["rt-1"]

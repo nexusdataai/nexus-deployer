@@ -87,7 +87,7 @@ async def test_step1_happy_path_returns_pass():
     })
 
     orch = _make_orchestrator(ops)
-    report = await orch.step1_cluster_readiness("starhub-test1", iam_mode="managed")
+    report = await orch.step1_cluster_readiness("nexus-test1", iam_mode="managed")
 
     names = {c.name for c in report.checks}
     assert {
@@ -118,7 +118,7 @@ async def test_step1_missing_oidc_provider_fails_fast():
     ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "totogi-system"})
 
     orch = _make_orchestrator(ops)
-    report = await orch.step1_cluster_readiness("starhub-test1", iam_mode="managed")
+    report = await orch.step1_cluster_readiness("nexus-test1", iam_mode="managed")
     oidc = next(c for c in report.checks if c.name == "oidc_provider")
     assert oidc.status == "fail"
     assert report.can_proceed is False
@@ -152,7 +152,7 @@ async def test_step1_preprovisioned_missing_operator_role_is_fail():
     ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "totogi-system"})
 
     orch = _make_orchestrator(ops)
-    report = await orch.step1_cluster_readiness("starhub-test1", iam_mode="preprovisioned")
+    report = await orch.step1_cluster_readiness("nexus-test1", iam_mode="preprovisioned")
     op_role = next(c for c in report.checks if c.name == "operator_iam_role")
     assert op_role.status == "fail"
     assert report.can_proceed is False

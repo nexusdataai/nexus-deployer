@@ -9,7 +9,7 @@ capability:
 
 source:
   frontend:
-    s3_uri: s3://starhub-ui-delivery-ps/starhub-ui-1.0.0.zip  # Frontend build artifact
+    s3_uri: s3://nexus-ui-delivery-ps/nexus-ui-1.0.0.zip  # Frontend build artifact
     s3_region: us-east-1                                       # Region of source bucket
   backend:
     ecr_uri: 764119721991.dkr.ecr.us-east-1.amazonaws.com/ai-job-engine:latest  # Backend container
@@ -109,12 +109,12 @@ monitoring:
 tags:
   # Common tags applied to all resources
   common:
-    Project: StarHub
+    Project: Nexus AI
     CostCenter: PS
     ManagedBy: CloudFormation
     Environment: Test
     Team: PS
-    Application: StarHub
+    Application: Nexus AI
     Service: CallProcessing
     Version: 1.0.0
     Deployment: Test

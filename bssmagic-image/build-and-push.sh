@@ -24,7 +24,7 @@ set -e
 
 ECR_REGISTRY="${1:?Usage: $0 <ECR_REGISTRY> [TAG]}"
 TAG="${2:-latest}"
-IMAGE_NAME="bssmagic-starhub-k8s"
+IMAGE_NAME="bssmagic-nexus-k8s"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

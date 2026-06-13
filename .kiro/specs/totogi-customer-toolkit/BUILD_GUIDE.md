@@ -29,7 +29,7 @@ This guide explains how to build and package the Totogi Capability Installer as 
 ## Project Structure
 
 ```
-starhub-deployer/
+nexus-deployer/
 ├── frontend/                    # React + Vite application
 │   ├── src/
 │   │   ├── components/         # React components
@@ -100,7 +100,7 @@ starhub-deployer/
 
 ```bash
 git clone <repository-url>
-cd starhub-deployer
+cd nexus-deployer
 ```
 
 ### 2. Setup Backend (Python)
@@ -532,7 +532,7 @@ Configure update server in `electron/package.json`:
 "publish": {
   "provider": "github",
   "owner": "your-org",
-  "repo": "starhub-deployer"
+  "repo": "nexus-deployer"
 }
 ```
 

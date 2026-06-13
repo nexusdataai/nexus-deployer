@@ -12,7 +12,7 @@
 #   sh test-diag-api.sh --alb-host app.example.com       # probe via the public ALB
 #   sh test-diag-api.sh --backend-url http://localhost:8000   # custom URL (port-forward)
 #   sh test-diag-api.sh --namespace nexus-ai-prod
-#   sh test-diag-api.sh --context starhub-test
+#   sh test-diag-api.sh --context nexus-test
 #   sh test-diag-api.sh --json                           # machine-readable JSON
 #   sh test-diag-api.sh --strict                         # exit non-zero on any FAIL
 #   sh test-diag-api.sh --timeout 30                     # per-request timeout (default 20s)
@@ -69,7 +69,7 @@ Options:
   --backend-url URL    Direct URL to the backend (skips kubectl exec)
   --alb-host HOST      Public ALB host -> probe via https://HOST
   --namespace NS       Kubernetes namespace (default: auto-detect)
-  --context CTX        kubeconfig context (e.g. starhub-test)
+  --context CTX        kubeconfig context (e.g. nexus-test)
   --timeout SEC        Per-request timeout (default: 20s)
   --json               Machine-readable JSON output (skip ASCII table)
   --strict             Exit non-zero if any check FAILs

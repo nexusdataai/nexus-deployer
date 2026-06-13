@@ -73,7 +73,7 @@ The primary deployment script remains in the parent directory:
 ## Directory Structure
 
 ```
-/opt/mycode/trilogy/starhub-deployer/deploy/
+/opt/mycode/nexus/nexus-deployer/deploy/
 ├── deploy-capability-layered.sh    # Main deployment script
 ├── scripts/                         # Utility scripts (this directory)
 │   ├── test-artifact-verification.sh

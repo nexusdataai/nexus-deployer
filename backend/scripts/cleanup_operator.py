@@ -15,9 +15,9 @@ The script removes all resources created during operator deployment:
 - Access Entry (optional)
 
 Usage:
-    python cleanup_operator.py --cluster starhub-test --region us-east-1 --profile external-access
-    python cleanup_operator.py --cluster starhub-test --profile external-access --keep-ecr
-    python cleanup_operator.py --cluster starhub-test --profile external-access --keep-iam
+    python cleanup_operator.py --cluster nexus-test --region us-east-1 --profile external-access
+    python cleanup_operator.py --cluster nexus-test --profile external-access --keep-ecr
+    python cleanup_operator.py --cluster nexus-test --profile external-access --keep-iam
 
 Requirements:
     - AWS credentials configured (or session ID provided)
@@ -1128,16 +1128,16 @@ async def main():
         epilog="""
 Examples:
   # Complete cleanup
-  python cleanup_operator.py --cluster starhub-test --profile external-access
+  python cleanup_operator.py --cluster nexus-test --profile external-access
 
   # Keep ECR repository
-  python cleanup_operator.py --cluster starhub-test --profile external-access --keep-ecr
+  python cleanup_operator.py --cluster nexus-test --profile external-access --keep-ecr
 
   # Keep IAM role
-  python cleanup_operator.py --cluster starhub-test --profile external-access --keep-iam
+  python cleanup_operator.py --cluster nexus-test --profile external-access --keep-iam
 
   # Keep everything except K8s resources
-  python cleanup_operator.py --cluster starhub-test --profile external-access --keep-iam --keep-ecr --keep-access-entry
+  python cleanup_operator.py --cluster nexus-test --profile external-access --keep-iam --keep-ecr --keep-access-entry
 
 What gets deleted:
   - Operator deployment and service

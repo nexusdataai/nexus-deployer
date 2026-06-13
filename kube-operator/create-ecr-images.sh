@@ -5,12 +5,27 @@
 # Docker images to ECR. Run this before e2e-deploy.sh.
 # Reads defaults from .env.local.
 #
+# Each image is pushed with BOTH :latest and :<version> tags. Versions are
+# resolved per-component, priority highest-first:
+#   1. CLI override (--version, --bssmagic-version, --operator-version)
+#   2. images/<component>/versions.env (written by package-images.sh) — used
+#      when it matches the live VERSION+git-sha; otherwise reported stale.
+#   3. live VERSION file + git short sha:  <ver>-<sha>
+#        Operator:  kube-operator/VERSION
+#        Backend:   nexus-backend/VERSION
+#        Frontend:  nexus-ui/VERSION
+#        BSS Magic: no VERSION file by default — falls back to
+#                   $(date +%Y%m%d)-manual unless --bssmagic-version is given.
+#
 # Usage:
-#   ./create-ecr-images.sh                       # Push all images to ECR
+#   ./create-ecr-images.sh                       # Push all images to ECR (dual-tagged)
 #   ./create-ecr-images.sh --skip-operator       # Skip operator image
-#   ./create-ecr-images.sh --skip-app-images     # Skip Nexus images
+#   ./create-ecr-images.sh --skip-app-images     # Skip Nexus (backend + frontend)
 #   ./create-ecr-images.sh --skip-bssmagic       # Skip BSS Magic image
 #   ./create-ecr-images.sh --only-operator       # Only push operator image
+#   ./create-ecr-images.sh --version 1.2.3       # Override backend + frontend version tag
+#   ./create-ecr-images.sh --bssmagic-version V  # Override BSS Magic version tag
+#   ./create-ecr-images.sh --operator-version V  # Override operator version tag
 #   ./create-ecr-images.sh --help
 #
 # Image sources (auto-detected):
@@ -44,12 +59,50 @@ PUSH_APP=true
 PUSH_BSSMAGIC=true
 ONLY_MODE=""
 NO_CACHE=false
+APP_VERSION_OVERRIDE=""
+BSSMAGIC_VERSION_OVERRIDE=""
+OPERATOR_VERSION_OVERRIDE=""
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+# ── Push-result tracking ─────────────────────────────────────────
+PUSHED_OK=()
+PUSHED_FAIL=()
+record_push_ok()   { PUSHED_OK+=("$1"); }
+record_push_fail() { PUSHED_FAIL+=("$1"$'\t'"$2"); }
+
+# ── docker push of a single ref, with success/failure recording ──
+docker_push_recorded() {
+    local ref="$1"
+    if push_err=$(docker push "$ref" 2>&1); then
+        echo -e "  ${GREEN}✓${NC} pushed: ${ref}"
+        record_push_ok "$ref"
+        return 0
+    else
+        echo -e "  ${RED}✗${NC} push failed: ${ref}"
+        echo "$push_err" | tail -n3 | sed 's/^/      /'
+        record_push_fail "$ref" "$(echo "$push_err" | tail -n3 | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+# ── Dual-tag a local Docker image (:latest + :<version>) and push both ──
+# Args: $1=local_image_ref (e.g. nexus-operator:latest), $2=ecr_repo_name,
+#       $3=version_tag
+docker_dual_tag_push() {
+    local local_ref="$1" repo="$2" version_tag="$3"
+    local versioned="${ECR_REGISTRY}/${repo}:${version_tag}"
+    local latest="${ECR_REGISTRY}/${repo}:latest"
+
+    docker tag "$local_ref" "$versioned"
+    docker tag "$local_ref" "$latest"
+    docker_push_recorded "$versioned"
+    docker_push_recorded "$latest"
+}
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -61,11 +114,14 @@ while [[ $# -gt 0 ]]; do
         --only-bssmagic)    ONLY_MODE="bssmagic"; shift ;;
         --no-cache)         NO_CACHE=true; shift ;;
         --env)              DEPLOY_ENV="$2"; shift 2 ;;
+        --version)          APP_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --bssmagic-version) BSSMAGIC_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --operator-version) OPERATOR_VERSION_OVERRIDE="$2"; shift 2 ;;
         --help|-h)
             echo "Create ECR Images"
             echo ""
-            echo "Builds/loads and pushes all Docker images to ECR."
-            echo "Run this before e2e-deploy.sh."
+            echo "Builds/loads and pushes all Docker images to ECR with both"
+            echo ":latest and :<version> tags. Run this before e2e-deploy.sh."
             echo ""
             echo "Usage:"
             echo "  $0                       # Push all images"
@@ -76,6 +132,9 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --only-app-images     # Only Nexus"
             echo "  $0 --only-bssmagic       # Only BSS Magic"
             echo "  $0 --no-cache            # Force rebuild from Dockerfile (ignore tar files)"
+            echo "  $0 --version 1.2.3       # Override backend + frontend version tag"
+            echo "  $0 --bssmagic-version V  # Override BSS Magic version tag"
+            echo "  $0 --operator-version V  # Override operator version tag (default: kube-operator/VERSION + git sha)"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -131,6 +190,23 @@ if [ "$PUSH_OPERATOR" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] Operator Image ──${NC}"
 
+    # Resolve operator version tag.
+    # Priority: --operator-version > images/operator/versions.env > VERSION+sha
+    _op_ver=$(cat "${SCRIPT_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+    _op_sha=$(cd "${SCRIPT_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    LIVE_OPERATOR_TAG="${_op_ver}-${_op_sha}"
+
+    if [ -n "${OPERATOR_VERSION_OVERRIDE}" ]; then
+        OPERATOR_TAG="${OPERATOR_VERSION_OVERRIDE}"
+        echo "  (using --operator-version override: ${OPERATOR_TAG})"
+    elif [ -f "${OPERATOR_IMAGES_DIR}/versions.env" ]; then
+        _saved_OPERATOR_TAG=$(. "${OPERATOR_IMAGES_DIR}/versions.env" >/dev/null 2>&1; echo "${OPERATOR_TAG:-}")
+        OPERATOR_TAG="${_saved_OPERATOR_TAG:-$LIVE_OPERATOR_TAG}"
+        echo "  (read operator version from ${OPERATOR_IMAGES_DIR}/versions.env: ${OPERATOR_TAG})"
+    else
+        OPERATOR_TAG="${LIVE_OPERATOR_TAG}"
+    fi
+
     HAS_OPERATOR_TAR=false
     [ -f "${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz" ] && HAS_OPERATOR_TAR=true
 
@@ -142,15 +218,18 @@ if [ "$PUSH_OPERATOR" = true ]; then
         docker load -i "${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz"
     fi
 
+    echo "  Operator version tag: ${OPERATOR_TAG}"
+    echo "  Push plan:"
+    echo "    ${ECR_REGISTRY}/nexus-operator:${OPERATOR_TAG}"
+    echo "    ${ECR_REGISTRY}/nexus-operator:latest"
+
     aws ecr describe-repositories --repository-names "nexus-operator" \
         --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
     || aws ecr create-repository --repository-name "nexus-operator" \
         --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
     || true
 
-    docker tag nexus-operator:latest "${ECR_REGISTRY}/nexus-operator:latest"
-    docker push "${ECR_REGISTRY}/nexus-operator:latest"
-    echo -e "  ${GREEN}✓${NC} Operator image pushed"
+    docker_dual_tag_push "nexus-operator:latest" "nexus-operator" "$OPERATOR_TAG"
     echo ""
 fi
 
@@ -160,6 +239,30 @@ fi
 if [ "$PUSH_APP" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] Nexus Images (backend + frontend) ──${NC}"
+
+    # Resolve version tags.
+    # Priority: --version > images/nexus/versions.env > VERSION+sha (per repo)
+    _be_ver=$(cat "${BACKEND_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+    _be_sha=$(cd "${BACKEND_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    _fe_ver=$(cat "${FRONTEND_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+    _fe_sha=$(cd "${FRONTEND_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    LIVE_BACKEND_TAG="${_be_ver}-${_be_sha}"
+    LIVE_FRONTEND_TAG="${_fe_ver}-${_fe_sha}"
+
+    if [ -n "${APP_VERSION_OVERRIDE}" ]; then
+        BACKEND_TAG="${APP_VERSION_OVERRIDE}"
+        FRONTEND_TAG="${APP_VERSION_OVERRIDE}"
+        echo "  (using --version override: ${BACKEND_TAG})"
+    elif [ -f "${IMAGES_DIR}/versions.env" ]; then
+        _saved_BACKEND_TAG=$(. "${IMAGES_DIR}/versions.env" >/dev/null 2>&1; echo "${BACKEND_TAG:-}")
+        _saved_FRONTEND_TAG=$(. "${IMAGES_DIR}/versions.env" >/dev/null 2>&1; echo "${FRONTEND_TAG:-}")
+        BACKEND_TAG="${_saved_BACKEND_TAG:-$LIVE_BACKEND_TAG}"
+        FRONTEND_TAG="${_saved_FRONTEND_TAG:-$LIVE_FRONTEND_TAG}"
+        echo "  (read versions from ${IMAGES_DIR}/versions.env: backend=${BACKEND_TAG}, frontend=${FRONTEND_TAG})"
+    else
+        BACKEND_TAG="${LIVE_BACKEND_TAG}"
+        FRONTEND_TAG="${LIVE_FRONTEND_TAG}"
+    fi
 
     HAS_TAR_IMAGES=false
     [ -f "${IMAGES_DIR}/ai-job-engine.tar.gz" ] && [ -f "${IMAGES_DIR}/nexus-ui.tar.gz" ] && HAS_TAR_IMAGES=true
@@ -183,15 +286,22 @@ if [ "$PUSH_APP" = true ]; then
         docker load -i "${IMAGES_DIR}/nexus-ui.tar.gz"
     fi
 
-    for repo in ai-job-engine nexus-ui; do
+    echo "  Backend version tag:  ${BACKEND_TAG}"
+    echo "  Frontend version tag: ${FRONTEND_TAG}"
+    echo "  Push plan:"
+    echo "    ${ECR_REGISTRY}/ai-job-engine:${BACKEND_TAG}"
+    echo "    ${ECR_REGISTRY}/ai-job-engine:latest"
+    echo "    ${ECR_REGISTRY}/nexus-ui:${FRONTEND_TAG}"
+    echo "    ${ECR_REGISTRY}/nexus-ui:latest"
+
+    for repo_pair in "ai-job-engine|${BACKEND_TAG}" "nexus-ui|${FRONTEND_TAG}"; do
+        IFS='|' read -r repo tag <<< "$repo_pair"
         aws ecr describe-repositories --repository-names "$repo" \
             --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
         || aws ecr create-repository --repository-name "$repo" \
             --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
         || true
-        docker tag "${repo}:latest" "${ECR_REGISTRY}/${repo}:latest"
-        docker push "${ECR_REGISTRY}/${repo}:latest"
-        echo -e "  ${GREEN}✓${NC} ${repo} pushed"
+        docker_dual_tag_push "${repo}:latest" "$repo" "$tag"
     done
     echo ""
 fi
@@ -203,7 +313,21 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] BSS Magic Image ──${NC}"
 
+    # Resolve BSS Magic version (priority: CLI override > versions.env > date-stamp)
+    if [ -n "${BSSMAGIC_VERSION_OVERRIDE}" ]; then
+        BSSMAGIC_TAG="${BSSMAGIC_VERSION_OVERRIDE}"
+    elif [ -f "${BSSMAGIC_IMAGES_DIR}/versions.env" ]; then
+        . "${BSSMAGIC_IMAGES_DIR}/versions.env"
+        echo "  (read version from ${BSSMAGIC_IMAGES_DIR}/versions.env)"
+    else
+        BSSMAGIC_TAG="${BSSMAGIC_TAG:-$(date +%Y%m%d)-manual}"
+    fi
+    echo "  BSS Magic version tag: ${BSSMAGIC_TAG}"
+
     if [ -f "${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz" ]; then
+        echo "  Push plan:"
+        echo "    ${ECR_REGISTRY}/bssmagic-nexus-k8s:${BSSMAGIC_TAG}"
+        echo "    ${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
         echo "  Loading from tar: ${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
         docker load -i "${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
 
@@ -214,9 +338,7 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
             --image-scanning-configuration scanOnPush=true > /dev/null 2>&1 \
         || true
 
-        docker tag "bssmagic-nexus-k8s:latest" "${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
-        docker push "${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
-        echo -e "  ${GREEN}✓${NC} BSS Magic image pushed"
+        docker_dual_tag_push "bssmagic-nexus-k8s:latest" "bssmagic-nexus-k8s" "$BSSMAGIC_TAG"
     else
         echo -e "  ${YELLOW}!${NC} BSS Magic tar not found at ${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
         echo "    Will use whatever image is already in ECR."
@@ -228,12 +350,42 @@ fi
 # ──────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────
-echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ECR Images Ready${NC}"
-echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+FAIL_COUNT=${#PUSHED_FAIL[@]}
+OK_COUNT=${#PUSHED_OK[@]}
+
+if [ "$FAIL_COUNT" -eq 0 ]; then
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  ECR Images Ready  (${OK_COUNT} pushed, 0 failed)${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════════${NC}"
+else
+    echo -e "${RED}═══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  ECR Push Completed With Errors  (${OK_COUNT} pushed, ${FAIL_COUNT} failed)${NC}"
+    echo -e "${RED}═══════════════════════════════════════════════════════════════════${NC}"
+fi
 echo ""
 echo "  Registry: ${ECR_REGISTRY}"
 echo ""
+
+if [ "$OK_COUNT" -gt 0 ]; then
+    echo -e "${CYAN}── Pushed Successfully ──${NC}"
+    for img in "${PUSHED_OK[@]}"; do
+        echo -e "  ${GREEN}✓${NC} ${img}"
+    done
+    echo ""
+fi
+
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    echo -e "${CYAN}── Failures ──${NC}"
+    for entry in "${PUSHED_FAIL[@]}"; do
+        img="${entry%%	*}"
+        reason="${entry#*	}"
+        echo -e "  ${RED}✗${NC} ${img}"
+        echo "      reason: ${reason}"
+    done
+    echo ""
+    exit 1
+fi
+
 echo "  You can now deploy with:"
 echo "    ./e2e-deploy.sh"
 echo ""

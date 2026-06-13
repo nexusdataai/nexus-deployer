@@ -25,14 +25,14 @@ aws-adfs --version
 ### Step 3: Run Login Script
 
 ```powershell
-cd C:\mycode\trilogy\starhub-deployer\deploy
+cd C:\mycode\nexus\nexus-deployer\deploy
 .\aws-login.bat
 ```
 
 ## Alternative: One-Line Installation and Login
 
 ```powershell
-pip install aws-adfs && cd C:\mycode\trilogy\starhub-deployer\deploy && .\aws-login.bat
+pip install aws-adfs && cd C:\mycode\nexus\nexus-deployer\deploy && .\aws-login.bat
 ```
 
 ## Configuration

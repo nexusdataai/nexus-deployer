@@ -168,7 +168,7 @@ class SSMProvisioner:
                 )
             
             if cognito_config.get("client_id"):
-                # Note: app-client-id matches the SSM parameter path used by starhub-backend
+                # Note: app-client-id matches the SSM parameter path used by nexus-backend
                 params[self.naming.ssm_parameter("cognito", "app-client-id")] = (
                     cognito_config["client_id"], "Cognito App Client ID"
                 )

@@ -314,7 +314,7 @@ deployer.code-workspace
 kube-operator/bss-magic/docker-compose.yml
 kube-operator/bss-magic/docker-login.sh
 kube-operator/bss-magic/load-mapping.sh
-kube-operator/bss-magic/StarHubProductionRuntime-credentials.zip
+kube-operator/bss-magic/Nexus AIProductionRuntime-credentials.zip
 kube-operator/bss-magic/test-runtime-credentials.zip
 kube-operator/images/operator/totogi-operator.tar.gz
 kube-operator/images/operator/totogi-operator.tar.gz

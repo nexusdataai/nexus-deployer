@@ -73,7 +73,7 @@ else
         --repository-name "${IMAGE_NAME}" \
         --region "${REGION}" \
         --image-scanning-configuration scanOnPush=true \
-        --tags Key=managed-by,Value=starhub-deployer Key=component,Value=nexus-operator \
+        --tags Key=managed-by,Value=nexus-deployer Key=component,Value=nexus-operator \
         >/dev/null
     
     echo -e "${GREEN}✓ ECR repository '${IMAGE_NAME}' created${NC}"

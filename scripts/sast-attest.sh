@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SAST attestation script for StarHub Deployer.
+# SAST attestation script for Nexus AI Deployer.
 #
 # Runs Bandit + Semgrep + detect-secrets and emits a JSON attestation. The
 # attestation is what gets quoted in the client-facing SAST attestation;
@@ -78,7 +78,7 @@ fi
 cat > "$OUTPUT" <<JSON
 {
   "schema_version": "1",
-  "repository": "starhub-deployer",
+  "repository": "nexus-deployer",
   "commit": "$SHA",
   "branch": "$BRANCH",
   "scanned_at_utc": "$DATE_UTC",

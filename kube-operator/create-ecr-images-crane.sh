@@ -29,9 +29,9 @@
 #   ./create-ecr-images-crane.sh --help
 #
 # Image sources (.tar.gz only - no build support without Docker):
-#   Operator:   images/operator/totogi-operator.tar.gz
-#   CallSense:  images/callsense/ai-job-engine.tar.gz + starhub-ui.tar.gz
-#   BSS Magic:  images/bssmagic/bssmagic-starhub-k8s.tar.gz
+#   Operator:   images/operator/nexus-operator.tar.gz
+#   Apps:       images/callsense/ai-job-engine.tar.gz + nexus-ui.tar.gz
+#   BSS Magic:  images/bssmagic/bssmagic-nexus-k8s.tar.gz
 #
 
 set -eo pipefail
@@ -40,8 +40,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGES_DIR="${SCRIPT_DIR}/images/callsense"
 BSSMAGIC_IMAGES_DIR="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_IMAGES_DIR="${SCRIPT_DIR}/images/operator"
-BACKEND_DIR="/opt/mycode/trilogy/starhub-backend"
-FRONTEND_DIR="/opt/mycode/trilogy/starhub-ui"
+BACKEND_DIR="/opt/mycode/nexus/nexus-backend"
+FRONTEND_DIR="/opt/mycode/nexus/nexus-ui"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -50,7 +50,7 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 
@@ -210,10 +210,10 @@ echo ""
 
 # ── Pre-push: existing ECR images (top 5 most-recent tags per repo) ──
 echo -e "${CYAN}── Existing ECR Images ──${NC}"
-survey_ecr_repo "totogi-operator"        "Operator"
+survey_ecr_repo "nexus-operator"        "Operator"
 survey_ecr_repo "ai-job-engine"          "Backend"
-survey_ecr_repo "starhub-ui"             "Frontend"
-survey_ecr_repo "bssmagic-starhub-k8s"   "BSS Magic"
+survey_ecr_repo "nexus-ui"             "Frontend"
+survey_ecr_repo "bssmagic-nexus-k8s"   "BSS Magic"
 echo ""
 
 # ── Helper: ensure ECR repo exists, capture failures explicitly ──
@@ -311,7 +311,7 @@ if [ "$PUSH_OPERATOR" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] Operator Image ──${NC}"
 
-    OPERATOR_TAR="${OPERATOR_IMAGES_DIR}/totogi-operator.tar.gz"
+    OPERATOR_TAR="${OPERATOR_IMAGES_DIR}/nexus-operator.tar.gz"
 
     # Resolve operator version tag (crane has no build path; tar file is authoritative).
     # Priority:
@@ -345,26 +345,26 @@ if [ "$PUSH_OPERATOR" = true ]; then
     fi
     echo "  Operator version tag: ${OPERATOR_TAG}"
     echo "  Push plan:"
-    echo "    ${ECR_REGISTRY}/totogi-operator:latest"
-    echo "    ${ECR_REGISTRY}/totogi-operator:${OPERATOR_TAG}"
+    echo "    ${ECR_REGISTRY}/nexus-operator:latest"
+    echo "    ${ECR_REGISTRY}/nexus-operator:${OPERATOR_TAG}"
 
     if [ "$_OP_TAR_STALE" = true ]; then
-        record_push_fail "${ECR_REGISTRY}/totogi-operator:latest"          "stale tar (saved=${_saved_OPERATOR_TAG} live=${LIVE_OPERATOR_TAG}); run package-images.sh"
-        record_push_fail "${ECR_REGISTRY}/totogi-operator:${OPERATOR_TAG}" "stale tar (saved=${_saved_OPERATOR_TAG} live=${LIVE_OPERATOR_TAG}); run package-images.sh"
+        record_push_fail "${ECR_REGISTRY}/nexus-operator:latest"          "stale tar (saved=${_saved_OPERATOR_TAG} live=${LIVE_OPERATOR_TAG}); run package-images.sh"
+        record_push_fail "${ECR_REGISTRY}/nexus-operator:${OPERATOR_TAG}" "stale tar (saved=${_saved_OPERATOR_TAG} live=${LIVE_OPERATOR_TAG}); run package-images.sh"
     elif [ ! -f "$OPERATOR_TAR" ]; then
         echo -e "  ${RED}✗${NC} Operator tar not found at ${OPERATOR_TAR}"
         echo "    Cannot build without Docker. Provide the tar via package-images.sh."
-        record_push_fail "${ECR_REGISTRY}/totogi-operator:latest"          "tar not found: ${OPERATOR_TAR}"
-        record_push_fail "${ECR_REGISTRY}/totogi-operator:${OPERATOR_TAG}" "tar not found: ${OPERATOR_TAR}"
+        record_push_fail "${ECR_REGISTRY}/nexus-operator:latest"          "tar not found: ${OPERATOR_TAR}"
+        record_push_fail "${ECR_REGISTRY}/nexus-operator:${OPERATOR_TAG}" "tar not found: ${OPERATOR_TAR}"
     else
         echo "  Loading from tar: ${OPERATOR_TAR}"
-        repo_status=$(ensure_ecr_repo "totogi-operator")
+        repo_status=$(ensure_ecr_repo "nexus-operator")
         if [ "$repo_status" != "ok" ]; then
-            echo -e "  ${RED}✗${NC} Failed to create repo 'totogi-operator': ${repo_status#FAIL: }"
-            record_push_fail "${ECR_REGISTRY}/totogi-operator:latest"          "create-repository failed: ${repo_status#FAIL: }"
-            record_push_fail "${ECR_REGISTRY}/totogi-operator:${OPERATOR_TAG}" "create-repository failed: ${repo_status#FAIL: }"
+            echo -e "  ${RED}✗${NC} Failed to create repo 'nexus-operator': ${repo_status#FAIL: }"
+            record_push_fail "${ECR_REGISTRY}/nexus-operator:latest"          "create-repository failed: ${repo_status#FAIL: }"
+            record_push_fail "${ECR_REGISTRY}/nexus-operator:${OPERATOR_TAG}" "create-repository failed: ${repo_status#FAIL: }"
         else
-            crane_push_dual_tag "$OPERATOR_TAR" "totogi-operator" "$OPERATOR_TAG"
+            crane_push_dual_tag "$OPERATOR_TAR" "nexus-operator" "$OPERATOR_TAG"
         fi
     fi
     echo ""
@@ -378,7 +378,7 @@ if [ "$PUSH_APP" = true ]; then
     echo -e "${CYAN}── [${STEP}/${TOTAL}] CallSense Images (backend + frontend) ──${NC}"
 
     BACKEND_TAR="${IMAGES_DIR}/ai-job-engine.tar.gz"
-    FRONTEND_TAR="${IMAGES_DIR}/starhub-ui.tar.gz"
+    FRONTEND_TAR="${IMAGES_DIR}/nexus-ui.tar.gz"
 
     # Resolve version tags (crane has no build path; tar files are authoritative).
     # Priority:
@@ -423,11 +423,11 @@ if [ "$PUSH_APP" = true ]; then
     echo "  Push plan:"
     echo "    ${ECR_REGISTRY}/ai-job-engine:latest"
     echo "    ${ECR_REGISTRY}/ai-job-engine:${BACKEND_TAG}"
-    echo "    ${ECR_REGISTRY}/starhub-ui:latest"
-    echo "    ${ECR_REGISTRY}/starhub-ui:${FRONTEND_TAG}"
+    echo "    ${ECR_REGISTRY}/nexus-ui:latest"
+    echo "    ${ECR_REGISTRY}/nexus-ui:${FRONTEND_TAG}"
 
     if [ "$_APP_TAR_STALE" = true ]; then
-        for repo_pair in "ai-job-engine|${BACKEND_TAG}" "starhub-ui|${FRONTEND_TAG}"; do
+        for repo_pair in "ai-job-engine|${BACKEND_TAG}" "nexus-ui|${FRONTEND_TAG}"; do
             r="${repo_pair%%|*}"; t="${repo_pair##*|}"
             record_push_fail "${ECR_REGISTRY}/${r}:latest" "stale tar (saved/live mismatch); run package-images.sh"
             record_push_fail "${ECR_REGISTRY}/${r}:${t}"   "stale tar (saved/live mismatch); run package-images.sh"
@@ -435,13 +435,13 @@ if [ "$PUSH_APP" = true ]; then
     elif [ ! -f "$BACKEND_TAR" ] || [ ! -f "$FRONTEND_TAR" ]; then
         echo -e "  ${RED}✗${NC} CallSense tar files not found in ${IMAGES_DIR}/"
         echo "    Cannot build without Docker. Provide the tar files via package-images.sh."
-        for repo_pair in "ai-job-engine|${BACKEND_TAG}" "starhub-ui|${FRONTEND_TAG}"; do
+        for repo_pair in "ai-job-engine|${BACKEND_TAG}" "nexus-ui|${FRONTEND_TAG}"; do
             r="${repo_pair%%|*}"; t="${repo_pair##*|}"
             record_push_fail "${ECR_REGISTRY}/${r}:latest" "tar not found in ${IMAGES_DIR}"
             record_push_fail "${ECR_REGISTRY}/${r}:${t}"   "tar not found in ${IMAGES_DIR}"
         done
     else
-        for repo_pair in "ai-job-engine|${BACKEND_TAG}|${BACKEND_TAR}" "starhub-ui|${FRONTEND_TAG}|${FRONTEND_TAR}"; do
+        for repo_pair in "ai-job-engine|${BACKEND_TAG}|${BACKEND_TAR}" "nexus-ui|${FRONTEND_TAG}|${FRONTEND_TAR}"; do
             IFS='|' read -r repo tag tar_path <<< "$repo_pair"
             repo_status=$(ensure_ecr_repo "$repo")
             if [ "$repo_status" != "ok" ]; then
@@ -463,7 +463,7 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
     STEP=$((STEP+1))
     echo -e "${CYAN}── [${STEP}/${TOTAL}] BSS Magic Image ──${NC}"
 
-    BSS_TAR="${BSSMAGIC_IMAGES_DIR}/bssmagic-starhub-k8s.tar.gz"
+    BSS_TAR="${BSSMAGIC_IMAGES_DIR}/bssmagic-nexus-k8s.tar.gz"
 
     # Resolve BSS Magic version (priority: CLI override > versions.env from tar > date-based)
     if [ -n "${BSSMAGIC_VERSION_OVERRIDE}" ]; then
@@ -478,17 +478,17 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
 
     if [ -f "$BSS_TAR" ]; then
         echo "  Push plan:"
-        echo "    ${ECR_REGISTRY}/bssmagic-starhub-k8s:latest"
-        echo "    ${ECR_REGISTRY}/bssmagic-starhub-k8s:${BSSMAGIC_TAG}"
+        echo "    ${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"
+        echo "    ${ECR_REGISTRY}/bssmagic-nexus-k8s:${BSSMAGIC_TAG}"
         echo "  Loading from tar: ${BSS_TAR}"
 
-        repo_status=$(ensure_ecr_repo "bssmagic-starhub-k8s" "--image-scanning-configuration scanOnPush=true")
+        repo_status=$(ensure_ecr_repo "bssmagic-nexus-k8s" "--image-scanning-configuration scanOnPush=true")
         if [ "$repo_status" != "ok" ]; then
-            echo -e "  ${RED}✗${NC} Failed to create repo 'bssmagic-starhub-k8s': ${repo_status#FAIL: }"
-            record_push_fail "${ECR_REGISTRY}/bssmagic-starhub-k8s:latest"          "create-repository failed: ${repo_status#FAIL: }"
-            record_push_fail "${ECR_REGISTRY}/bssmagic-starhub-k8s:${BSSMAGIC_TAG}" "create-repository failed: ${repo_status#FAIL: }"
+            echo -e "  ${RED}✗${NC} Failed to create repo 'bssmagic-nexus-k8s': ${repo_status#FAIL: }"
+            record_push_fail "${ECR_REGISTRY}/bssmagic-nexus-k8s:latest"          "create-repository failed: ${repo_status#FAIL: }"
+            record_push_fail "${ECR_REGISTRY}/bssmagic-nexus-k8s:${BSSMAGIC_TAG}" "create-repository failed: ${repo_status#FAIL: }"
         else
-            crane_push_dual_tag "$BSS_TAR" "bssmagic-starhub-k8s" "$BSSMAGIC_TAG"
+            crane_push_dual_tag "$BSS_TAR" "bssmagic-nexus-k8s" "$BSSMAGIC_TAG"
         fi
     else
         echo -e "  ${YELLOW}!${NC} BSS Magic tar not found at ${BSS_TAR}"

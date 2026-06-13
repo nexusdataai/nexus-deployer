@@ -7,7 +7,7 @@
 
 set -e
 
-CLUSTER_NAME="${1:-starhub-test}"
+CLUSTER_NAME="${1:-nexus-test}"
 REGION="${2:-us-east-1}"
 AWS_PROFILE="${3:-external-access}"
 

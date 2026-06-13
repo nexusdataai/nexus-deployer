@@ -17,7 +17,7 @@ The feature encompasses:
 4. Operator-managed provisioning of data services and application deployment
 5. Integration with existing wizard flow for progress tracking and state management
 
-The Kubernetes Operator code will be developed in `C:\mycode\trilogy\starhub-deployer\kube-operator`.
+The Kubernetes Operator code will be developed in `C:\mycode\nexus\nexus-deployer\kube-operator`.
 
 ## Glossary
 
@@ -204,7 +204,7 @@ The Kubernetes Operator code will be developed in `C:\mycode\trilogy\starhub-dep
 
 #### Acceptance Criteria
 
-1. THE Totogi_Operator code SHALL be located in the `kube-operator` directory within the starhub-deployer repository
+1. THE Totogi_Operator code SHALL be located in the `kube-operator` directory within the nexus-deployer repository
 2. THE Totogi_Operator SHALL be implemented using a standard Kubernetes Operator framework (Operator SDK, Kubebuilder, or kopf for Python)
 3. THE Totogi_Operator SHALL define a TotogiCapability CRD with spec fields for: capability metadata, frontend config, backend config, data services config, and deployment options
 4. THE Totogi_Operator SHALL implement a reconciliation loop that provisions AWS resources using AWS SDK

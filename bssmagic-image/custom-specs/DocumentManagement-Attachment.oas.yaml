@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Document Management - Attachment
   version: 1.0.0
-  description: StarHub custom spec for Attachment (legacy file attachment) via BSS Magic mapping views.
+  description: Nexus AI custom spec for Attachment (legacy file attachment) via BSS Magic mapping views.
 servers:
   - url: /tmf-api/documentManagement/v1
 paths:

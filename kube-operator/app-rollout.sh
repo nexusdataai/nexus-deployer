@@ -174,8 +174,8 @@ resource_kind() {
 ecr_repo() {
     case "$1" in
         backend)  echo "ai-job-engine" ;;
-        frontend) echo "starhub-ui" ;;
-        bssmagic) echo "bssmagic-starhub-k8s" ;;
+        frontend) echo "nexus-ui" ;;
+        bssmagic) echo "bssmagic-nexus-k8s" ;;
     esac
 }
 

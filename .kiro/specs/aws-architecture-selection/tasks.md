@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation plan creates the AWS Architecture Selection feature for the starhub-deployer wizard. The feature allows users to visually select deployment targets (S3/CloudFront for frontend, ECS for backend) through a graphical architecture diagram interface.
+This implementation plan creates the AWS Architecture Selection feature for the nexus-deployer wizard. The feature allows users to visually select deployment targets (S3/CloudFront for frontend, ECS for backend) through a graphical architecture diagram interface.
 
 ## Tasks
 

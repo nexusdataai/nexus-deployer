@@ -113,8 +113,8 @@ elif [ -n "$CLUSTER_NAME" ]; then
     :
 else
     case "$DEPLOY_ENV" in
-        prod) CLUSTER_NAME="starhub-test" ;;
-        *)    CLUSTER_NAME="starhub-${DEPLOY_ENV}" ;;
+        prod) CLUSTER_NAME="nexus-test" ;;
+        *)    CLUSTER_NAME="nexus-${DEPLOY_ENV}" ;;
     esac
 fi
 export CLUSTER_NAME DEPLOY_ENV REGION
@@ -212,7 +212,7 @@ if [ "$SKIP_IMAGES" = false ]; then
     # ──────────────────────────────────────────────────────────────
     step "Push BSS Magic image to ECR"
 
-    BSS_IMAGE_NAME="bssmagic-starhub-k8s"
+    BSS_IMAGE_NAME="bssmagic-nexus-k8s"
     BSS_TAR="${SCRIPT_DIR}/bss-magic/${BSS_IMAGE_NAME}.tar.gz"
     BSS_TAR_PLAIN="${SCRIPT_DIR}/bss-magic/${BSS_IMAGE_NAME}.tar"
     BSS_ECR="${ECR_REGISTRY}/${BSS_IMAGE_NAME}:latest"

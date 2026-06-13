@@ -2,7 +2,7 @@
 
 ## Overview
 
-This design document describes the migration from file-based JSON state management to TinyDB for the starhub-deployer application. TinyDB is a lightweight, pure-Python document database that requires no external dependencies, making it ideal for desktop and PWA deployment scenarios. The design maintains backward compatibility with existing JSON state files while providing enhanced querying capabilities, better data integrity, and a foundation for future enhancements.
+This design document describes the migration from file-based JSON state management to TinyDB for the nexus-deployer application. TinyDB is a lightweight, pure-Python document database that requires no external dependencies, making it ideal for desktop and PWA deployment scenarios. The design maintains backward compatibility with existing JSON state files while providing enhanced querying capabilities, better data integrity, and a foundation for future enhancements.
 
 ### Key Design Goals
 
@@ -371,7 +371,7 @@ class MigrationService:
     },
     "artifacts": {
         "frontend": {
-            "s3_uri": "s3://starhub-ui-delivery-ps/starhub-ui-1.0.0.zip",
+            "s3_uri": "s3://nexus-ui-delivery-ps/nexus-ui-1.0.0.zip",
             "size_mb": 15
         },
         "backend": {

@@ -2,8 +2,8 @@
 Regional HTTPS endpoints for boto3 so traffic matches VPC interface/gateway endpoints
 (private DNS for standard AWS hostnames).
 
-Standalone copy (no dependency on starhub-backend). Keep in sync with
-starhub-backend/src/utils/aws_client_utils.py endpoint map when changing.
+Standalone copy (no dependency on nexus-backend). Keep in sync with
+nexus-backend/src/utils/aws_client_utils.py endpoint map when changing.
 """
 
 from __future__ import annotations

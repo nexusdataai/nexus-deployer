@@ -15,8 +15,8 @@ The script can automatically:
 5. Verify deployment health
 
 Usage:
-    python deploy_operator_to_cluster.py --cluster starhub-test --region us-east-1 --profile external-access
-    python deploy_operator_to_cluster.py --cluster starhub-test --session-id <aws-session-id>
+    python deploy_operator_to_cluster.py --cluster nexus-test --region us-east-1 --profile external-access
+    python deploy_operator_to_cluster.py --cluster nexus-test --session-id <aws-session-id>
 
 Requirements:
     - AWS credentials configured (or session ID provided)
@@ -1179,17 +1179,17 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Deploy to starhub-test cluster in Singapore
-  python deploy_operator_to_cluster.py --cluster starhub-test --region us-east-1
+  # Deploy to nexus-test cluster in Singapore
+  python deploy_operator_to_cluster.py --cluster nexus-test --region us-east-1
 
   # Deploy with specific operator version
-  python deploy_operator_to_cluster.py --cluster starhub-test --version v1.0.0
+  python deploy_operator_to_cluster.py --cluster nexus-test --version v1.0.0
 
   # Force redeploy even if already installed
-  python deploy_operator_to_cluster.py --cluster starhub-test --force
+  python deploy_operator_to_cluster.py --cluster nexus-test --force
 
   # Use with AWS session ID (from deployer UI)
-  python deploy_operator_to_cluster.py --cluster starhub-test --session-id abc123
+  python deploy_operator_to_cluster.py --cluster nexus-test --session-id abc123
 
 Environment Variables:
   AWS_REGION              Default AWS region (default: us-east-1)
@@ -1201,7 +1201,7 @@ Environment Variables:
     parser.add_argument(
         "--cluster",
         required=True,
-        help="Name of the EKS cluster (e.g., starhub-test)"
+        help="Name of the EKS cluster (e.g., nexus-test)"
     )
     
     parser.add_argument(

@@ -73,10 +73,10 @@ All commands are run from the `kube-operator/` directory.
 
 | Command | Alias | What It Does |
 |---|---|---|
-| `./operator-starhub-test.sh check-operator-permissions` | `check-operator` | Runs a Job in `totogi-system` as the operator SA — validates every IAM permission from `operator-policy.json` and tests reachability of 15 VPC endpoints |
-| `./operator-starhub-test.sh check-app-permissions` | `check-app` | Creates a temporary Job in `call-processing-{env}` as the app SA — validates every IAM permission from `app-policy.json` and tests reachability of 15 VPC endpoints |
-| `./operator-starhub-test.sh check-endpoints` | `endpoints-status` | Displays the status of the `TotogiNetworkConfig` CR (read-only kubectl output) |
-| `./operator-starhub-test.sh setup-endpoints` | `endpoints` | Applies the `TotogiNetworkConfig` CRD and CR, then monitors the operator as it provisions VPC endpoints |
+| `./operator-nexus-test.sh check-operator-permissions` | `check-operator` | Runs a Job in `totogi-system` as the operator SA — validates every IAM permission from `operator-policy.json` and tests reachability of 15 VPC endpoints |
+| `./operator-nexus-test.sh check-app-permissions` | `check-app` | Creates a temporary Job in `call-processing-{env}` as the app SA — validates every IAM permission from `app-policy.json` and tests reachability of 15 VPC endpoints |
+| `./operator-nexus-test.sh check-endpoints` | `endpoints-status` | Displays the status of the `TotogiNetworkConfig` CR (read-only kubectl output) |
+| `./operator-nexus-test.sh setup-endpoints` | `endpoints` | Applies the `TotogiNetworkConfig` CRD and CR, then monitors the operator as it provisions VPC endpoints |
 
 ---
 
@@ -85,7 +85,7 @@ All commands are run from the `kube-operator/` directory.
 ### 2.1 Operator Permission Check
 
 ```bash
-./operator-starhub-test.sh check-operator
+./operator-nexus-test.sh check-operator
 ```
 
 **What happens under the hood:**
@@ -123,7 +123,7 @@ To run the same logic **interactively** (exec into the operator pod, copy `check
 ### 2.2 App Permission Check
 
 ```bash
-./operator-starhub-test.sh check-app
+./operator-nexus-test.sh check-app
 ```
 
 Same pattern as the operator check, with these differences:
@@ -270,7 +270,7 @@ curl -s -o /dev/null -w "%{http_code}" https://sts.ap-southeast-1.amazonaws.com/
 
 Use this when you want a shell inside the cluster with the **same IRSA identity** as the operator or app, without going through the Batch Job wrapper.
 
-**Defaults used below:** adjust `REGION`, namespace, ServiceAccount, and IAM role names to match your cluster. The automated scripts use `totogi-system` / `totogi-operator` (operator) and `call-processing-{env}` / `call-processing-{env}-app-sa` (app), with `REGION` from `operator-starhub-test.sh` (often `ap-southeast-1`).
+**Defaults used below:** adjust `REGION`, namespace, ServiceAccount, and IAM role names to match your cluster. The automated scripts use `totogi-system` / `totogi-operator` (operator) and `call-processing-{env}` / `call-processing-{env}-app-sa` (app), with `REGION` from `operator-nexus-test.sh` (often `ap-southeast-1`).
 
 #### 3.3.1 Run the official Python check inside the running operator pod
 
@@ -287,7 +287,7 @@ kubectl cp check-operator-permissions.py "totogi-system/${OP_POD}:/tmp/check-ope
 kubectl exec -n totogi-system -c operator "$OP_POD" -- python3 /tmp/check-operator-permissions.py
 ```
 
-`check-operator-permissions.py` has a fixed `REGION = "ap-southeast-1"` at the top; edit that line if your cluster is in another region, or rely on `./operator-starhub-test.sh check-operator` (which uses the script from the repo without editing the pod copy).
+`check-operator-permissions.py` has a fixed `REGION = "ap-southeast-1"` at the top; edit that line if your cluster is in another region, or rely on `./operator-nexus-test.sh check-operator` (which uses the script from the repo without editing the pod copy).
 
 #### 3.3.2 Interactive shell on the operator pod
 
@@ -321,7 +321,7 @@ kubectl exec -n "$APP_NS" "$APP_POD" -- env CAPABILITY="$CAP" ENV="$ENV" REGION=
   python3 /tmp/check-app-permissions.py
 ```
 
-Set `REGION` to your cluster region. `CAPABILITY`, `ENV`, and `REGION` must match what the Job injects (see `check-app` in `operator-starhub-test.sh`).
+Set `REGION` to your cluster region. `CAPABILITY`, `ENV`, and `REGION` must match what the Job injects (see `check-app` in `operator-nexus-test.sh`).
 
 If no app pod exists yet, use a one-off debug pod with the app ServiceAccount (next subsection).
 
@@ -331,7 +331,7 @@ EKS injects `AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN` for the pod’s Ser
 
 **Do not use `--serviceaccount`** (deprecated in current `kubectl run` and **has no effect**). Set the account with **`--overrides`** and `spec.serviceAccountName` instead (same pattern as Section 3.1).
 
-**App ServiceAccount must exist.** `./operator-starhub-test.sh check-app` may **delete** `call-processing-stage-app-sa` afterward if the script created it only for the Job. If `kubectl` reports `serviceaccount ... not found`, create the namespace (if needed) and apply a ServiceAccount with your IRSA role ARN:
+**App ServiceAccount must exist.** `./operator-nexus-test.sh check-app` may **delete** `call-processing-stage-app-sa` afterward if the script created it only for the Job. If `kubectl` reports `serviceaccount ... not found`, create the namespace (if needed) and apply a ServiceAccount with your IRSA role ARN:
 
 ```bash
 # Replace ACCOUNT_ID with your AWS account ID
@@ -479,7 +479,7 @@ aws cognito-idp list-user-pools --max-results 1
 aws logs describe-log-groups --limit 1 2>&1 | head -5
 ```
 
-For a full pass/fail report (including VPC endpoint reachability rows), prefer `./operator-starhub-test.sh check-operator` or `check-app` from `kube-operator/`.
+For a full pass/fail report (including VPC endpoint reachability rows), prefer `./operator-nexus-test.sh check-operator` or `check-app` from `kube-operator/`.
 
 ---
 
@@ -719,8 +719,8 @@ aws iam put-role-policy \
 **Debug-only bypass (not for production):** The check scripts honor environment variable **`PERM_CHECK_SSL_VERIFY`**. When set to `0`, `false`, `no`, or `off`, boto3 uses `verify=False` (TLS encryption still on; certificate identity is not checked).
 
 ```bash
-PERM_CHECK_SSL_VERIFY=0 ./operator-starhub-test.sh check-operator
-PERM_CHECK_SSL_VERIFY=0 ./operator-starhub-test.sh check-app
+PERM_CHECK_SSL_VERIFY=0 ./operator-nexus-test.sh check-operator
+PERM_CHECK_SSL_VERIFY=0 ./operator-nexus-test.sh check-app
 ```
 
 The Job manifests pass `PERM_CHECK_SSL_VERIFY` through from your shell (default `1` = normal verification).
@@ -729,7 +729,7 @@ The Job manifests pass `PERM_CHECK_SSL_VERIFY` through from your shell (default 
 
 **Symptom:** Kopf logs show `User "system:serviceaccount:totogi-system:totogi-operator" cannot list resource "totoginetworkconfigs" ... at the cluster scope`.
 
-**Cause:** `./operator-starhub-test.sh deploy` runs `backend/scripts/deploy_operator_to_cluster.py`, which creates/replaces **ClusterRole `totogi-operator-role`** (and binding `totogi-operator-binding`). That role is **not** the same object as **`ClusterRole/totogi-operator`** in `kube-operator/manifests/rbac.yaml`. If the Python deploy path never included `totoginetworkconfigs`, every redeploy kept a role **without** those permissions—applying `rbac.yaml` alone does not update `totogi-operator-role` unless you also bind the SA to that separate role.
+**Cause:** `./operator-nexus-test.sh deploy` runs `backend/scripts/deploy_operator_to_cluster.py`, which creates/replaces **ClusterRole `totogi-operator-role`** (and binding `totogi-operator-binding`). That role is **not** the same object as **`ClusterRole/totogi-operator`** in `kube-operator/manifests/rbac.yaml`. If the Python deploy path never included `totoginetworkconfigs`, every redeploy kept a role **without** those permissions—applying `rbac.yaml` alone does not update `totogi-operator-role` unless you also bind the SA to that separate role.
 
 **Fix:** Deploy from a tree where `operator_deployment_service._create_rbac()` includes **`totoginetworkconfigs`** (and subresources), then re-run deploy with **`--force`**, or patch the live role:
 
@@ -757,7 +757,7 @@ kubectl auth can-i list totoginetworkconfigs --as=system:serviceaccount:totogi-s
 
 | Situation | What to check |
 |---|---|
-| Provider never created | Run IAM setup from `ADMIN-SETUP.md` Step 1 or `./operator-starhub-test.sh fix-irsa` (from a machine with IAM API access). |
+| Provider never created | Run IAM setup from `ADMIN-SETUP.md` Step 1 or `./operator-nexus-test.sh fix-irsa` (from a machine with IAM API access). |
 | **Wrong cluster / Blue–Green** | The token’s `<OIDC_ID>` must match **this** EKS cluster. Compare `aws eks describe-cluster --name <cluster> --query cluster.identity.oidc.issuer` with the URL in the error. If you moved workloads to a new cluster, register **that** cluster’s issuer and update role trust policies. |
 | **Wrong AWS account** | OIDC provider must exist in the **same account** as `totogi-operator-role`. |
 

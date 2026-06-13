@@ -595,7 +595,7 @@ Test data will include:
 - Sample CloudFormation templates with various dependency patterns
 - Mock AWS API responses for different scenarios
 - Known-good and known-bad dependency graphs
-- Real-world templates from the starhub-deployer project
+- Real-world templates from the nexus-deployer project
 
 ## Implementation Notes
 

@@ -7,7 +7,7 @@ Place the following file in this directory before running `e2e-deploy.sh`:
 **Required.** The BSS Magic controller credentials file.
 
 ```
-starhub-deployer/bssmagic-image/secrets/credentials.zip
+nexus-deployer/bssmagic-image/secrets/credentials.zip
 ```
 
 The `e2e-deploy.sh` script will automatically upload this file to AWS Secrets Manager

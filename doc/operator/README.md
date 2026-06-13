@@ -99,26 +99,26 @@ The Totogi Operator automates the full lifecycle of Totogi capabilities in Kuber
 ## Quick Start
 
 ```bash
-cd /opt/mycode/trilogy/starhub-deployer/kube-operator
+cd /opt/mycode/nexus/nexus-deployer/kube-operator
 
 # 1. Scan cluster readiness
-./operator-starhub-test.sh scan
+./operator-nexus-test.sh scan
 
 # 2. Build and push operator image
 ./build-and-push.sh
 
 # 3. Deploy operator (auto-configures IRSA + ALB Controller)
-./operator-starhub-test.sh deploy
+./operator-nexus-test.sh deploy
 
 # 4. Deploy a capability
 kubectl create namespace call-processing-prod
 kubectl apply -f examples/call-processing-complete.yaml
 
 # 5. Monitor deployment progress
-./operator-starhub-test.sh monitor
+./operator-nexus-test.sh monitor
 
 # 6. Verify everything
-./operator-starhub-test.sh verify-capability
+./operator-nexus-test.sh verify-capability
 ```
 
 ---
@@ -144,13 +144,13 @@ flowchart LR
 
 | Step | Name | Script / Command | What It Does | Skip Flag |
 |:----:|------|------------------|--------------|-----------|
-| 1 | **Cleanup** | `operator-starhub-test.sh delete --full` | Remove operator, IAM, ECR, ALB Controller. Refresh kubeconfig. | `--skip-clean` |
+| 1 | **Cleanup** | `operator-nexus-test.sh delete --full` | Remove operator, IAM, ECR, ALB Controller. Refresh kubeconfig. | `--skip-clean` |
 | 2 | **Build Operator** | `build-and-push.sh` | Build `totogi-operator` image, push to ECR | -- |
-| 3 | **Build Apps** | `starhub-backend/build.sh` + `starhub-ui/build.sh` | Build `ai-job-engine` + `starhub-ui` images, push to ECR | `--skip-app-build` |
-| 4 | **Deploy Operator** | `operator-starhub-test.sh deploy` | Create namespace, apply CRD + RBAC + Deployment, install ALB Controller | -- |
+| 3 | **Build Apps** | `nexus-backend/build.sh` + `nexus-ui/build.sh` | Build `ai-job-engine` + `nexus-ui` images, push to ECR | `--skip-app-build` |
+| 4 | **Deploy Operator** | `operator-nexus-test.sh deploy` | Create namespace, apply CRD + RBAC + Deployment, install ALB Controller | -- |
 | 5 | **Apply Capability** | `kubectl apply -f capability.yaml` | Create namespace, apply TotogiCapability CR, trigger reconciliation | -- |
-| 6 | **Monitor & Wait** | `operator-starhub-test.sh monitor` | Watch AWS provisioning, wait for pods Ready, ALB DNS, HTTP response | -- |
-| 7 | **Verify** | `operator-starhub-test.sh verify-capability` | Validate AWS resources, K8s workloads, app health, IRSA connectivity | -- |
+| 6 | **Monitor & Wait** | `operator-nexus-test.sh monitor` | Watch AWS provisioning, wait for pods Ready, ALB DNS, HTTP response | -- |
+| 7 | **Verify** | `operator-nexus-test.sh verify-capability` | Validate AWS resources, K8s workloads, app health, IRSA connectivity | -- |
 
 ### Detailed Deployment Sequence
 
@@ -168,7 +168,7 @@ sequenceDiagram
     Note over Dev,Op: Steps 2-3 - Build Images
     Dev->>ECR: Push totogi-operator image
     Dev->>ECR: Push ai-job-engine image
-    Dev->>ECR: Push starhub-ui image
+    Dev->>ECR: Push nexus-ui image
 
     Note over Dev,Op: Step 4 - Deploy Operator
     Dev->>EKS: Apply CRD + RBAC + Deployment
@@ -194,7 +194,7 @@ sequenceDiagram
 
 ## Management Commands
 
-All commands via `./operator-starhub-test.sh`:
+All commands via `./operator-nexus-test.sh`:
 
 | Command | Description |
 |---------|-------------|
@@ -265,7 +265,7 @@ spec:
 
   frontend:
     replicas: 3
-    image: "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/starhub-ui:latest"
+    image: "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-ui:latest"
 
   backend:
     replicas: 3
@@ -365,7 +365,7 @@ When `ingress.enabled: true`, the operator creates a single ALB with path-based 
 
 ### ALB Controller
 
-The AWS Load Balancer Controller is automatically installed and verified during `./operator-starhub-test.sh deploy`. The script:
+The AWS Load Balancer Controller is automatically installed and verified during `./operator-nexus-test.sh deploy`. The script:
 - Creates an IAM role (`AmazonEKSLoadBalancerControllerRole`) with IRSA trust policy
 - Installs the controller via Helm (or verifies an existing installation)
 - Always updates IAM policies and restarts controller pods for fresh credentials
@@ -374,7 +374,7 @@ To manage it separately:
 
 ```bash
 # Install/verify (creates IAM role, restarts for fresh credentials)
-./operator-starhub-test.sh install-alb-controller
+./operator-nexus-test.sh install-alb-controller
 
 # Check controller status
 kubectl get deployment -n kube-system aws-load-balancer-controller
@@ -383,7 +383,7 @@ kubectl get deployment -n kube-system aws-load-balancer-controller
 kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -f
 
 # Remove controller and IAM role
-./operator-starhub-test.sh delete-alb-controller
+./operator-nexus-test.sh delete-alb-controller
 ```
 
 ### Subnet Tagging
@@ -563,10 +563,10 @@ open http://<ALB_DNS>/bssmagic/docs.html
 
 ```bash
 # Watch deployment step-by-step
-./operator-starhub-test.sh monitor
+./operator-nexus-test.sh monitor
 
 # Watch a specific capability
-./operator-starhub-test.sh monitor call-processing-prod/call-processing-prod
+./operator-nexus-test.sh monitor call-processing-prod/call-processing-prod
 ```
 
 The monitor shows a live-updating table with each step's status, duration, and resources created.
@@ -574,7 +574,7 @@ The monitor shows a live-updating table with each step's status, duration, and r
 ### Post-Deployment Verification
 
 ```bash
-./operator-starhub-test.sh verify-capability
+./operator-nexus-test.sh verify-capability
 ```
 
 This runs 4 verification sections:
@@ -817,7 +817,7 @@ kubectl describe ingress {cap}-{env}-app-ingress -n {namespace}
 ```
 
 **Common causes:**
-- `InvalidClientTokenId` - ALB Controller IAM role missing or stale credentials. Run `./operator-starhub-test.sh install-alb-controller` (this restarts controller pods for fresh tokens).
+- `InvalidClientTokenId` - ALB Controller IAM role missing or stale credentials. Run `./operator-nexus-test.sh install-alb-controller` (this restarts controller pods for fresh tokens).
 - `InvalidSubnetID` - Remove explicit subnet IDs, let ALB Controller auto-discover.
 - No subnets tagged - Tag your VPC subnets (see ALB Ingress section above).
 
@@ -830,7 +830,7 @@ aws iam get-role --role-name {cap}-{env}-app-role --query 'Role.AssumeRolePolicy
 
 **Cause:** Operator couldn't discover the OIDC provider (missing `eks:DescribeCluster` permission).
 
-**Fix:** This is now included in the operator role policy. Redeploy with `./operator-starhub-test.sh deploy`.
+**Fix:** This is now included in the operator role policy. Redeploy with `./operator-nexus-test.sh deploy`.
 
 ### ImagePullBackOff
 
@@ -842,15 +842,15 @@ aws iam get-role --role-name {cap}-{env}-app-role --query 'Role.AssumeRolePolicy
 ./build-and-push.sh
 
 # For backend/frontend
-cd /opt/mycode/trilogy/starhub-backend && ./build.sh
-cd /opt/mycode/trilogy/starhub-ui && ./build.sh
+cd /opt/mycode/nexus/nexus-backend && ./build.sh
+cd /opt/mycode/nexus/nexus-ui && ./build.sh
 ```
 
 ### No cluster access (401 Unauthorized)
 
 **Fix:** Refresh kubeconfig:
 ```bash
-aws eks update-kubeconfig --name starhub-test --region ap-southeast-1 --profile external-access
+aws eks update-kubeconfig --name nexus-test --region ap-southeast-1 --profile external-access
 ```
 
 ---
@@ -913,7 +913,7 @@ kube-operator/
     test_naming.py                  # Resource naming tests
   e2e-deploy.sh                     # Full 7-step E2E deployment pipeline
   e2e-smoke-test.sh                 # Post-deployment smoke tests
-  operator-starhub-test.sh          # Management script (scan, deploy, monitor, verify)
+  operator-nexus-test.sh          # Management script (scan, deploy, monitor, verify)
   build-and-push.sh                 # Build and push operator image
   build-and-deploy.sh               # Build + deploy in one command
   deploy-app-changes.sh             # Redeploy app images only (no operator rebuild)

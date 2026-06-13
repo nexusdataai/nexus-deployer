@@ -23,7 +23,7 @@ To execute the complete deployment with a role ARN to any AWS account, you need 
 ### Option 2: Use Our CloudFormation Template (Recommended)
 ```bash
 # In target account:
-cd /opt/mycode/trilogy/starhub-deployer/deploy
+cd /opt/mycode/nexus/nexus-deployer/deploy
 ./scripts/setup-deployment-role.sh \
   --source-account 123456789012 \
   --external-id my-secure-id
@@ -157,11 +157,11 @@ The installation wizard includes built-in permission verification and provides:
 ### Using Command Line Scripts
 ```bash
 # Linux/macOS
-cd /opt/mycode/trilogy/starhub-deployer/deploy
+cd /opt/mycode/nexus/nexus-deployer/deploy
 ./scripts/validate-permissions.sh
 
 # Windows PowerShell
-cd C:\path\to\starhub-deployer\deploy
+cd C:\path\to\nexus-deployer\deploy
 .\scripts\validate-permissions.ps1
 ```
 

@@ -32,7 +32,7 @@
 ### 4. Initial Project Structure
 Created complete directory structure:
 ```
-starhub-deployer/
+nexus-deployer/
 ├── frontend/              ✅ Created
 │   ├── src/
 │   │   ├── components/
@@ -165,7 +165,7 @@ All documentation is complete and ready:
 The project is fully scaffolded and ready for implementation. Start with:
 
 ```bash
-cd starhub-deployer
+cd nexus-deployer
 # Follow QUICKSTART.md to get the dev environment running
 # Then start implementing tasks from tasks.md
 ```

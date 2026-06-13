@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: TMF699 Sales Management
   version: 4.0.0
-  description: StarHub custom spec for SalesLead CRUD via BSS Magic mapping views.
+  description: Nexus AI custom spec for SalesLead CRUD via BSS Magic mapping views.
 servers:
   - url: /tmf-api/salesManagement/v4
 paths:

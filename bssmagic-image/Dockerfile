@@ -1,7 +1,7 @@
 # =============================================================================
 # BSS Magic Runtime — Kubernetes / EKS Deployment Image
 # =============================================================================
-# Phase 2: StarHub Proxy Mode with FDW -> Axway -> Salesforce
+# Phase 2: Nexus AI Proxy Mode with FDW -> Axway -> Salesforce
 #
 # Architecture:
 #   Port 8000 — Python TMF REST API gateway (front-facing, single external port)
@@ -16,7 +16,7 @@
 # Custom OpenAPI specs (TMF699 SalesLead, Document Management) are injected
 # into the TMF Server JAR at build time via jar uf.
 #
-# Build context: this directory (starhub-deployer/bssmagic-image/)
+# Build context: this directory (nexus-deployer/bssmagic-image/)
 # =============================================================================
 
 FROM 654654554404.dkr.ecr.us-east-1.amazonaws.com/nexus/bssmagic-runtime:latest
@@ -46,7 +46,7 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists/* \
     || echo "WARN: Apache AGE build failed — graph queries will use metadata fallback"
 
-# ---- FDW: Overwrite with StarHub proxy-compatible versions ----
+# ---- FDW: Overwrite with Nexus AI proxy-compatible versions ----
 COPY salesforce_fdw_k8s.py /usr/local/lib/python3.11/dist-packages/fdw_salesforce/salesforce_fdw.py
 COPY salesforce_fdw_services.py /usr/local/lib/python3.11/dist-packages/fdw_salesforce/salesforce_fdw_services.py
 

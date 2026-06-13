@@ -12,8 +12,8 @@ This script automatically:
 Can be run standalone or integrated into deployment wizard.
 
 Usage:
-    python prepare_cluster_for_operator.py --cluster starhub-test --region us-east-1 --profile external-access
-    python prepare_cluster_for_operator.py --cluster starhub-test --session-id <session-id>
+    python prepare_cluster_for_operator.py --cluster nexus-test --region us-east-1 --profile external-access
+    python prepare_cluster_for_operator.py --cluster nexus-test --session-id <session-id>
 """
 import argparse
 import asyncio
@@ -648,18 +648,18 @@ async def main():
 Examples:
   # Prepare cluster with AWS profile
   python prepare_cluster_for_operator.py \\
-    --cluster starhub-test \\
+    --cluster nexus-test \\
     --region us-east-1 \\
     --profile external-access
 
   # Prepare cluster with session ID
   python prepare_cluster_for_operator.py \\
-    --cluster starhub-test \\
+    --cluster nexus-test \\
     --session-id <session-id>
 
   # Debug mode
   python prepare_cluster_for_operator.py \\
-    --cluster starhub-test \\
+    --cluster nexus-test \\
     --profile external-access \\
     --debug
 

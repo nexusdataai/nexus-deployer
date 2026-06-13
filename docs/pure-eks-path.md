@@ -8,15 +8,15 @@ CloudFormation.
 
 The Pure-EKS path is implemented across four components:
 
-- **Frontend wizard** (`starhub-deployer/frontend/src`) - architecture
+- **Frontend wizard** (`nexus-deployer/frontend/src`) - architecture
   selection, EKS-specific configuration panel, path-aware preflight UI.
-- **Backend FastAPI service** (`starhub-deployer/backend/app`) -
+- **Backend FastAPI service** (`nexus-deployer/backend/app`) -
   per-target preflight, deployment orchestration, operator install,
   TotogiCapability CR apply.
-- **kube-operator** (`starhub-deployer/kube-operator`) - Python/Kopf
+- **kube-operator** (`nexus-deployer/kube-operator`) - Python/Kopf
   operator that owns the `TotogiCapability` CRD and reconciles AWS
   resources + Kubernetes workloads on the user's cluster.
-- **Capability catalogue** (`starhub-deployer/backend/capabilities/capabilities.json`)
+- **Capability catalogue** (`nexus-deployer/backend/capabilities/capabilities.json`)
   - declares which deployment targets each capability supports via
   `supports_targets`.
 

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the Internal SAST findings PDF for StarHub Deployer.
+"""Generate the Internal SAST findings PDF for Nexus AI Deployer.
 
 Runs Bandit, Semgrep and detect-secrets, buckets the findings by severity
 (matching the bucket definitions in the original report) and renders a PDF
 with the same layout/branding as
-`kube-operator/tests/SAST-Internal-starhub-deployer.pdf`.
+`kube-operator/tests/SAST-Internal-nexus-deployer.pdf`.
 
 Usage
 -----
     pip install --break-system-packages bandit==1.8.6 semgrep==1.136.0 \\
         detect-secrets==1.5.0 reportlab>=4.0
     python3 scripts/generate-sast-report.py \\
-        [--output kube-operator/tests/SAST-Internal-starhub-deployer.pdf] \\
+        [--output kube-operator/tests/SAST-Internal-nexus-deployer.pdf] \\
         [--skip-scan]   # reuse cached JSON in /tmp/sast-report-work/
 
 The generated PDF is INTERNAL ONLY (header banner enforces that). Do not
@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUT = REPO_ROOT / "kube-operator" / "tests" / "SAST-Internal-starhub-deployer.pdf"
+DEFAULT_OUT = REPO_ROOT / "kube-operator" / "tests" / "SAST-Internal-nexus-deployer.pdf"
 WORK = Path("/tmp/sast-report-work")
 
 EXCLUDE_GLOBS = [
@@ -243,7 +243,7 @@ def render_pdf(
     doc = BaseDocTemplate(str(output), pagesize=LETTER,
                           leftMargin=margin, rightMargin=margin,
                           topMargin=margin, bottomMargin=margin,
-                          title="INTERNAL SAST FINDINGS - StarHub Deployer")
+                          title="INTERNAL SAST FINDINGS - Nexus AI Deployer")
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame],
                                        onPage=_on_page)])
 
@@ -251,7 +251,7 @@ def render_pdf(
 
     # ---- Title page ------------------------------------------------------
     story.append(Paragraph("INTERNAL SAST FINDINGS", styles["Header"]))
-    story.append(Paragraph("StarHub Deployer", styles["H2"]))
+    story.append(Paragraph("Nexus AI Deployer", styles["H2"]))
     story.append(Spacer(1, 8))
     story.append(Paragraph(
         "Static analysis findings on the source tree at the indicated commit.",
@@ -260,7 +260,7 @@ def render_pdf(
 
     today = _dt.date.today().isoformat()
     meta = [
-        ["Repository", "starhub-deployer"],
+        ["Repository", "nexus-deployer"],
         ["Branch", branch],
         ["Source SHA", sha],
         ["Scan date", today],
@@ -283,7 +283,7 @@ def render_pdf(
     story.append(Spacer(1, 12))
     story.append(Paragraph(
         "<b>CONFIDENTIAL · INTERNAL ENGINEERING USE ONLY · DO NOT DISTRIBUTE "
-        "TO STARHUB OR ANY CLIENT · CONTAINS RAW SOURCE-LEVEL FINDINGS COVERED "
+        "TO ANY CLIENT · CONTAINS RAW SOURCE-LEVEL FINDINGS COVERED "
         "BY IP PROTECTION POLICY</b>", styles["Normal"]))
     story.append(Spacer(1, 4))
     story.append(Paragraph(

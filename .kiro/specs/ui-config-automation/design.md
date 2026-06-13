@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature adds automated generation and deployment of the UI configuration file (`config.json`) to the starhub-deployer workflow. The system extracts API Gateway and Cognito configuration from CloudFormation stack outputs, generates a properly structured config.json file, and uploads it to the S3 bucket hosting the UI application.
+This feature adds automated generation and deployment of the UI configuration file (`config.json`) to the nexus-deployer workflow. The system extracts API Gateway and Cognito configuration from CloudFormation stack outputs, generates a properly structured config.json file, and uploads it to the S3 bucket hosting the UI application.
 
 The solution integrates with the existing `deploy-capability-layered.sh` script and can also be run as a standalone utility for updating configuration without full redeployment.
 
@@ -385,7 +385,7 @@ The config generator can also be run independently:
 ## File Structure
 
 ```
-starhub-deployer/deploy/
+nexus-deployer/deploy/
 ├── scripts/
 │   └── generate-ui-config.sh      # Main config generator script
 ├── lib/

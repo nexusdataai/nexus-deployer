@@ -17,7 +17,7 @@
       },
       "artifacts": {
         "frontend": {
-          "s3_uri": "s3://starhub-ui-delivery-ps/starhub-ui-1.0.0.zip",
+          "s3_uri": "s3://nexus-ui-delivery-ps/nexus-ui-1.0.0.zip",
           "size_mb": 15
         },
         "backend": {
@@ -26,7 +26,7 @@
         }
       },
       "eks_artifacts": {
-        "frontend_ecr_uri": "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/starhub-ui:dev",
+        "frontend_ecr_uri": "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-ui:dev",
         "backend_ecr_uri": "764119721991.dkr.ecr.ap-southeast-1.amazonaws.com/ai-job-engine:dev"
       },
       "aws_options": {

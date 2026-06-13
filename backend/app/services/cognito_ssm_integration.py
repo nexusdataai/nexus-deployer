@@ -82,7 +82,7 @@ class CognitoSSMIntegration:
         results = {}
         
         # Build parameter mapping
-        # Note: app-client-id matches the SSM parameter path used by starhub-backend
+        # Note: app-client-id matches the SSM parameter path used by nexus-backend
         
         # Build full domain URL if only prefix provided
         domain = cognito_outputs.domain
@@ -115,7 +115,7 @@ class CognitoSSMIntegration:
                     Tags=[
                         {'Key': 'Capability', 'Value': self.capability_name},
                         {'Key': 'Environment', 'Value': self.environment},
-                        {'Key': 'ManagedBy', 'Value': 'starhub-deployer'},
+                        {'Key': 'ManagedBy', 'Value': 'nexus-deployer'},
                         {'Key': 'Component', 'Value': 'cognito'}
                     ]
                 )

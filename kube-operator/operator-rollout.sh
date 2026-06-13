@@ -280,7 +280,7 @@ _preflight_err=$(aws sts get-caller-identity \
     log_fail "AWS credentials are expired or unreachable (profile: ${AWS_PROFILE})"
     printf "      ${DIM}%s${RESET}\n" "$(echo "$_preflight_err" | head -n1)"
     log_info "Refresh credentials, e.g.:"
-    printf "        ${BOLD}cd ~/trilogy/starhub-backend && bash aws-login.sh${RESET}\n"
+    printf "        ${BOLD}cd ~/trilogy/nexus-backend && bash aws-login.sh${RESET}\n"
     exit 1
 }
 

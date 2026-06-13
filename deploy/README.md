@@ -119,7 +119,7 @@ The deployment user/role needs the following permissions:
 
 ### 1. Clone and Navigate
 ```bash
-cd /opt/mycode/trilogy/starhub-deployer/deploy
+cd /opt/mycode/nexus/nexus-deployer/deploy
 ```
 
 ### 2. Create Configuration
@@ -679,7 +679,7 @@ For issues or questions:
 
 ## License
 
-This deployment system is proprietary to StarHub/Totogi.
+This deployment system is proprietary to Nexus AI.
 
 ---
 

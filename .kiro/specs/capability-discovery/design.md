@@ -1680,7 +1680,7 @@ def test_landing_zone_uniqueness():
 ## File Structure
 
 ```
-starhub-deployer/backend/app/
+nexus-deployer/backend/app/
 ├── services/
 │   └── discovery/
 │       ├── __init__.py
@@ -1691,7 +1691,7 @@ starhub-deployer/backend/app/
 ├── routers/
 │   └── discovery.py                     # API endpoints
 
-starhub-deployer/frontend/src/
+nexus-deployer/frontend/src/
 ├── components/
 │   ├── LandingZoneSelector.tsx          # Cloud provider selection
 │   ├── DiscoveryPanel.tsx               # Discovery progress

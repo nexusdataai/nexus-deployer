@@ -53,8 +53,8 @@ eksctl utils associate-iam-oidc-provider \
 **Option B — Operator script (if the cluster already has an OIDC issuer but the provider is not in IAM):**
 
 ```bash
-cd /path/to/starhub-deployer/kube-operator
-./operator-starhub-test.sh fix-irsa
+cd /path/to/nexus-deployer/kube-operator
+./operator-nexus-test.sh fix-irsa
 ```
 
 **Verify:** The cluster has an OIDC issuer and the provider exists in IAM (see [Pre-Deployment Verification](#pre-deployment-verification) for a full check script).
@@ -74,7 +74,7 @@ Attach the required permissions to that role (or user) using **managed policies*
 From a environment where the deployer identity has the permissions above and can reach the EKS cluster:
 
 ```bash
-cd /path/to/starhub-deployer/kube-operator
+cd /path/to/nexus-deployer/kube-operator
 ./build-and-deploy.sh
 ```
 
@@ -82,7 +82,7 @@ Or build the image first, then deploy:
 
 ```bash
 ./build-and-push.sh
-./operator-starhub-test.sh deploy
+./operator-nexus-test.sh deploy
 ```
 
 This will:
@@ -187,7 +187,7 @@ If you deploy as an **IAM user** instead of a role, use `attach-user-policy` and
 
 ## 3. Operator IAM Role (totogi-operator-role)
 
-The operator itself needs an IAM role to provision AWS resources. This role is **automatically created** by the deployment flow (`operator-starhub-test.sh deploy` or `build-and-deploy.sh`, which use the deployer backend). The role name is **totogi-operator-role** and the inline policy name is **totogi-operator-policy**.
+The operator itself needs an IAM role to provision AWS resources. This role is **automatically created** by the deployment flow (`operator-nexus-test.sh deploy` or `build-and-deploy.sh`, which use the deployer backend). The role name is **totogi-operator-role** and the inline policy name is **totogi-operator-policy**.
 
 ### Trust Policy (IRSA)
 
@@ -218,7 +218,7 @@ The trust policy allows the operator ServiceAccount to assume the role. When dep
 
 ### Operator Permissions Policy
 
-The operator needs these permissions to provision AWS resources (aligned with `starhub-deployer` backend operator deployment service). Resources are scoped by account (and region where applicable):
+The operator needs these permissions to provision AWS resources (aligned with `nexus-deployer` backend operator deployment service). Resources are scoped by account (and region where applicable):
 
 ```json
 {
@@ -379,7 +379,7 @@ If you want to pre-create the role instead of letting the deploy script create i
 
 ```bash
 # Get OIDC provider ID (no https://)
-OIDC_PROVIDER=$(aws eks describe-cluster --name starhub-test --query "cluster.identity.oidc.issuer" --output text | sed 's|https://||')
+OIDC_PROVIDER=$(aws eks describe-cluster --name nexus-test --query "cluster.identity.oidc.issuer" --output text | sed 's|https://||')
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Create trust policy file (use the SA name your deployment uses: totogi-operator or totogi-operator-sa)
@@ -608,7 +608,7 @@ Run this script to verify all prerequisites:
 #!/bin/bash
 # verify-prerequisites.sh
 
-CLUSTER_NAME="starhub-test"
+CLUSTER_NAME="nexus-test"
 REGION="ap-southeast-1"
 
 echo "=== Totogi Operator Prerequisites Check ==="
@@ -662,7 +662,7 @@ fi
 
 echo ""
 echo "=== All prerequisites satisfied! ==="
-echo "You can now run: ./build-and-deploy.sh  (or ./operator-starhub-test.sh deploy)"
+echo "You can now run: ./build-and-deploy.sh  (or ./operator-nexus-test.sh deploy)"
 ```
 
 ---
@@ -673,7 +673,7 @@ echo "You can now run: ./build-and-deploy.sh  (or ./operator-starhub-test.sh dep
 
 ```bash
 # Set variables
-export CLUSTER_NAME="starhub-test"
+export CLUSTER_NAME="nexus-test"
 export REGION="ap-southeast-1"
 
 # 1. Associate OIDC provider (or use operator script to fix if missing)
@@ -683,15 +683,15 @@ eksctl utils associate-iam-oidc-provider \
   --approve
 
 # Alternatively: from kube-operator dir, fix IRSA (creates OIDC provider in IAM if missing)
-# ./operator-starhub-test.sh fix-irsa
+# ./operator-nexus-test.sh fix-irsa
 
 # 2. Verify setup
 aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.identity.oidc.issuer" --output text
 
 # 3. Deploy operator (creates totogi-operator-role and ECR repo automatically)
-cd /opt/mycode/trilogy/starhub-deployer/kube-operator
+cd /opt/mycode/nexus/nexus-deployer/kube-operator
 ./build-and-deploy.sh
-# Or: ./operator-starhub-test.sh deploy   (after building image separately)
+# Or: ./operator-nexus-test.sh deploy   (after building image separately)
 ```
 
 The deploy step runs the deployer backend, which creates the operator IAM role **totogi-operator-role**, applies the operator manifests, and can install the AWS Load Balancer Controller for ALB Ingress support.
@@ -705,13 +705,13 @@ The deploy step runs the deployer backend, which creates the operator IAM role *
 | EKS Cluster | User | Before deployment |
 | OIDC Provider | User (eksctl) or `fix-irsa` | Before or during deployment |
 | Deployer IAM Permissions | User | Before deployment |
-| totogi-operator-role | Deployer (operator-starhub-test.sh / build-and-deploy) | During deployment |
+| totogi-operator-role | Deployer (operator-nexus-test.sh / build-and-deploy) | During deployment |
 | ECR Repository | build-and-push / deploy | During deployment |
 | Application IAM Roles ({capability}-{env}-app-role) | Operator | When capability deployed |
 
 ### Note on kube-operator/iam_policy.json
 
-The file `starhub-deployer/kube-operator/iam_policy.json` is the IAM policy for the **AWS Load Balancer Controller** (ALB Ingress), not for the Totogi operator itself. It is used when installing the ALB Controller via `operator-starhub-test.sh install-alb-controller` (or automatically during `deploy`). The operator’s own permissions are created by the deployer as the inline policy **totogi-operator-policy** on **totogi-operator-role**.
+The file `nexus-deployer/kube-operator/iam_policy.json` is the IAM policy for the **AWS Load Balancer Controller** (ALB Ingress), not for the Totogi operator itself. It is used when installing the ALB Controller via `operator-nexus-test.sh install-alb-controller` (or automatically during `deploy`). The operator’s own permissions are created by the deployer as the inline policy **totogi-operator-policy** on **totogi-operator-role**.
 
 ---
 

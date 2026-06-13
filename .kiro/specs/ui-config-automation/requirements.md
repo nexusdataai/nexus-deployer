@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This feature automates the generation and deployment of the UI configuration file (`config.json`) as part of the starhub-deployer automation workflow. The UI application reads API and Cognito configuration from `config.json` hosted in S3. This feature extracts the necessary configuration values from CloudFormation stack outputs (API Gateway URL, Cognito User Pool details) and creates/updates the `config.json` file in the S3 bucket where the UI is hosted.
+This feature automates the generation and deployment of the UI configuration file (`config.json`) as part of the nexus-deployer automation workflow. The UI application reads API and Cognito configuration from `config.json` hosted in S3. This feature extracts the necessary configuration values from CloudFormation stack outputs (API Gateway URL, Cognito User Pool details) and creates/updates the `config.json` file in the S3 bucket where the UI is hosted.
 
 ## Glossary
 

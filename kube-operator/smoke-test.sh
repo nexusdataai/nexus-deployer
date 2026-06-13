@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
             echo "                        operator-state|auth-gate|cpq-runtime)"
             echo "  --openai-key KEY     Pass OpenAI API key for pipeline tests"
             echo "  --namespace NS       Kubernetes namespace (auto-detected if not set)"
-            echo "  --context CTX        kubeconfig context (e.g. starhub-test)"
+            echo "  --context CTX        kubeconfig context (e.g. nexus-test)"
             echo "  --external-url URL   Public app URL — enables Phase 7 auth-gate test"
             echo "  --strict             Exit on first phase failure"
             echo "  --capability FILE    Capability YAML file (for namespace detection)"
@@ -644,7 +644,7 @@ if should_run "auth-gate"; then
         done
 
         # Invalid cookie still rejected
-        CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Cookie: starhub_session=invalid" -I "${BASE_URL}/docs/" 2>/dev/null || echo "000")
+        CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Cookie: nexus_session=invalid" -I "${BASE_URL}/docs/" 2>/dev/null || echo "000")
         if [ "$CODE" = "302" ]; then
             echo "  [PASS] /docs/ with invalid cookie -> 302"
         else

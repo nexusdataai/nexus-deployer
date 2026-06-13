@@ -20,8 +20,8 @@
 # Usage:
 #   ./create-ecr-images.sh                   # Push images to ECR first
 #   ./e2e-deploy.sh                          # Uses .env.local defaults (or prod if absent)
-#   ./e2e-deploy.sh --env dev                # Deploy dev environment to starhub-dev cluster
-#   ./e2e-deploy.sh --env stage              # Deploy stage environment to starhub-stage cluster
+#   ./e2e-deploy.sh --env dev                # Deploy dev environment to nexus-dev cluster
+#   ./e2e-deploy.sh --env stage              # Deploy stage environment to nexus-stage cluster
 #   ./e2e-deploy.sh --env dev --cluster X    # Deploy dev to a custom cluster
 #   ./e2e-deploy.sh --skip-clean             # Skip delete step
 #   ./e2e-deploy.sh --skip-app-images        # Skip loading/pushing CallSense app images
@@ -113,7 +113,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --env ENV              Target environment: dev, stage, prod (default: prod)"
-            echo "  --cluster NAME         EKS cluster name (default: starhub-{env}, prod=starhub-test)"
+            echo "  --cluster NAME         EKS cluster name (default: nexus-{env}, prod=nexus-test)"
             echo "  --skip-clean           Skip the delete/cleanup step"
             echo "  --capability FILE      Use custom capability YAML"
             echo "  --cert ARN             ACM certificate ARN for HTTPS (enables SSL + redirect)"
@@ -128,9 +128,9 @@ while [[ $# -gt 0 ]]; do
             echo "  Run ./create-ecr-images.sh first to push images to ECR."
             echo ""
             echo "Examples:"
-            echo "  $0                                    # Full E2E (prod on starhub-test)"
-            echo "  $0 --env dev                          # Deploy dev to starhub-dev cluster"
-            echo "  $0 --env stage                        # Deploy stage to starhub-stage cluster"
+            echo "  $0                                    # Full E2E (prod on nexus-test)"
+            echo "  $0 --env dev                          # Deploy dev to nexus-dev cluster"
+            echo "  $0 --env stage                        # Deploy stage to nexus-stage cluster"
             echo "  $0 --env dev --cluster my-cluster     # Deploy dev to custom cluster"
             echo "  $0 --skip-clean                       # Redeploy without cleanup"
             exit 0
@@ -161,8 +161,8 @@ elif [ -n "$CLUSTER_NAME" ]; then
     : # CLUSTER_NAME set via env var, use as-is
 else
     case "$DEPLOY_ENV" in
-        prod) CLUSTER_NAME="starhub-test" ;;
-        *)    CLUSTER_NAME="starhub-${DEPLOY_ENV}" ;;
+        prod) CLUSTER_NAME="nexus-test" ;;
+        *)    CLUSTER_NAME="nexus-${DEPLOY_ENV}" ;;
     esac
 fi
 export CLUSTER_NAME
@@ -353,7 +353,7 @@ elif [ -f "${CREDS_ZIP_PATH}" ]; then
 else
     warn "credentials.zip not found at: ${CREDS_ZIP_PATH}"
     warn "BSS Magic controller will fail without credentials."
-    warn "To fix: copy credentials.zip to starhub-deployer/bssmagic-image/secrets/"
+    warn "To fix: copy credentials.zip to nexus-deployer/bssmagic-image/secrets/"
 fi
 
 # ──────────────────────────────────────────────────────────────

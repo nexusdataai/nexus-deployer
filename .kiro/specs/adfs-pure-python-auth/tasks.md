@@ -103,13 +103,13 @@ This plan converts the ADFS authentication from subprocess-based aws-adfs.exe to
   - However, the compiled `totogi-backend.exe` in `backend/dist/` is outdated
   - **If running Electron app**: Rebuild the backend executable:
     ```powershell
-    cd C:\mycode\trilogy\starhub-deployer\backend
+    cd C:\mycode\nexus\nexus-deployer\backend
     .\venv\Scripts\activate
     pyinstaller backend.spec --clean
     ```
   - **If running in development mode**: Restart the backend server:
     ```powershell
-    cd C:\mycode\trilogy\starhub-deployer\backend
+    cd C:\mycode\nexus\nexus-deployer\backend
     .\venv\Scripts\activate
     uvicorn app.main:app --reload --port 8001
     ```

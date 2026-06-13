@@ -6,8 +6,8 @@
 #
 # Usage:
 #   ./deploy-app-changes.sh                        # Uses .env.local defaults (or dev if absent)
-#   ./deploy-app-changes.sh --env prod             # Deploy to prod (starhub-test)
-#   ./deploy-app-changes.sh --env stage            # Deploy to stage (starhub-stage)
+#   ./deploy-app-changes.sh --env prod             # Deploy to prod (nexus-test)
+#   ./deploy-app-changes.sh --env stage            # Deploy to stage (nexus-stage)
 #   ./deploy-app-changes.sh --env dev --cluster X  # Deploy dev to custom cluster
 #
 # Reads defaults from .env.local (ENV, Branch, Cluster). CLI args override.

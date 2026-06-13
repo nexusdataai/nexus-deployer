@@ -1,7 +1,7 @@
 """
 Regional HTTPS endpoints for boto3 (VPC interface/gateway compatibility).
 
-Mirror of starhub-deployer/backend/app/utils/aws_vpc_endpoints.py — keep in sync.
+Mirror of nexus-deployer/backend/app/utils/aws_vpc_endpoints.py — keep in sync.
 """
 
 from __future__ import annotations

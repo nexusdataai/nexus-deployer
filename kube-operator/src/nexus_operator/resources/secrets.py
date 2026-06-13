@@ -15,7 +15,7 @@ from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
 
-# Default Axway configuration (StarHub UAT / Pre-Production)
+# Default Axway configuration (Nexus AI UAT / Pre-Production)
 # These are the UAT credentials. For production, update the Secrets Manager
 # secret with environment-specific values after deployment.
 AXWAY_CONFIG_TEMPLATE = {

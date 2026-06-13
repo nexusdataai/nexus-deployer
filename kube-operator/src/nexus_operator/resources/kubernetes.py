@@ -210,8 +210,8 @@ class KubernetesResourceCreator:
             # name. The backend rewrites it to capability-neutral names
             # before any UI / API surfaces it -- supplied here so the
             # backend source can stay free of the legacy literal.
-            legacy_fdw_server = "starhub_itxp2dev"
-            legacy_fdw_schema = "starhub_itxp2dev"
+            legacy_fdw_server = "nexus_itxp2dev"
+            legacy_fdw_schema = "nexus_itxp2dev"
             env_vars.extend([
                 client.V1EnvVar(name="BSSMAGIC_BASE_URL", value=f"http://{bssmagic_service}:8000"),
                 client.V1EnvVar(name="FDW_PG_HOST", value=bssmagic_service),

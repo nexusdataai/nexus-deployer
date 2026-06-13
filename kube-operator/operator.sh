@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Totogi Operator Management Script for starhub-test cluster
+# Totogi Operator Management Script for nexus-test cluster
 # 
 # Usage:
 #   ./operator.sh scan                    # Scan cluster readiness
@@ -37,7 +37,7 @@ if [ -f "$_ENVLOCAL" ]; then
     _ENV_LOCAL_CLUSTER=$(grep '^Cluster\s*=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2- | tr -d ' ')
 fi
 
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test}}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
 REGION="${REGION:-us-east-1}"
@@ -51,7 +51,7 @@ NC='\033[0m' # No Color
 
 show_help() {
     cat << EOF
-Totogi Operator Management Script for starhub-test
+Totogi Operator Management Script for nexus-test
 
 Usage:
   ./operator.sh <command> [options]
@@ -146,7 +146,7 @@ show_header() {
     local action=$1
     echo ""
     echo "=============================================="
-    echo "  $action Operator - starhub-test Cluster"
+    echo "  $action Operator - nexus-test Cluster"
     echo "=============================================="
     echo ""
     echo "Cluster:     ${CLUSTER_NAME}"
@@ -330,7 +330,7 @@ except ImportError:
     print("Error: boto3 not installed")
     sys.exit(1)
 
-CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'starhub-test')
+CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'nexus-test')
 REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
 
@@ -497,7 +497,7 @@ except ImportError:
     print("Error: boto3 not installed")
     sys.exit(1)
 
-CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'starhub-test')
+CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'nexus-test')
 REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
 
@@ -983,7 +983,7 @@ except ImportError:
     print("Error: boto3 not installed")
     sys.exit(1)
 
-CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'starhub-test')
+CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'nexus-test')
 REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
 
@@ -1586,7 +1586,7 @@ except ImportError as e:
     logger.error("Install with: pip install kubernetes boto3 pyyaml")
     sys.exit(1)
 
-CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'starhub-test')
+CLUSTER_NAME = os.getenv('CLUSTER_NAME', 'nexus-test')
 REGION = os.getenv('REGION', 'us-east-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE', 'external-access')
 

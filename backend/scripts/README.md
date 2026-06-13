@@ -5,7 +5,7 @@
 **Complete operator documentation is located at**:
 
 ```
-/opt/mycode/trilogy/starhub-deployer/doc/operator/README.md
+/opt/mycode/nexus/nexus-deployer/doc/operator/README.md
 ```
 
 ---
@@ -15,20 +15,20 @@
 ### Deploy Operator
 
 ```bash
-cd /opt/mycode/trilogy/starhub-deployer
-./operator-starhub-test.sh deploy
+cd /opt/mycode/nexus/nexus-deployer
+./operator-nexus-test.sh deploy
 ```
 
 ### Check Status
 
 ```bash
-./operator-starhub-test.sh status
+./operator-nexus-test.sh status
 ```
 
 ### Clean Up
 
 ```bash
-./operator-starhub-test.sh delete
+./operator-nexus-test.sh delete
 ```
 
 ---
@@ -45,10 +45,10 @@ cd /opt/mycode/trilogy/starhub-deployer
 
 ## 📖 For Full Documentation
 
-See: `/opt/mycode/trilogy/starhub-deployer/doc/operator/README.md`
+See: `/opt/mycode/nexus/nexus-deployer/doc/operator/README.md`
 
 Or use the management script:
 ```bash
-cd /opt/mycode/trilogy/starhub-deployer
-./operator-starhub-test.sh help
+cd /opt/mycode/nexus/nexus-deployer
+./operator-nexus-test.sh help
 ```

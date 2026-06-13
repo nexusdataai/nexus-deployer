@@ -20,7 +20,7 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 
@@ -48,7 +48,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     echo ""
     echo "Environment variables (or set in .env.local):"
     echo "  DEPLOY_ENV       Target environment (default: from .env.local or prod)"
-    echo "  CLUSTER_NAME     EKS cluster name (default: from .env.local or starhub-test)"
+    echo "  CLUSTER_NAME     EKS cluster name (default: from .env.local or nexus-test)"
     echo "  CURL_INSECURE=1  Use curl -k from the pod if HTTPS fails (missing CA bundle in image)"
     exit 0
 fi

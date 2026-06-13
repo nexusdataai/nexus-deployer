@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document specifies the requirements for migrating the starhub-deployer application from file-based JSON state management to TinyDB for managing installation state and capabilities catalogue. The current system uses individual JSON files for deployment state tracking and a single JSON file for the capabilities catalogue. TinyDB will provide a more robust, queryable, and maintainable solution while maintaining the simplicity of a file-based database suitable for desktop and PWA deployment scenarios.
+This document specifies the requirements for migrating the nexus-deployer application from file-based JSON state management to TinyDB for managing installation state and capabilities catalogue. The current system uses individual JSON files for deployment state tracking and a single JSON file for the capabilities catalogue. TinyDB will provide a more robust, queryable, and maintainable solution while maintaining the simplicity of a file-based database suitable for desktop and PWA deployment scenarios.
 
 ## Glossary
 
@@ -14,7 +14,7 @@ This document specifies the requirements for migrating the starhub-deployer appl
 - **Document**: A JSON-like record stored in TinyDB
 - **Table**: A collection of documents in TinyDB (analogous to a database table)
 - **Query**: A TinyDB operation to search and filter documents
-- **Installation Instance**: A single deployment of the starhub-deployer application managing one or more capability deployments
+- **Installation Instance**: A single deployment of the nexus-deployer application managing one or more capability deployments
 
 ## Requirements
 

@@ -20,7 +20,7 @@
 #
 # Usage:
 #   ./setup-iam-policies.sh                                  # interactive (uses .env.local)
-#   ./setup-iam-policies.sh --cluster starhub-test1 --env dev --capability nexus-ai
+#   ./setup-iam-policies.sh --cluster nexus-test1 --env dev --capability nexus-ai
 #   ./setup-iam-policies.sh --dry-run                        # render policies, do not call IAM
 #   ./setup-iam-policies.sh --skip-confirm                   # skip the "y/N" prompt
 #   ./setup-iam-policies.sh --help
@@ -51,14 +51,14 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 # ── Defaults (CLI overrides win) ──
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-starhub-test1}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test1}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-default}"
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-dev}}"
 CAPABILITY="${CAPABILITY:-nexus-ai}"
 ACCOUNT_ID_OVERRIDE=""
 BUCKET_NAME="${BUCKET_NAME:-${_ENV_LOCAL_BSL#s3://}}"
-BUCKET_NAME="${BUCKET_NAME:-starhub-test-backup}"
+BUCKET_NAME="${BUCKET_NAME:-nexus-test-backup}"
 DRY_RUN=false
 SKIP_CONFIRM=false
 

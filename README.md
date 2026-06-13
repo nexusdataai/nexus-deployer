@@ -219,7 +219,7 @@ npm run dev
 ## 📁 Project Structure
 
 ```
-starhub-deployer/
+nexus-deployer/
 ├── frontend/                 # React + TypeScript frontend
 │   ├── src/
 │   │   ├── components/      # Reusable UI components

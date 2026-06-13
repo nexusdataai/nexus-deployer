@@ -25,7 +25,7 @@ if [ -f "$_ENVLOCAL" ]; then
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV:-prod}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_CLUSTER:-starhub-test}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${_CLUSTER:-nexus-test}}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 REGION="${REGION:-us-east-1}"
 NAMESPACE="nexus-ai-${DEPLOY_ENV}"

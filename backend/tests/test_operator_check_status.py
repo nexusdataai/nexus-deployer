@@ -52,11 +52,11 @@ async def test_check_operator_status_installed_with_replicas():
 
     svc._get_k8s_clients = fake_clients  # type: ignore
 
-    result = await svc.check_operator_status("starhub-test1")
+    result = await svc.check_operator_status("nexus-test1")
     assert result["installed"] is True
     assert result["status"] == "installed"
     assert result["version"] == "1.0.0"
-    assert "starhub-test1" in result["detail"]
+    assert "nexus-test1" in result["detail"]
     assert "2/2 replicas" in result["detail"]
 
 
@@ -80,7 +80,7 @@ async def test_check_operator_status_fresh_cluster():
          patch("kubernetes.client.ApiextensionsV1Api") as ext_cls:
         ext_cls.return_value.read_custom_resource_definition.side_effect = _api_404()
 
-        result = await svc.check_operator_status("starhub-test1")
+        result = await svc.check_operator_status("nexus-test1")
 
     assert result["installed"] is False
     assert result["status"] == "not_installed"
@@ -107,7 +107,7 @@ async def test_check_operator_status_partial_cleanup():
     with patch("kubernetes.client.ApiextensionsV1Api") as ext_cls:
         ext_cls.return_value.read_custom_resource_definition.return_value = MagicMock()  # CRD exists
 
-        result = await svc.check_operator_status("starhub-test1")
+        result = await svc.check_operator_status("nexus-test1")
 
     assert result["installed"] is False
     assert result["status"] == "not_installed"
@@ -125,7 +125,7 @@ async def test_check_operator_status_unknown_when_cluster_unreachable():
 
     svc._get_k8s_clients = fake_clients  # type: ignore
 
-    result = await svc.check_operator_status("starhub-test1")
+    result = await svc.check_operator_status("nexus-test1")
     assert result["installed"] is False
     assert result["status"] == "unknown"
     assert "kubeconfig invalid" in result["detail"]
@@ -145,7 +145,7 @@ async def test_check_operator_status_403_returns_unknown_with_detail():
 
     svc._get_k8s_clients = fake_clients  # type: ignore
 
-    result = await svc.check_operator_status("starhub-test1")
+    result = await svc.check_operator_status("nexus-test1")
     assert result["installed"] is False
     assert result["status"] == "unknown"
     assert "403" in result["detail"]

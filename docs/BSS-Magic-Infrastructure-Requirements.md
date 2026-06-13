@@ -2,13 +2,13 @@
 
 **Date:** 2026-02-13
 **Author:** CloudSense / BSS Magic Team
-**Applies to:** Any EKS cluster running the `starhub-deployer` with BSS Magic enabled
+**Applies to:** Any EKS cluster running the `nexus-deployer` with BSS Magic enabled
 
 ---
 
 ## 1. Executive Summary
 
-BSS Magic adds a **PostgreSQL-backed StatefulSet** to the existing `starhub-deployer` architecture. The existing deployer only provisions **stateless** workloads (frontend Deployment, backend Deployment) that don't require persistent storage. The addition of PostgreSQL introduces two new infrastructure requirements:
+BSS Magic adds a **PostgreSQL-backed StatefulSet** to the existing `nexus-deployer` architecture. The existing deployer only provisions **stateless** workloads (frontend Deployment, backend Deployment) that don't require persistent storage. The addition of PostgreSQL introduces two new infrastructure requirements:
 
 1. **EBS CSI Driver** — EKS add-on for dynamic EBS volume provisioning
 2. **IAM Role for EBS CSI Driver** — IRSA-based role so the CSI controller can create/attach EBS volumes
@@ -23,7 +23,7 @@ There are also **Kubernetes-level changes** to the operator's ClusterRole (addin
 
 | Component | Workload Type | Storage |
 |-----------|--------------|---------|
-| Frontend (starhub-ui) | Deployment (stateless) | None — serves static assets |
+| Frontend (nexus-ui) | Deployment (stateless) | None — serves static assets |
 | Backend (ai-job-engine) | Deployment (stateless) | None — uses DynamoDB/S3 |
 | Totogi Operator | Deployment (stateless) | None — watches CRDs |
 
@@ -264,8 +264,8 @@ These changes are handled **automatically** by the deployer code. Documented her
 **Why:** The operator needs permission to create StatefulSets. Without this, the operator gets a `403 Forbidden` error when trying to deploy BSS Magic.
 
 **Where this is defined:**
-- Code: `starhub-deployer/backend/app/services/operator_deployment_service.py` (line 838-841)
-- Manifest: `starhub-deployer/kube-operator/manifests/rbac.yaml` (line 53-56)
+- Code: `nexus-deployer/backend/app/services/operator_deployment_service.py` (line 838-841)
+- Manifest: `nexus-deployer/kube-operator/manifests/rbac.yaml` (line 53-56)
 
 **Who applies it:** The `deploy_operator_to_cluster.py` script automatically creates/replaces the ClusterRole during Step 5 of `e2e-deploy.sh`. No manual action needed.
 
@@ -275,7 +275,7 @@ These changes are handled **automatically** by the deployer code. Documented her
 
 **Why:** `patch` does a strategic merge that can leave stale rules. `replace` does a full replacement, ensuring the ClusterRole exactly matches the code definition. This prevents situations where a previous deployment left a ClusterRole missing `statefulsets` and a subsequent `patch` didn't add it.
 
-**Where:** `starhub-deployer/backend/app/services/operator_deployment_service.py` (line 866)
+**Where:** `nexus-deployer/backend/app/services/operator_deployment_service.py` (line 866)
 
 ---
 

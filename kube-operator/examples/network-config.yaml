@@ -11,7 +11,7 @@
 #   kubectl get tnc vpc-endpoints                        # Check status
 #
 # Or use the CLI:
-#   ./operator-starhub-test.sh setup-endpoints
+#   ./operator-nexus-test.sh setup-endpoints
 #
 apiVersion: nexus.ai/v1
 kind: NexusNetworkConfig

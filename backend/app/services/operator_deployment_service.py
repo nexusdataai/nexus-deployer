@@ -556,7 +556,7 @@ class OperatorDeploymentService:
         crd = None
         crd_paths = [
             os.path.join(os.path.dirname(__file__), '..', '..', '..', 'kube-operator', 'manifests', 'crd.yaml'),
-            '/opt/mycode/trilogy/starhub-deployer/kube-operator/manifests/crd.yaml',
+            '/opt/mycode/nexus/nexus-deployer/kube-operator/manifests/crd.yaml',
             os.path.join(os.path.dirname(__file__), '..', '..', 'kube-operator', 'manifests', 'crd.yaml'),
         ]
         
