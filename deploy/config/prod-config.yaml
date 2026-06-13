@@ -23,7 +23,7 @@ target:
 
 infrastructure:
   domain:
-    base: totogicore.com           # Your base domain
+    base: nexus.ai           # Your base domain
     frontend_subdomain: app     # Frontend will be: app.example.com
     backend_subdomain: api      # Backend API will be: api.example.com
     hosted_zone_id: Z084501638STQ2EKKSIA  # Route53 Hosted Zone ID

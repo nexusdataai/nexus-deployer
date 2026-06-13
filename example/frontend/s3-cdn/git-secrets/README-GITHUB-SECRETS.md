@@ -114,7 +114,7 @@ VITE_LANGFLOW_FALLBACK2_API_KEY=your_alternative_api_key_here
 VITE_OPENAI_API_KEY=sk-proj-xxxxx
 
 # MCP Configuration
-VITE_MCP_HOST_URL=https://api.dev-alert-engine.totogicore.com
+VITE_MCP_HOST_URL=https://api.dev-alert-engine.nexus.ai
 ```
 
 ### 2. Run the script

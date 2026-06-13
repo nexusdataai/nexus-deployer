@@ -1144,7 +1144,7 @@ metadata:
   name: nexus-operator-network-config
 rules:
   - apiGroups: ["nexus.ai"]
-    resources: ["totoginetworkconfigs", "totoginetworkconfigs/status"]
+    resources: ["nexusnetworkconfigs", "nexusnetworkconfigs/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1259,7 +1259,7 @@ RBAC_EOF
             echo ""
 
             echo "  Cleaning up CRD..."
-            kubectl delete crd totoginetworkconfigs.nexus.ai 2>/dev/null || true
+            kubectl delete crd nexusnetworkconfigs.nexus.ai 2>/dev/null || true
             echo -e "${GREEN}  ✓ CRD removed${NC}"
             echo ""
 

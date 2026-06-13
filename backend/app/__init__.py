@@ -1,1 +1,1 @@
-# Totogi Installer Backend
+# Nexus AI Installer Backend

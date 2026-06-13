@@ -1,5 +1,5 @@
 # terminate-processes.ps1
-# Terminates Totogi Installer processes with graceful shutdown support
+# Terminates Nexus AI Installer processes with graceful shutdown support
 #
 # Usage:
 #   .\terminate-processes.ps1
@@ -9,7 +9,7 @@
 param(
     [int]$GracefulTimeoutSeconds = 5,
     [int]$ForceTimeoutSeconds = 5,
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 # Import logging module if available
@@ -202,7 +202,7 @@ function Stop-ProcessTree {
 
 # Main execution
 Write-UninstallLog "=========================================="
-Write-UninstallLog "Totogi Installer Process Termination"
+Write-UninstallLog "Nexus AI Installer Process Termination"
 Write-UninstallLog "=========================================="
 Write-UninstallLog "Graceful timeout: $GracefulTimeoutSeconds seconds"
 Write-UninstallLog "Force timeout: $ForceTimeoutSeconds seconds"
@@ -212,7 +212,7 @@ $results = @()
 # Terminate backend process
 Write-UninstallLog ""
 Write-UninstallLog "--- Terminating Backend Process ---"
-$backendResult = Stop-ProcessGracefully -ProcessName "totogi-backend" `
+$backendResult = Stop-ProcessGracefully -ProcessName "nexus-installer-backend" `
     -GracefulTimeout $GracefulTimeoutSeconds `
     -ForceTimeout $ForceTimeoutSeconds
 $results += $backendResult
@@ -220,13 +220,13 @@ $results += $backendResult
 # Terminate Electron app
 Write-UninstallLog ""
 Write-UninstallLog "--- Terminating Electron App ---"
-$electronResult = Stop-ProcessGracefully -ProcessName "Totogi Installer" `
+$electronResult = Stop-ProcessGracefully -ProcessName "Nexus AI Installer" `
     -GracefulTimeout $GracefulTimeoutSeconds `
     -ForceTimeout $ForceTimeoutSeconds
 $results += $electronResult
 
 # Also try alternative process names
-$altNames = @("totogi-installer", "TotogiInstaller")
+$altNames = @("nexus-installer", "NexusInstaller")
 foreach ($name in $altNames) {
     $altResult = Stop-ProcessGracefully -ProcessName $name `
         -GracefulTimeout $GracefulTimeoutSeconds `

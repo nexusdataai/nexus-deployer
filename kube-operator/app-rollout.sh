@@ -390,7 +390,7 @@ get_current_version_annotation() {
     name=$(resource_name "$component")
     kind=$(resource_kind "$component")
     kubectl get "${kind}/${name}" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.annotations.totogi\.com/app-version}' 2>/dev/null || echo ""
+        -o jsonpath='{.metadata.annotations.nexus\.com/app-version}' 2>/dev/null || echo ""
 }
 
 get_previous_version_annotation() {
@@ -398,7 +398,7 @@ get_previous_version_annotation() {
     name=$(resource_name "$component")
     kind=$(resource_kind "$component")
     kubectl get "${kind}/${name}" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.annotations.totogi\.com/previous-version}' 2>/dev/null || echo ""
+        -o jsonpath='{.metadata.annotations.nexus\.com/previous-version}' 2>/dev/null || echo ""
 }
 
 get_ecr_registry() {
@@ -503,10 +503,10 @@ annotate_version() {
     _now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     kubectl annotate "${_kind}/${_name}" -n "$NAMESPACE" --overwrite \
-        "totogi.com/app-version=${_version}" \
-        "totogi.com/previous-version=${_prev_version}" \
-        "totogi.com/deployed-at=${_now}" \
-        "totogi.com/deployed-by=app-rollout.sh" 2>/dev/null || true
+        "nexus.ai/app-version=${_version}" \
+        "nexus.ai/previous-version=${_prev_version}" \
+        "nexus.ai/deployed-at=${_now}" \
+        "nexus.ai/deployed-by=app-rollout.sh" 2>/dev/null || true
 }
 
 OVERALL_EXIT=0
@@ -750,7 +750,7 @@ if [ "$DIAGNOSTICS_ONLY" = "0" ]; then
             fi
             [ "$DRY_RUN" = "0" ] && log_ok "Rollout restart triggered for ${kind}/${name}"
 
-            # Backfill totogi.com/app-version annotation if missing, so the
+            # Backfill nexus.ai/app-version annotation if missing, so the
             # Summary block and About dialog show the real image tag instead
             # of "(unknown)" for resources created before the annotation feature.
             if [ "$DRY_RUN" = "0" ] && [ -z "$_existing_ann" ] && [ -n "$current_version" ]; then

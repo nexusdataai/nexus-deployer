@@ -16,7 +16,7 @@ import ConfigurationPanel, { ConfigTab } from './unified-config/ConfigurationPan
 import EKSConfigurationPanel, { EKSConfigTab } from './unified-config/EKSConfigurationPanel';
 
 // Fallback defaults if API fails
-const FALLBACK_BASE_DOMAIN = 'totogicore.com';
+const FALLBACK_BASE_DOMAIN = 'nexus.ai';
 const FALLBACK_HOSTED_ZONE_ID = 'Z084501638STQ2EKKSIA';
 
 // Minimal fallback preset structure (used only if API fails)

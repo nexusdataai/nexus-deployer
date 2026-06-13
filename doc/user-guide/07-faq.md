@@ -2,9 +2,9 @@
 
 ## General Questions
 
-### What is the Totogi Capability Installer?
+### What is the Nexus AI Capability Installer?
 
-The Totogi Capability Installer is a desktop application that enables you to deploy Totogi's telco business capabilities directly into your own AWS environment. It provides a guided wizard experience for deploying, updating, and managing capabilities.
+The Nexus AI Capability Installer is a desktop application that enables you to deploy Nexus AI's telco business capabilities directly into your own AWS environment. It provides a guided wizard experience for deploying, updating, and managing capabilities.
 
 ### What capabilities can I deploy?
 
@@ -149,9 +149,9 @@ For development environments:
 - Set auto-scaling minimum to 0
 - Use on-demand DynamoDB billing
 
-### Are there any Totogi licensing costs?
+### Are there any Nexus AI licensing costs?
 
-Contact your Totogi representative for licensing information. The installer itself is provided as part of your Totogi subscription.
+Contact your Nexus AI representative for licensing information. The installer itself is provided as part of your Nexus AI subscription.
 
 ---
 
@@ -234,7 +234,7 @@ Common causes:
 
 1. Check this documentation
 2. Review [Troubleshooting Guide](./06-troubleshooting.md)
-3. Contact support at support@totogi.com
+3. Contact support at support@nexus.ai
 
 ### What information should I provide to support?
 
@@ -246,7 +246,7 @@ Common causes:
 
 ### Is there a community forum?
 
-Contact your Totogi representative for information about community resources and forums.
+Contact your Nexus AI representative for information about community resources and forums.
 
 ---
 
@@ -254,15 +254,15 @@ Contact your Totogi representative for information about community resources and
 
 ### How do I request new features?
 
-Contact your Totogi representative or email feedback@totogi.com with:
+Contact your Nexus AI representative or email feedback@nexus.ai with:
 - Feature description
 - Use case
 - Priority level
 
 ### When will Azure/GCP support be available?
 
-Multi-cloud support is on our roadmap. Contact your Totogi representative for timeline information.
+Multi-cloud support is on our roadmap. Contact your Nexus AI representative for timeline information.
 
 ### Can I customize the deployment?
 
-The installer uses standard CloudFormation templates. For custom requirements, contact your Totogi representative to discuss options.
+The installer uses standard CloudFormation templates. For custom requirements, contact your Nexus AI representative to discuss options.

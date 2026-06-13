@@ -1,7 +1,7 @@
 # Pure-Kubernetes (EKS) Deployment Path
 
 This document describes the end-to-end Pure-EKS deployment path in the
-Totogi Capability Installer: how the wizard, backend, and `kube-operator`
+Nexus AI Capability Installer: how the wizard, backend, and `kube-operator`
 interact when the user chooses to install a capability into an existing
 Amazon EKS cluster instead of running it on ECS/Fargate behind
 CloudFormation.
@@ -12,9 +12,9 @@ The Pure-EKS path is implemented across four components:
   selection, EKS-specific configuration panel, path-aware preflight UI.
 - **Backend FastAPI service** (`nexus-deployer/backend/app`) -
   per-target preflight, deployment orchestration, operator install,
-  TotogiCapability CR apply.
+  NexusCapability CR apply.
 - **kube-operator** (`nexus-deployer/kube-operator`) - Python/Kopf
-  operator that owns the `TotogiCapability` CRD and reconciles AWS
+  operator that owns the `NexusCapability` CRD and reconciles AWS
   resources + Kubernetes workloads on the user's cluster.
 - **Capability catalogue** (`nexus-deployer/backend/capabilities/capabilities.json`)
   - declares which deployment targets each capability supports via
@@ -34,7 +34,7 @@ The Pure-EKS path is structured as a 10-step pipeline mirroring
    role+trust verification in preprovisioned mode.
 5. **Operator install/update** - existing `OperatorDeploymentService.deploy_operator`
    (idempotent: create-or-409-then-patch).
-6. **VPC private endpoints** - apply cluster-scoped `TotogiNetworkConfig` CR
+6. **VPC private endpoints** - apply cluster-scoped `NexusNetworkConfig` CR
    `vpc-endpoints`; operator's `VPCEndpointProvisioner` does the EC2 work.
 7. **Reachability probe** - one-shot diagnostic Pod in the capability
    namespace using the per-capability ServiceAccount (so IRSA reflects
@@ -95,9 +95,9 @@ AWS-specific provisioners that would need to be abstracted.
 
 ```
 +---------------+        +-----------------------+        +--------------------------+
-| Wizard        |  HTTPS |  Backend FastAPI      |  K8s   | TotogiOperator (Kopf)    |
+| Wizard        |  HTTPS |  Backend FastAPI      |  K8s   | Nexus AIOperator (Kopf)    |
 |  - Arch       +-------->  - DeploymentTarget   +-------->  - Reconciles            |
-|    Select     |        |    enum gating        |  CR    |    TotogiCapability      |
+|    Select     |        |    enum gating        |  CR    |    NexusCapability      |
 |  - EKS Config |        |  - operator_deploy.   |        |  - HPA / PDB / Ingress    |
 |    Panel      |        |    service            |        |  - DynamoDB / S3 / Glue  |
 |  - Permission |        |  - DeploymentOrchestr.|        |  - Cognito / IRSA        |
@@ -134,7 +134,7 @@ behaviour.
    backend = `EKS` on `ArchitectureSelection`. Selecting either side
    forces the other to EKS (mutual lock); mixed paths are not supported.
 2. **Capability config.** The wizard renders `EKSConfigurationPanel` with
-   tabs that mirror the `TotogiCapability` CRD: Namespace, Replicas,
+   tabs that mirror the `NexusCapability` CRD: Namespace, Replicas,
    Resources, Auto Scaling (HPA + PDB), Ingress & TLS, Internal Ingress,
    Data Services, Cognito, BSS Magic.
 3. **AWS auth + preflight.** `PermissionVerification` calls
@@ -152,7 +152,7 @@ behaviour.
 5. **Deploy.** `DeploymentOrchestrator.deploy_capability` short-circuits
    into `_deploy_via_operator`, which calls
    `OperatorDeploymentService.create_capability_cr` to apply (or patch
-   on `409`) the `TotogiCapability` CR, then polls
+   on `409`) the `NexusCapability` CR, then polls
    `get_capability_status` every 5s for up to ~20 minutes.
 6. **Reconciliation.** The operator goes through its phases (Pending ->
    Provisioning -> ProvisioningDataServices -> ProvisioningSSM ->

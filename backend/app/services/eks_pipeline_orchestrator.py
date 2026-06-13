@@ -13,7 +13,7 @@ Phase 1 implements:
 
 Subsequent phases fill in steps 2-7 and 10. Steps 5, 8, 9 are operator-
 driven (existing OperatorDeploymentService + DeploymentOrchestrator
-already cover them via TotogiCapability CR apply).
+already cover them via NexusCapability CR apply).
 """
 import asyncio
 import logging
@@ -231,7 +231,7 @@ class EksPipelineOrchestrator:
 
         # ----- check 3: operator IAM role (preprovisioned mode only) -----
         if iam_mode == "preprovisioned":
-            operator_role_name = "totogi-operator-role"
+            operator_role_name = "nexus-operator-role"
             try:
                 role_info = iam.get_role(RoleName=operator_role_name)
                 trust = role_info["Role"]["AssumeRolePolicyDocument"]
@@ -463,7 +463,7 @@ class EksPipelineOrchestrator:
                     aws_session_token=creds.get("aws_session_token"),
                 )
 
-            ecr_repo_name = "totogi-operator"
+            ecr_repo_name = "nexus-operator"
             try:
                 repo_info = ecr.describe_repositories(repositoryNames=[ecr_repo_name])
                 repo = repo_info["repositories"][0]
@@ -574,7 +574,7 @@ class EksPipelineOrchestrator:
                 desired = op_status.get("desired_replicas", 1)
                 checks.append(PipelineCheck(
                     name="operator_status",
-                    label="Totogi Operator deployment",
+                    label="Nexus AI Operator deployment",
                     status="pass" if ready >= desired else "warn",
                     detail=op_status.get("detail") or (
                         f"Deployment {OPERATOR_DEPLOYMENT_NAME} in {OPERATOR_NAMESPACE}: "
@@ -588,7 +588,7 @@ class EksPipelineOrchestrator:
             else:
                 checks.append(PipelineCheck(
                     name="operator_status",
-                    label="Totogi Operator deployment",
+                    label="Nexus AI Operator deployment",
                     status="warn" if op_status.get("status") != "unknown" else "fail",
                     detail=op_status.get("detail") or "Operator not installed.",
                     remediation=(
@@ -752,13 +752,13 @@ class EksPipelineOrchestrator:
         specs: List[IrsaRoleSpec] = [
             IrsaRoleSpec(
                 name="operator_role",
-                label="Totogi Operator IRSA role",
-                role_name="totogi-operator-role",
+                label="Nexus AI Operator IRSA role",
+                role_name="nexus-operator-role",
                 namespace=OPERATOR_NAMESPACE,
                 service_account=OPERATOR_SERVICE_ACCOUNT,
                 admin_managed_remediation=(
                     "In pre-provisioned IAM mode, admin must create "
-                    "totogi-operator-role using "
+                    "nexus-operator-role using "
                     "kube-operator/permissions/operator-policy.json + "
                     "operator-trust-policy.json with the cluster's OIDC "
                     "provider ID substituted."
@@ -914,7 +914,7 @@ class EksPipelineOrchestrator:
         Step 6: provision the 13 VPC private endpoints directly via EC2.
 
         Earlier versions of this method drove the operator's
-        `TotogiNetworkConfig` CR; that required the CRD to already be
+        `NexusNetworkConfig` CR; that required the CRD to already be
         installed on the cluster, which it is not at pre-flight time
         (operator install happens later in step 5 / DEPLOYMENT_EXECUTION).
         The deployer now creates the endpoints itself, idempotently.

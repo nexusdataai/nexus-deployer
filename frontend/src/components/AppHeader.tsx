@@ -18,7 +18,7 @@ interface AppHeaderProps {
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
-  title = 'Totogi Customer Toolkit',
+  title = 'Nexus AI Customer Toolkit',
   showProgress = false,
   currentStep,
   totalSteps,

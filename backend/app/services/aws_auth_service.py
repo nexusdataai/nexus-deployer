@@ -485,7 +485,7 @@ class AWSAuthService:
             # Assume the role using source credentials
             response = sts_client.assume_role(
                 RoleArn=role_arn,
-                RoleSessionName="TotogiInstaller",
+                RoleSessionName="NexusInstaller",
                 DurationSeconds=3600
             )
             

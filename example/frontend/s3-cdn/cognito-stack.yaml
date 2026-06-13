@@ -155,11 +155,11 @@ Resources:
     Condition: CreateTestUsers
     Properties:
       UserPoolId: !Ref UserPool
-      Username: executive@alertengine.totogicore.com
+      Username: executive@alertengine.nexus.ai
       MessageAction: SUPPRESS
       UserAttributes:
         - Name: email
-          Value: executive@alertengine.totogicore.com
+          Value: executive@alertengine.nexus.ai
         - Name: email_verified
           Value: "true"
         - Name: name
@@ -174,11 +174,11 @@ Resources:
     Condition: CreateTestUsers
     Properties:
       UserPoolId: !Ref UserPool
-      Username: opsmanager@alertengine.totogicore.com
+      Username: opsmanager@alertengine.nexus.ai
       MessageAction: SUPPRESS
       UserAttributes:
         - Name: email
-          Value: opsmanager@alertengine.totogicore.com
+          Value: opsmanager@alertengine.nexus.ai
         - Name: email_verified
           Value: "true"
         - Name: name
@@ -264,6 +264,6 @@ Outputs:
     Condition: CreateTestUsers
     Description: Test user credentials for login (passwords set by deployment script)
     Value: !Sub |
-      Executive: executive@alertengine.totogicore.com / TempPassword123!
-      Operations Manager: opsmanager@alertengine.totogicore.com / TempPassword123!
+      Executive: executive@alertengine.nexus.ai / TempPassword123!
+      Operations Manager: opsmanager@alertengine.nexus.ai / TempPassword123!
       (Temporary passwords - you'll be prompted to change on first login)

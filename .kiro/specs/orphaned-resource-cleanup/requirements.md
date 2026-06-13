@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
@@ -10,7 +11,7 @@ The deployment system currently fails when attempting to create CloudFormation s
 - **Unstable Stack**: A CloudFormation stack in a failed or non-updatable state (ROLLBACK_COMPLETE, DELETE_FAILED, UPDATE_ROLLBACK_COMPLETE, etc.)
 - **CloudFormation Stack**: A collection of AWS resources managed as a single unit
 - **DeletionPolicy Retain**: A CloudFormation setting that preserves resources when the stack is deleted
-- **Deployment System**: The Totogi Customer Toolkit deployment orchestration service
+- **Deployment System**: The Nexus AI Customer Toolkit deployment orchestration service
 - **Pre-Deployment Validation**: Checking for issues before starting deployment to fail fast
 - **Resource Type**: The AWS resource type (S3 Bucket, ALB, CloudFront Distribution, ECR Repository, etc.)
 - **Stack Template**: CloudFormation template defining resources to be created

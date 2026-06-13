@@ -1,4 +1,4 @@
-# Totogi Customer Toolkit
+# Nexus AI Customer Toolkit
 ## Enterprise-Grade Self-Service Cloud Deployment Platform
 
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -12,7 +12,7 @@
 
 ## 🎯 What Is This?
 
-The **Totogi Customer Toolkit** is an enterprise-grade deployment platform that enables customers to deploy complex, production-ready telecommunications and business capabilities to their own cloud infrastructure in **under 30 minutes** with **zero cloud expertise required**.
+The **Nexus AI Customer Toolkit** is an enterprise-grade deployment platform that enables customers to deploy complex, production-ready telecommunications and business capabilities to their own cloud infrastructure in **under 30 minutes** with **zero cloud expertise required**.
 
 Think of it as **"Shopify for Enterprise Capabilities"** - a self-service platform that transforms months-long professional services engagements into simple, guided deployments.
 
@@ -141,7 +141,7 @@ For detailed architecture information, see:
 
 ### For End Users
 
-If you want to **use** the Totogi Customer Toolkit to deploy capabilities:
+If you want to **use** the Nexus AI Customer Toolkit to deploy capabilities:
 
 1. **Download** the installer for your platform (Windows, macOS, or Linux)
 2. **Install** and launch the application
@@ -151,7 +151,7 @@ See [Getting Started Guide](doc/user-guide/01-getting-started.md) for detailed i
 
 ### For Developers
 
-If you want to **develop** or **modify** the Totogi Customer Toolkit:
+If you want to **develop** or **modify** the Nexus AI Customer Toolkit:
 
 #### Prerequisites
 
@@ -372,9 +372,9 @@ npm run build:linux        # Linux
 ```
 
 **Build Outputs:**
-- Windows: `dist/Totogi-Installer-Setup-{version}.exe`
-- macOS: `dist/Totogi-Installer-{version}.dmg`
-- Linux: `dist/Totogi-Installer-{version}.AppImage`
+- Windows: `dist/Nexus AI-Installer-Setup-{version}.exe`
+- macOS: `dist/Nexus AI-Installer-{version}.dmg`
+- Linux: `dist/Nexus AI-Installer-{version}.AppImage`
 
 ---
 
@@ -398,8 +398,8 @@ For detailed troubleshooting, see:
 ### Getting Help
 
 - **Documentation**: Check the [User Guide](doc/user-guide/README.md)
-- **Support Portal**: [support.totogi.com](https://support.totogi.com)
-- **Email**: support@totogi.com
+- **Support Portal**: [support.nexus.ai](https://support.nexus.ai)
+- **Email**: support@nexus.ai
 
 ---
 
@@ -519,11 +519,11 @@ This is a proprietary project. Internal contributors should follow:
 
 ## 📝 License
 
-**Proprietary - Totogi**
+**Proprietary - Nexus AI**
 
 This software is proprietary and confidential. Unauthorized copying, modification, distribution, or use is strictly prohibited.
 
-© 2026 Totogi. All rights reserved.
+© 2026 Nexus AI. All rights reserved.
 
 ---
 
@@ -531,16 +531,16 @@ This software is proprietary and confidential. Unauthorized copying, modificatio
 
 ### For Customers
 
-- **Email**: support@totogi.com
-- **Support Portal**: [support.totogi.com](https://support.totogi.com)
-- **Phone**: +1-800-TOTOGI-1 (M-F 9AM-5PM EST)
+- **Email**: support@nexus.ai
+- **Support Portal**: [support.nexus.ai](https://support.nexus.ai)
+- **Phone**: +1-800-NEXUS-AI (M-F 9AM-5PM EST)
 - **Emergency**: 24/7 support for production issues
 
 ### For Developers
 
-- **Internal Wiki**: [wiki.totogi.internal](https://wiki.totogi.internal)
+- **Internal Wiki**: [wiki.nexus.internal](https://wiki.nexus.internal)
 - **Slack**: #toolkit-development
-- **JIRA**: [jira.totogi.com/TOOLKIT](https://jira.totogi.com/TOOLKIT)
+- **JIRA**: [jira.nexus.ai/TOOLKIT](https://jira.nexus.ai/TOOLKIT)
 
 ---
 
@@ -548,9 +548,9 @@ This software is proprietary and confidential. Unauthorized copying, modificatio
 
 ### External Links
 
-- **Website**: [www.totogi.com](https://www.totogi.com)
-- **Blog**: [blog.totogi.com](https://blog.totogi.com)
-- **Developer Portal**: [developers.totogi.com](https://developers.totogi.com)
+- **Website**: [www.nexus.ai](https://www.nexus.ai)
+- **Blog**: [blog.nexus.ai](https://blog.nexus.ai)
+- **Developer Portal**: [developers.nexus.ai](https://developers.nexus.ai)
 
 ### Internal Resources
 
@@ -577,6 +577,6 @@ This software is proprietary and confidential. Unauthorized copying, modificatio
 
 ---
 
-**Built with ❤️ by the Totogi Engineering Team**
+**Built with ❤️ by the Nexus AI Engineering Team**
 
-For questions or feedback, contact: toolkit-team@totogi.com
+For questions or feedback, contact: toolkit-team@nexus.ai

@@ -323,7 +323,7 @@ class StackDetectionService:
         aws_session_id: Optional[str] = None
     ) -> Dict:
         """
-        Detect existing EKS deployment by checking for TotogiCapability CR.
+        Detect existing EKS deployment by checking for NexusCapability CR.
         
         Args:
             capability_name: Name of the capability

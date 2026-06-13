@@ -60,7 +60,7 @@ class MFAService:
     """
     
     # Configuration
-    TOTP_ISSUER = "Totogi Toolkit"
+    TOTP_ISSUER = "Nexus AI Toolkit"
     TOTP_WINDOW = 1  # Allow 1 step before/after for clock drift
     MAX_RETRIES = 3
     CODE_LENGTH = 6
@@ -110,7 +110,7 @@ class MFAService:
         Args:
             secret: TOTP secret
             username: Username for the account
-            issuer: Issuer name (default: Totogi Toolkit)
+            issuer: Issuer name (default: Nexus AI Toolkit)
             
         Returns:
             Base64-encoded PNG image of QR code

@@ -1,5 +1,5 @@
 """
-Totogi Capability Installer - FastAPI Backend
+Nexus AI Capability Installer - FastAPI Backend
 Main application entry point
 """
 import logging
@@ -34,8 +34,8 @@ _startup_manager = None
 
 # Create FastAPI app
 app = FastAPI(
-    title="Totogi Installer API",
-    description="Backend API for Totogi Capability Installation Wizard",
+    title="Nexus AI Installer API",
+    description="Backend API for Nexus AI Capability Installation Wizard",
     version="0.0.1"
 )
 
@@ -344,7 +344,7 @@ async def root():
     
     return {
         "status": "ok" if readiness.get("ready", False) else "initializing",
-        "message": "Totogi Installer API is running",
+        "message": "Nexus AI Installer API is running",
         "version": "1.0.0",
         "ready": readiness.get("ready", False),
         "phase": readiness.get("phase", "unknown"),

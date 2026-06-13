@@ -30,7 +30,7 @@ const TOOLTIP_CONTENT: Record<TooltipField, TooltipContent> = {
   externalId: {
     title: 'External ID',
     description: 'A unique identifier used for cross-account access to prevent confused deputy attacks.',
-    example: 'totogi-deployment-abc123',
+    example: 'nexus-deployment-abc123',
     learnMoreLink: 'https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html'
   },
   accountId: {

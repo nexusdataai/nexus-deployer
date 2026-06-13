@@ -1,7 +1,7 @@
 #!/bin/bash
 # Controller wrapper with automatic credential refresh.
 #
-# The IoT heartbeat uses Totogi-account STS credentials obtained via
+# The IoT heartbeat uses Nexus AI-account STS credentials obtained via
 # thing-login.sh (X.509 cert exchange). These expire after ~1 hour.
 # The CRT library doesn't support credential_process, so we can't use
 # ~/.aws/config for automatic refresh.

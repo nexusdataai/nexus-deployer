@@ -154,7 +154,7 @@ const WizardShell: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* App Header with User Menu */}
       <AppHeader
-        title="Totogi Customer Toolkit"
+        title="Nexus AI Customer Toolkit"
         showProgress={showProgress}
         currentStep={showProgress ? getStepNumber() : undefined}
         totalSteps={showProgress ? getTotalSteps() : undefined}

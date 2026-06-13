@@ -114,7 +114,7 @@ export const ERROR_HELP_DATA: Record<ErrorType, ErrorHelp> = {
       {
         step: 2,
         instruction: 'Attach the policy to your deployment role',
-        command: 'aws iam put-role-policy --role-name YOUR_ROLE --policy-name TotogiDeployment --policy-document file://policy.json'
+        command: 'aws iam put-role-policy --role-name YOUR_ROLE --policy-name Nexus AIDeployment --policy-document file://policy.json'
       },
       {
         step: 3,

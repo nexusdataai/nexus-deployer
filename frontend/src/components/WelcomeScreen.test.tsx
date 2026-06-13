@@ -33,10 +33,10 @@ describe('WelcomeScreen', () => {
       expect(svg).toBeInTheDocument();
     });
 
-    it('should render the title "Totogi Capability Installer"', () => {
+    it('should render the title "Nexus AI Capability Installer"', () => {
       render(<WelcomeScreen />);
       
-      expect(screen.getByText('Totogi Capability Installer')).toBeInTheDocument();
+      expect(screen.getByText('Nexus AI Capability Installer')).toBeInTheDocument();
     });
 
     it('should render the tagline "Deploy Business Capability in your Environment"', () => {

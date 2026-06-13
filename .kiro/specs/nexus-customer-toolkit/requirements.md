@@ -1,12 +1,13 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-The Totogi Capability Installation Wizard is a simple, wizard-style deployment tool that enables customers to deploy any capability into their AWS environment. The wizard starts immediately without authentication, guides users through adding AWS environment credentials with adequate permissions, executes deployment scripts while showing real-time logs, performs comprehensive post-deployment verification, and collects diagnostic logs for troubleshooting. The system prioritizes simplicity and a guided step-by-step experience.
+The Nexus AI Capability Installation Wizard is a simple, wizard-style deployment tool that enables customers to deploy any capability into their AWS environment. The wizard starts immediately without authentication, guides users through adding AWS environment credentials with adequate permissions, executes deployment scripts while showing real-time logs, performs comprehensive post-deployment verification, and collects diagnostic logs for troubleshooting. The system prioritizes simplicity and a guided step-by-step experience.
 
 ## Glossary
 
-- **Installation Wizard**: The Totogi Capability Installation Wizard application
+- **Installation Wizard**: The Nexus AI Capability Installation Wizard application
 - **Capability**: A modular business function that can be deployed independently into customer AWS infrastructure
 - **Deployment**: The process of provisioning a capability into customer AWS infrastructure using automated scripts
 - **Role ARN**: Amazon Resource Name for an IAM role that grants the necessary deployment permissions

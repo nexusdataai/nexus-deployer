@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Totogi Operator Management Script for nexus-test cluster
+# Nexus AI Operator Management Script for nexus-test cluster
 # 
 # Usage:
 #   ./operator.sh scan                    # Scan cluster readiness
@@ -51,7 +51,7 @@ NC='\033[0m' # No Color
 
 show_help() {
     cat << EOF
-Totogi Operator Management Script for nexus-test
+Nexus AI Operator Management Script for nexus-test
 
 Usage:
   ./operator.sh <command> [options]
@@ -125,7 +125,7 @@ Workflow:
 
 ALB Ingress Support:
   The deploy command automatically installs AWS Load Balancer Controller if not present.
-  This enables ALB Ingress for TotogiCapability resources.
+  This enables ALB Ingress for NexusCapability resources.
   
   To install ALB Controller separately:
     ./operator.sh install-alb-controller
@@ -268,8 +268,8 @@ deploy_operator() {
         
         echo ""
         echo "Verify deployment:"
-        echo "  kubectl -n totogi-system get pods"
-        echo "  kubectl -n totogi-system logs -f deployment/totogi-operator"
+        echo "  kubectl -n nexus-system get pods"
+        echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"
         echo ""
         echo -e "${GREEN}=============================================="
         echo "  Next Steps"
@@ -418,7 +418,7 @@ def main():
                 ThumbprintList=[thumbprint],
                 Tags=[
                     {'Key': 'eks:cluster-name', 'Value': CLUSTER_NAME},
-                    {'Key': 'managed-by', 'Value': 'totogi-operator'},
+                    {'Key': 'managed-by', 'Value': 'nexus-operator'},
                     {'Key': 'created-by', 'Value': 'operator.sh'},
                 ]
             )
@@ -681,7 +681,7 @@ def create_alb_controller_iam_role(session, account_id, oidc_provider_id):
                     Tags=[
                         {"Key": "Capability", "Value": "nexus-ai"},
                         {"Key": "Environment", "Value": os.getenv("DEPLOY_ENV", "prod")},
-                        {"Key": "managed-by", "Value": "totogi-operator"},
+                        {"Key": "managed-by", "Value": "nexus-operator"},
                         {"Key": "component", "Value": "aws-load-balancer-controller"}
                     ]
                 )
@@ -1164,7 +1164,7 @@ install_alb_controller() {
         echo "  ✓ AWS Load Balancer Controller is ready!"
         echo -e "===============================================${NC}"
         echo ""
-        echo "You can now use ALB Ingress in your TotogiCapability:"
+        echo "You can now use ALB Ingress in your NexusCapability:"
         echo "  spec:"
         echo "    ingress:"
         echo "      enabled: true"
@@ -1717,7 +1717,7 @@ async def scan_cluster():
         
         # Check 3: Operator IAM Role (for operator itself)
         print("[3/11] Checking operator IAM role...")
-        operator_role_name = "totogi-operator-role"
+        operator_role_name = "nexus-operator-role"
         operator_role_exists = False
         operator_role_has_irsa_trust = False
         
@@ -1892,7 +1892,7 @@ async def scan_cluster():
         # Check 7: ECR Repository and Permissions
         print("[7/11] Checking ECR repository for operator image...")
         ecr_client = session.client('ecr', region_name=REGION)
-        ecr_repo_name = "totogi-operator"
+        ecr_repo_name = "nexus-operator"
         ecr_repo_exists = False
         ecr_policy_allows_nodes = False
         ecr_image_exists = False
@@ -2193,7 +2193,7 @@ async def scan_cluster():
         print(f"    OIDC Configured:     {'[✓]' if readiness_checks['oidc_configured'] else '[⚠]'}")
         print(f"    Nodes Available:     {'[✓]' if readiness_checks['nodes_exist'] else '[✗]'}")
         print(f"    API Access:          {'[✓]' if readiness_checks['api_access'] else '[✗]'}")
-        print(f"    Operator Image:      {'[✓]' if ecr_ready else '[✗]'} (ECR totogi-operator:latest)")
+        print(f"    Operator Image:      {'[✓]' if ecr_ready else '[✗]'} (ECR nexus-operator:latest)")
         print(f"    ALB Controller:      {'[✓]' if alb_controller_ready else '[—]'} (optional, for Ingress)")
         print()
         
@@ -2321,19 +2321,19 @@ def kubectl_json(args):
         return None
 
 def find_capability(target):
-    """Find TotogiCapability CR. target can be 'namespace/name' or auto-detect."""
+    """Find NexusCapability CR. target can be 'namespace/name' or auto-detect."""
     if target and "/" in target:
         ns, name = target.split("/", 1)
-        obj = kubectl_json(["get", "totogicapability", name, "-n", ns])
+        obj = kubectl_json(["get", "nexuscapability", name, "-n", ns])
         if obj:
             return obj
-        print(f"Error: TotogiCapability {name} not found in namespace {ns}")
+        print(f"Error: NexusCapability {name} not found in namespace {ns}")
         sys.exit(1)
     
     # Auto-detect: search all namespaces
-    obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
+    obj = kubectl_json(["get", "nexuscapability", "--all-namespaces"])
     if not obj or not obj.get("items"):
-        print("No TotogiCapability resources found.")
+        print("No NexusCapability resources found.")
         print("")
         print("Deploy a capability first:")
         print("  kubectl apply -f examples/nexus-ai-complete.yaml")
@@ -2435,7 +2435,7 @@ def render(obj, elapsed):
 def main():
     target = os.environ.get("MONITOR_TARGET", "")
     
-    print("Finding TotogiCapability...")
+    print("Finding NexusCapability...")
     obj = find_capability(target)
     ns = obj["metadata"]["namespace"]
     name = obj["metadata"]["name"]
@@ -2449,7 +2449,7 @@ def main():
     max_wait = 300  # 5 minute timeout
     
     while True:
-        obj = kubectl_json(["get", "totogicapability", name, "-n", ns])
+        obj = kubectl_json(["get", "nexuscapability", name, "-n", ns])
         if not obj:
             fetch_errors += 1
             if fetch_errors > 5:
@@ -2540,7 +2540,7 @@ verify_capability() {
         return 0
     fi
     
-    local OP_NS="totogi-system"
+    local OP_NS="nexus-system"
     local JOB_NAME="verify-capability-run"
     local CM_NAME="verify-capability-script"
     local VERIFY_PY="${SCRIPT_DIR}/verify-capability.py"
@@ -2550,15 +2550,15 @@ verify_capability() {
         return 1
     fi
     
-    if ! kubectl get deployment totogi-operator -n "${OP_NS}" >/dev/null 2>&1; then
+    if ! kubectl get deployment nexus-operator -n "${OP_NS}" >/dev/null 2>&1; then
         echo -e "${RED}  Operator deployment not found in ${OP_NS}. Deploy operator first.${NC}"
         return 1
     fi
     
     local OP_SA
-    OP_SA=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator")
+    OP_SA=$(kubectl get deployment nexus-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "nexus-operator")
     local OP_IMAGE
-    OP_IMAGE=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+    OP_IMAGE=$(kubectl get deployment nexus-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
     if [ -z "$OP_IMAGE" ]; then
         echo -e "${RED}  Could not read operator container image.${NC}"
         return 1
@@ -2754,9 +2754,9 @@ check_status() {
     echo ""
     
     # Check if operator namespace exists
-    if ! kubectl get namespace totogi-system >/dev/null 2>&1; then
+    if ! kubectl get namespace nexus-system >/dev/null 2>&1; then
         echo -e "${YELLOW}✗ Operator not deployed${NC}"
-        echo "  Namespace 'totogi-system' not found"
+        echo "  Namespace 'nexus-system' not found"
         echo ""
         echo "To deploy:"
         echo "  ./build-and-deploy.sh"
@@ -2764,13 +2764,13 @@ check_status() {
         return 1
     fi
     
-    echo "✓ Namespace: totogi-system exists"
+    echo "✓ Namespace: nexus-system exists"
     echo ""
     
     # Check deployment
     echo "Deployment Status:"
-    if kubectl get deployment totogi-operator -n totogi-system >/dev/null 2>&1; then
-        kubectl get deployment totogi-operator -n totogi-system
+    if kubectl get deployment nexus-operator -n nexus-system >/dev/null 2>&1; then
+        kubectl get deployment nexus-operator -n nexus-system
     else
         echo "  ✗ Deployment not found"
         return 1
@@ -2779,12 +2779,12 @@ check_status() {
     
     # Check pods
     echo "Pod Status:"
-    if kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator >/dev/null 2>&1; then
-        kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator
+    if kubectl get pods -n nexus-system -l app.kubernetes.io/name=nexus-operator >/dev/null 2>&1; then
+        kubectl get pods -n nexus-system -l app.kubernetes.io/name=nexus-operator
         
         # Check if pods are healthy
-        READY_PODS=$(kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null | grep -c "true" || echo "0")
-        TOTAL_PODS=$(kubectl get pods -n totogi-system -l app.kubernetes.io/name=totogi-operator --no-headers 2>/dev/null | wc -l)
+        READY_PODS=$(kubectl get pods -n nexus-system -l app.kubernetes.io/name=nexus-operator -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null | grep -c "true" || echo "0")
+        TOTAL_PODS=$(kubectl get pods -n nexus-system -l app.kubernetes.io/name=nexus-operator --no-headers 2>/dev/null | wc -l)
         
         if [ "$READY_PODS" -eq "$TOTAL_PODS" ] && [ "$TOTAL_PODS" -gt 0 ]; then
             echo ""
@@ -2804,15 +2804,15 @@ check_status() {
     
     # Check CRD
     echo "CRD Status:"
-    if kubectl get crd totogicapabilities.totogi.com >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✓ TotogiCapability CRD registered${NC}"
+    if kubectl get crd nexuscapabilities.nexus.ai >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ NexusCapability CRD registered${NC}"
     else
-        echo -e "  ${RED}✗ TotogiCapability CRD not found${NC}"
+        echo -e "  ${RED}✗ NexusCapability CRD not found${NC}"
     fi
     echo ""
     
     echo "To view logs:"
-    echo "  kubectl -n totogi-system logs -f deployment/totogi-operator"
+    echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"
     echo ""
     
     return 0
@@ -2865,34 +2865,34 @@ main() {
         setup-endpoints|endpoints)
             show_header "Setup VPC Endpoints"
 
-            echo "Applying TotogiNetworkConfig CRD..."
+            echo "Applying NexusNetworkConfig CRD..."
             kubectl apply -f "${SCRIPT_DIR}/manifests/network-config-crd.yaml" 2>/dev/null
             echo ""
 
             # Ensure operator ServiceAccount has RBAC for the new CRD
-            echo "Ensuring operator RBAC for TotogiNetworkConfig..."
-            SA_NAME=$(kubectl get deployment totogi-operator -n totogi-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
+            echo "Ensuring operator RBAC for NexusNetworkConfig..."
+            SA_NAME=$(kubectl get deployment nexus-operator -n nexus-system -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "nexus-operator-sa")
             kubectl apply -f - <<RBAC_EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: totogi-operator-network-config
+  name: nexus-operator-network-config
 rules:
-  - apiGroups: ["totogi.com"]
-    resources: ["totoginetworkconfigs", "totoginetworkconfigs/status"]
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexusnetworkconfigs", "nexusnetworkconfigs/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: totogi-operator-network-config
+  name: nexus-operator-network-config
 subjects:
   - kind: ServiceAccount
     name: ${SA_NAME}
-    namespace: totogi-system
+    namespace: nexus-system
 roleRef:
   kind: ClusterRole
-  name: totogi-operator-network-config
+  name: nexus-operator-network-config
   apiGroup: rbac.authorization.k8s.io
 RBAC_EOF
             echo -e "${GREEN}  ✓ RBAC configured for ${SA_NAME}${NC}"
@@ -2905,7 +2905,7 @@ RBAC_EOF
 
             # Restart operator to pick up the new CRD if it was watching before RBAC was ready
             echo "Restarting operator to pick up new CRD..."
-            kubectl rollout restart deployment totogi-operator -n totogi-system 2>/dev/null || true
+            kubectl rollout restart deployment nexus-operator -n nexus-system 2>/dev/null || true
             sleep 10
             echo ""
 
@@ -2935,7 +2935,7 @@ RBAC_EOF
                 echo "  Phase: ${PHASE} (${HEALTHY}/${TOTAL})... (${i}/30)"
                 sleep 10
             done
-            echo -e "${YELLOW}Timeout waiting for endpoints. Check: kubectl logs -n totogi-system deployment/totogi-operator${NC}"
+            echo -e "${YELLOW}Timeout waiting for endpoints. Check: kubectl logs -n nexus-system deployment/nexus-operator${NC}"
             ;;
         check-endpoints|endpoints-status)
             echo ""
@@ -2955,7 +2955,7 @@ RBAC_EOF
                 if [ -n "$MSG" ]; then echo "  Message: ${MSG}"; fi
                 if [ -n "$CHECKED" ]; then echo "  Last checked: ${CHECKED}"; fi
             else
-                echo "  No TotogiNetworkConfig found."
+                echo "  No NexusNetworkConfig found."
                 echo ""
                 echo "  To set up VPC endpoints, run:"
                 echo "    ./operator.sh setup-endpoints"
@@ -2966,12 +2966,12 @@ RBAC_EOF
             show_header "Delete VPC Endpoints Configuration"
 
             if ! kubectl get tnc vpc-endpoints > /dev/null 2>&1; then
-                echo "  No TotogiNetworkConfig 'vpc-endpoints' found — nothing to delete."
+                echo "  No NexusNetworkConfig 'vpc-endpoints' found — nothing to delete."
                 echo ""
                 exit 0
             fi
 
-            echo "  This will delete the TotogiNetworkConfig CR."
+            echo "  This will delete the NexusNetworkConfig CR."
             echo "  The actual VPC endpoints in AWS will NOT be deleted (they remain for other workloads)."
             echo ""
             read -rp "  Proceed? [y/N] " confirm
@@ -2981,20 +2981,20 @@ RBAC_EOF
             fi
             echo ""
 
-            echo "  Deleting TotogiNetworkConfig 'vpc-endpoints'..."
+            echo "  Deleting NexusNetworkConfig 'vpc-endpoints'..."
             kubectl delete tnc vpc-endpoints --timeout=30s 2>/dev/null || \
                 kubectl patch tnc vpc-endpoints --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-            echo -e "${GREEN}  ✓ TotogiNetworkConfig deleted${NC}"
+            echo -e "${GREEN}  ✓ NexusNetworkConfig deleted${NC}"
             echo ""
 
             echo "  Cleaning up RBAC..."
-            kubectl delete clusterrolebinding totogi-operator-network-config 2>/dev/null || true
-            kubectl delete clusterrole totogi-operator-network-config 2>/dev/null || true
+            kubectl delete clusterrolebinding nexus-operator-network-config 2>/dev/null || true
+            kubectl delete clusterrole nexus-operator-network-config 2>/dev/null || true
             echo -e "${GREEN}  ✓ RBAC cleaned up${NC}"
             echo ""
 
             echo "  Cleaning up CRD..."
-            kubectl delete crd totoginetworkconfigs.totogi.com 2>/dev/null || true
+            kubectl delete crd nexusnetworkconfigs.nexus.ai 2>/dev/null || true
             echo -e "${GREEN}  ✓ CRD removed${NC}"
             echo ""
 
@@ -3162,7 +3162,7 @@ APPJOB_EOF
         check-operator-permissions|check-operator)
             show_header "Check Operator Permissions & VPC Endpoints"
 
-            local OP_NS="totogi-system"
+            local OP_NS="nexus-system"
             local JOB_NAME="check-operator-permissions"
             local CM_NAME="operator-perm-check"
 
@@ -3173,7 +3173,7 @@ APPJOB_EOF
 
             # Get operator SA name from deployment
             local OP_SA
-            OP_SA=$(kubectl get deployment totogi-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "totogi-operator-sa")
+            OP_SA=$(kubectl get deployment nexus-operator -n "${OP_NS}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || echo "nexus-operator-sa")
             local OP_ROLE
             OP_ROLE=$(kubectl get sa "${OP_SA}" -n "${OP_NS}" -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "unknown")
 

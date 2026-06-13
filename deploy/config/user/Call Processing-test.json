@@ -1,7 +1,7 @@
 {
   "infrastructure": {
     "domain": {
-      "base": "totogicore.com",
+      "base": "nexus.ai",
       "frontend_subdomain": "call-test",
       "backend_subdomain": "call-api-test",
       "hosted_zone_id": "Z084501638STQ2EKKSIA"

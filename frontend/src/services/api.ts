@@ -639,7 +639,7 @@ export const eksApi = {
     return response.data;
   },
 
-  // Deploy the Totogi Operator to a cluster
+  // Deploy the Nexus AI Operator to a cluster
   deployOperator: async (request: DeployOperatorRequest, awsSessionId?: string): Promise<DeployOperatorResponse> => {
     const params: Record<string, string> = {};
     if (awsSessionId) params.aws_session_id = awsSessionId;
@@ -652,7 +652,7 @@ export const eksApi = {
     return response.data;
   },
 
-  // Deploy a capability via TotogiCapability CR
+  // Deploy a capability via NexusCapability CR
   deployCapability: async (request: DeployCapabilityRequest, awsSessionId?: string): Promise<DeployCapabilityResponse> => {
     const params: Record<string, string> = {};
     if (awsSessionId) params.aws_session_id = awsSessionId;

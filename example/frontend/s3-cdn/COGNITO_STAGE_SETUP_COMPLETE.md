@@ -43,7 +43,7 @@ After CloudFormation created users:
 ```bash
 aws cognito-idp admin-set-user-password \
   --user-pool-id us-east-1_XcaCGhU4j \
-  --username "executive@alertengine.totogicore.com" \
+  --username "executive@alertengine.nexus.ai" \
   --password "TempPassword123!" \
   --permanent
 ```
@@ -74,7 +74,7 @@ Auth Flows: USER_PASSWORD_AUTH, USER_SRP_AUTH, ADMIN_USER_PASSWORD_AUTH
 ## Test Users (CONFIRMED WORKING)
 
 ### Executive User ✅
-- **Email**: `executive@alertengine.totogicore.com`
+- **Email**: `executive@alertengine.nexus.ai`
 - **Password**: `TempPassword123!`
 - **Status**: CONFIRMED (can login immediately)
 - **Role**: Executive
@@ -82,7 +82,7 @@ Auth Flows: USER_PASSWORD_AUTH, USER_SRP_AUTH, ADMIN_USER_PASSWORD_AUTH
 - **Groups**: Executive group
 
 ### Operations Manager User ✅
-- **Email**: `opsmanager@alertengine.totogicore.com`
+- **Email**: `opsmanager@alertengine.nexus.ai`
 - **Password**: `TempPassword123!`
 - **Status**: CONFIRMED (can login immediately)
 - **Role**: OpsManager
@@ -96,7 +96,7 @@ $ aws cognito-idp admin-initiate-auth \
     --user-pool-id us-east-1_XcaCGhU4j \
     --client-id 5lfg2345knphagg931iordgtsg \
     --auth-flow ADMIN_USER_PASSWORD_AUTH \
-    --auth-parameters "USERNAME=executive@alertengine.totogicore.com,PASSWORD=TempPassword123!" \
+    --auth-parameters "USERNAME=executive@alertengine.nexus.ai,PASSWORD=TempPassword123!" \
     --region us-east-1
 
 ✅ Result: SUCCESS
@@ -140,7 +140,7 @@ NODE_ENV=development
 2. **Navigate to login**: `http://localhost:5173/login`
 
 3. **Enter credentials**:
-   - Email: `executive@alertengine.totogicore.com`
+   - Email: `executive@alertengine.nexus.ai`
    - Password: `TempPassword123!`
 
 4. **Click Sign In**
@@ -202,7 +202,7 @@ aws cognito-idp admin-initiate-auth \
   --user-pool-id us-east-1_XcaCGhU4j \
   --client-id 5lfg2345knphagg931iordgtsg \
   --auth-flow ADMIN_USER_PASSWORD_AUTH \
-  --auth-parameters USERNAME=executive@alertengine.totogicore.com,PASSWORD=TempPassword123! \
+  --auth-parameters USERNAME=executive@alertengine.nexus.ai,PASSWORD=TempPassword123! \
   --region us-east-1
 ```
 

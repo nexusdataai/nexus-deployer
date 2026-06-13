@@ -1,7 +1,7 @@
 # Business Documentation
-## Totogi Customer Toolkit
+## Nexus AI Customer Toolkit
 
-This directory contains business-focused documentation that explains the strategic value, customer benefits, and market positioning of the Totogi Customer Toolkit.
+This directory contains business-focused documentation that explains the strategic value, customer benefits, and market positioning of the Nexus AI Customer Toolkit.
 
 ---
 
@@ -56,7 +56,7 @@ This directory contains business-focused documentation that explains the strateg
 
 ## Quick Reference
 
-### What Is the Totogi Customer Toolkit?
+### What Is the Nexus AI Customer Toolkit?
 
 A self-service deployment platform that enables customers to deploy complex, enterprise-grade telecommunications capabilities to their own cloud infrastructure in **under 30 minutes** with **zero cloud expertise required**.
 

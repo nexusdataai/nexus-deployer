@@ -267,8 +267,8 @@ setup_test_users() {
     
     # Test users to create
     declare -A TEST_USERS
-    TEST_USERS[executive@alertengine.totogicore.com]="Alert Engine Executive"
-    TEST_USERS[opsmanager@alertengine.totogicore.com]="Alert Engine Operations Manager"
+    TEST_USERS[executive@alertengine.nexus.ai]="Alert Engine Executive"
+    TEST_USERS[opsmanager@alertengine.nexus.ai]="Alert Engine Operations Manager"
     
     for email in "${!TEST_USERS[@]}"; do
         name="${TEST_USERS[$email]}"
@@ -369,8 +369,8 @@ show_next_steps() {
     echo "4. Test login with the created test users:"
     
     if [ "$ENV" == "dev" ] || [ "$ENV" == "prod" ]; then
-        echo "   - Executive: executive@alertengine.totogicore.com / TempPassword123!"
-        echo "   - Operations Manager: opsmanager@alertengine.totogicore.com / TempPassword123!"
+        echo "   - Executive: executive@alertengine.nexus.ai / TempPassword123!"
+        echo "   - Operations Manager: opsmanager@alertengine.nexus.ai / TempPassword123!"
         echo "   (You'll be prompted to change password on first login)"
     fi
     

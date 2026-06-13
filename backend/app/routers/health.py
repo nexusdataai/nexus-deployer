@@ -1,5 +1,5 @@
 """
-Health check endpoints for Totogi Capability Installer Backend.
+Health check endpoints for Nexus AI Capability Installer Backend.
 Provides readiness, liveness, and detailed health information.
 """
 import logging
@@ -216,7 +216,7 @@ async def detailed_health(response: Response) -> HealthResponse:
     
     return HealthResponse(
         status=overall_status,
-        service="totogi-installer-backend",
+        service="nexus-installer-backend",
         version="1.0.0",
         uptime_seconds=uptime_seconds,
         response_time_ms=response_time_ms,

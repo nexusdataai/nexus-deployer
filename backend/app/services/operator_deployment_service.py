@@ -38,7 +38,7 @@ CRD_GROUP = "nexus.ai"
 CRD_VERSION = "v1"
 CRD_PLURAL = "nexuscapabilities"
 # VPC endpoint CRD — kopf watches cluster-scoped NexusNetworkConfig
-NETWORK_CONFIG_PLURAL = "totoginetworkconfigs"
+NETWORK_CONFIG_PLURAL = "nexusnetworkconfigs"
 
 
 class OperatorDeploymentService:

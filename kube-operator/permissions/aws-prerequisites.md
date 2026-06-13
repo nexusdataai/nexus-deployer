@@ -1,6 +1,6 @@
 # AWS Prerequisites & IAM Setup
 
-This document details the AWS prerequisites and IAM permissions required before deploying the Totogi Kubernetes Operator.
+This document details the AWS prerequisites and IAM permissions required before deploying the Nexus AI Kubernetes Operator.
 
 ## Overview
 
@@ -32,7 +32,7 @@ If you already have an **AWS account** and an **EKS cluster**, follow these step
 | Identity | Purpose | Permissions / Role | When Created |
 |----------|---------|--------------------|--------------|
 | **Deployer** (user or role running the deploy) | Create operator IAM role, push image to ECR, deploy operator to EKS | IAM (create role, ECR, EKS access) — you must set up | Before deployment |
-| **Operator** (pod in cluster) | Provision AWS resources and create app roles when you apply a TotogiCapability | `totogi-operator-role` with `totogi-operator-policy` | Created automatically by deploy |
+| **Operator** (pod in cluster) | Provision AWS resources and create app roles when you apply a NexusCapability | `nexus-operator-role` with `nexus-operator-policy` | Created automatically by deploy |
 | **Capability** (app pods per capability) | Access DynamoDB, S3, Glue, SSM, Secrets, Athena, Cognito | `{capability}-{env}-app-role` with inline policy | Created automatically by operator when you deploy a capability |
 
 No manual permission setup is needed for the operator role or for capability roles—only for the **deployer** and for **OIDC** on the cluster.
@@ -63,8 +63,8 @@ cd /path/to/nexus-deployer/kube-operator
 
 The **identity** that will run the operator deploy (e.g. your IAM user, CI role, or an assumed role) must be able to:
 
-- Create and configure the IAM role **totogi-operator-role** (trust policy + inline policy).
-- Create the ECR repository **totogi-operator** (if it does not exist) and push the operator image.
+- Create and configure the IAM role **nexus-operator-role** (trust policy + inline policy).
+- Create the ECR repository **nexus-operator** (if it does not exist) and push the operator image.
 - Access the EKS cluster (describe cluster, and either `eks update-kubeconfig` or aws-auth so the deployer can apply manifests).
 
 Attach the required permissions to that role (or user) using **managed policies** (EKS, ECR, IAM full access). Replace `<role-name>` (or `<username>`) as needed.
@@ -87,8 +87,8 @@ Or build the image first, then deploy:
 
 This will:
 
-- Create the IAM role **totogi-operator-role** with IRSA trust for the operator ServiceAccount and attach **totogi-operator-policy** (DynamoDB, S3, SSM, Secrets Manager, Glue, IAM, EKS, Cognito).
-- Create the ECR repository **totogi-operator** (if missing), build and push the operator image.
+- Create the IAM role **nexus-operator-role** with IRSA trust for the operator ServiceAccount and attach **nexus-operator-policy** (DynamoDB, S3, SSM, Secrets Manager, Glue, IAM, EKS, Cognito).
+- Create the ECR repository **nexus-operator** (if missing), build and push the operator image.
 - Deploy the operator into the cluster and annotate the operator ServiceAccount with the role ARN so the pod uses IRSA.
 - Optionally install the AWS Load Balancer Controller for ALB Ingress.
 
@@ -96,7 +96,7 @@ After this step, the operator is running and has all permissions it needs to pro
 
 ### Step 4: Deploy Capabilities (No Extra Permission Setup)
 
-When you create a **TotogiCapability** (e.g. `kubectl apply -f examples/call-processing-complete.yaml`), the operator will:
+When you create a **NexusCapability** (e.g. `kubectl apply -f examples/call-processing-complete.yaml`), the operator will:
 
 - Create the IAM role **{capability}-{env}-app-role** with IRSA trust for the capability namespace’s ServiceAccount.
 - Attach an inline policy so the capability workload can use DynamoDB, S3, SSM, Secrets Manager, Glue, Athena, and Cognito as required.
@@ -109,17 +109,17 @@ You do **not** need to create any IAM roles or policies for capabilities. The op
 1. **OIDC:** Ensure the EKS cluster has its OIDC provider registered in IAM (Step 1).
 2. **Deployer permissions:** Attach the deployer policy (or managed policies) to the user/role that runs the deploy (Step 2).
 3. **Deploy:** Run `./build-and-deploy.sh` (or equivalent) from the kube-operator directory (Step 3).
-4. **Capabilities:** Apply TotogiCapability manifests as needed; no further permission setup required (Step 4).
+4. **Capabilities:** Apply NexusCapability manifests as needed; no further permission setup required (Step 4).
 
 ### After Install: Can You Remove the Deployer Role?
 
-**Yes.** Once the operator and capabilities are installed, the operator uses **totogi-operator-role** (IRSA) and each capability uses **{capability}-{env}-app-role** (IRSA). They do not use the deployer’s credentials. You can remove or greatly reduce the deployer’s IAM permissions for day-to-day operation.
+**Yes.** Once the operator and capabilities are installed, the operator uses **nexus-operator-role** (IRSA) and each capability uses **{capability}-{env}-app-role** (IRSA). They do not use the deployer’s credentials. You can remove or greatly reduce the deployer’s IAM permissions for day-to-day operation.
 
 **Minimal role to keep operator and capability functionality intact**
 
 For ongoing use you only need **Kubernetes API access** to the EKS cluster so you can:
 
-- Create, update, and delete **TotogiCapability** resources (`kubectl apply` / `kubectl delete`).
+- Create, update, and delete **NexusCapability** resources (`kubectl apply` / `kubectl delete`).
 - Inspect operator and capability pods, logs, and status.
 
 The operator and capability pods assume their own IAM roles via IRSA; they do not need the deployer’s IAM permissions.
@@ -129,9 +129,9 @@ The operator and capability pods assume their own IAM roles via IRSA; they do no
 | Purpose | Required IAM / access |
 |--------|------------------------|
 | Run `kubectl` against the cluster | EKS cluster access so your identity can call the Kubernetes API. Typically: `eks:DescribeCluster`, `eks:ListClusters`, and `eks:AccessKubernetesApi` (or equivalent via EKS Access Entries). Your IAM user or role must be granted access in the cluster (e.g. EKS Access Entry or `aws-auth` ConfigMap). |
-| Operator and capability workloads | No IAM needed from you. They use **totogi-operator-role** and **{capability}-{env}-app-role** via IRSA. |
+| Operator and capability workloads | No IAM needed from you. They use **nexus-operator-role** and **{capability}-{env}-app-role** via IRSA. |
 
-**Example: minimal policy for a user who only manages TotogiCapability resources (no deployer powers):**
+**Example: minimal policy for a user who only manages NexusCapability resources (no deployer powers):**
 
 ```json
 {
@@ -153,12 +153,12 @@ The operator and capability pods assume their own IAM roles via IRSA; they do no
 
 You must also ensure this user/role is allowed to authenticate to the cluster (e.g. EKS Access Entry associating the principal with the cluster and a policy that allows API access, or an entry in the cluster’s `aws-auth` ConfigMap if the cluster uses that).
 
-With only this, you can `kubectl apply` and `kubectl delete` TotogiCapability resources; the operator will continue to provision AWS resources and create capability IAM roles using **totogi-operator-role**.
+With only this, you can `kubectl apply` and `kubectl delete` NexusCapability resources; the operator will continue to provision AWS resources and create capability IAM roles using **nexus-operator-role**.
 
 **When you need deployer-level permissions again**
 
 - **Upgrading the operator** (new image/code): You need to push a new image to ECR and update the operator deployment. That requires ECR push and cluster access (and possibly IAM if the operator role was recreated).
-- **Re-creating the operator IAM role** (e.g. after accidental deletion): You need IAM permissions to create **totogi-operator-role** and attach **totogi-operator-policy** again.
+- **Re-creating the operator IAM role** (e.g. after accidental deletion): You need IAM permissions to create **nexus-operator-role** and attach **nexus-operator-policy** again.
 - **Installing or updating the AWS Load Balancer Controller**: May require the same kind of IAM/ECR/cluster access as the initial deploy.
 
 So you can use a **separate, minimal- privilege identity** for day-to-day capability management and keep the full deployer role only for upgrades and recovery.
@@ -185,13 +185,13 @@ If you deploy as an **IAM user** instead of a role, use `attach-user-policy` and
 
 ---
 
-## 3. Operator IAM Role (totogi-operator-role)
+## 3. Operator IAM Role (nexus-operator-role)
 
-The operator itself needs an IAM role to provision AWS resources. This role is **automatically created** by the deployment flow (`operator-nexus-test.sh deploy` or `build-and-deploy.sh`, which use the deployer backend). The role name is **totogi-operator-role** and the inline policy name is **totogi-operator-policy**.
+The operator itself needs an IAM role to provision AWS resources. This role is **automatically created** by the deployment flow (`operator-nexus-test.sh deploy` or `build-and-deploy.sh`, which use the deployer backend). The role name is **nexus-operator-role** and the inline policy name is **nexus-operator-policy**.
 
 ### Trust Policy (IRSA)
 
-The trust policy allows the operator ServiceAccount to assume the role. When deployed via the kube-operator manifests, the ServiceAccount name is **totogi-operator** (namespace **totogi-system**). The deployer may create a ServiceAccount named **totogi-operator-sa**; ensure the trust policy subject matches the ServiceAccount name actually used by the operator pod.
+The trust policy allows the operator ServiceAccount to assume the role. When deployed via the kube-operator manifests, the ServiceAccount name is **nexus-operator** (namespace **nexus-system**). The deployer may create a ServiceAccount named **nexus-operator-sa**; ensure the trust policy subject matches the ServiceAccount name actually used by the operator pod.
 
 ```json
 {
@@ -205,7 +205,7 @@ The trust policy allows the operator ServiceAccount to assume the role. When dep
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "<oidc-provider-id>:sub": "system:serviceaccount:totogi-system:totogi-operator",
+          "<oidc-provider-id>:sub": "system:serviceaccount:nexus-system:nexus-operator",
           "<oidc-provider-id>:aud": "sts.amazonaws.com"
         }
       }
@@ -382,7 +382,7 @@ If you want to pre-create the role instead of letting the deploy script create i
 OIDC_PROVIDER=$(aws eks describe-cluster --name nexus-test --query "cluster.identity.oidc.issuer" --output text | sed 's|https://||')
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-# Create trust policy file (use the SA name your deployment uses: totogi-operator or totogi-operator-sa)
+# Create trust policy file (use the SA name your deployment uses: nexus-operator or nexus-operator-sa)
 cat > operator-trust-policy.json << EOF
 {
   "Version": "2012-10-17",
@@ -395,7 +395,7 @@ cat > operator-trust-policy.json << EOF
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "${OIDC_PROVIDER}:sub": "system:serviceaccount:totogi-system:totogi-operator",
+          "${OIDC_PROVIDER}:sub": "system:serviceaccount:nexus-system:nexus-operator",
           "${OIDC_PROVIDER}:aud": "sts.amazonaws.com"
         }
       }
@@ -404,16 +404,16 @@ cat > operator-trust-policy.json << EOF
 }
 EOF
 
-# Create role (name must be totogi-operator-role for deployer/scan to recognize it)
+# Create role (name must be nexus-operator-role for deployer/scan to recognize it)
 aws iam create-role \
-  --role-name totogi-operator-role \
+  --role-name nexus-operator-role \
   --assume-role-policy-document file://operator-trust-policy.json \
-  --description "IAM role for Totogi Operator with IRSA"
+  --description "IAM role for Nexus AI Operator with IRSA"
 
 # Attach inline policy (save operator-policy.json from above, with <region> and <account-id> replaced)
 aws iam put-role-policy \
-  --role-name totogi-operator-role \
-  --policy-name totogi-operator-policy \
+  --role-name nexus-operator-role \
+  --policy-name nexus-operator-policy \
   --policy-document file://operator-policy.json
 ```
 
@@ -421,11 +421,11 @@ aws iam put-role-policy \
 
 ## 4. Application IAM Role
 
-Each deployed capability gets its own IAM role with least-privilege access. The operator creates this automatically when reconciling a `TotogiCapability` (see `kube-operator` `IAMProvisioner`). Role name pattern: **{capability}-{env}-app-role**. Policy name: **{role-name}-policy**.
+Each deployed capability gets its own IAM role with least-privilege access. The operator creates this automatically when reconciling a `NexusCapability` (see `kube-operator` `IAMProvisioner`). Role name pattern: **{capability}-{env}-app-role**. Policy name: **{role-name}-policy**.
 
 ### Application Role Permissions
 
-The following matches the operator implementation (`src/totogi_operator/resources/iam.py`), including DynamoDB indexes, Glue create/update, Athena, and Cognito read/admin for app backends:
+The following matches the operator implementation (`src/nexus_operator/resources/iam.py`), including DynamoDB indexes, Glue create/update, Athena, and Cognito read/admin for app backends:
 
 ```json
 {
@@ -560,13 +560,13 @@ The ECR repository is automatically created by the deployment script. If you wan
 ```bash
 # Create ECR repository
 aws ecr create-repository \
-  --repository-name totogi-operator \
+  --repository-name nexus-operator \
   --region ap-southeast-1 \
   --image-scanning-configuration scanOnPush=true
 
 # Get repository URI
 aws ecr describe-repositories \
-  --repository-names totogi-operator \
+  --repository-names nexus-operator \
   --query 'repositories[0].repositoryUri' \
   --output text
 ```
@@ -611,7 +611,7 @@ Run this script to verify all prerequisites:
 CLUSTER_NAME="nexus-test"
 REGION="ap-southeast-1"
 
-echo "=== Totogi Operator Prerequisites Check ==="
+echo "=== Nexus AI Operator Prerequisites Check ==="
 
 # Check AWS credentials
 echo -n "1. AWS Credentials: "
@@ -646,15 +646,15 @@ fi
 
 # Check IAM permissions (operator role name used by deployer)
 echo -n "4. IAM Permissions: "
-if aws iam get-role --role-name totogi-operator-role > /dev/null 2>&1; then
-    echo "✓ totogi-operator-role exists"
+if aws iam get-role --role-name nexus-operator-role > /dev/null 2>&1; then
+    echo "✓ nexus-operator-role exists"
 else
-    echo "○ totogi-operator-role will be created during deployment"
+    echo "○ nexus-operator-role will be created during deployment"
 fi
 
 # Check ECR
 echo -n "5. ECR Repository: "
-if aws ecr describe-repositories --repository-names totogi-operator --region $REGION > /dev/null 2>&1; then
+if aws ecr describe-repositories --repository-names nexus-operator --region $REGION > /dev/null 2>&1; then
     echo "✓ Exists"
 else
     echo "○ Will be created during deployment"
@@ -688,13 +688,13 @@ eksctl utils associate-iam-oidc-provider \
 # 2. Verify setup
 aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.identity.oidc.issuer" --output text
 
-# 3. Deploy operator (creates totogi-operator-role and ECR repo automatically)
+# 3. Deploy operator (creates nexus-operator-role and ECR repo automatically)
 cd /opt/mycode/nexus/nexus-deployer/kube-operator
 ./build-and-deploy.sh
 # Or: ./operator-nexus-test.sh deploy   (after building image separately)
 ```
 
-The deploy step runs the deployer backend, which creates the operator IAM role **totogi-operator-role**, applies the operator manifests, and can install the AWS Load Balancer Controller for ALB Ingress support.
+The deploy step runs the deployer backend, which creates the operator IAM role **nexus-operator-role**, applies the operator manifests, and can install the AWS Load Balancer Controller for ALB Ingress support.
 
 ---
 
@@ -705,13 +705,13 @@ The deploy step runs the deployer backend, which creates the operator IAM role *
 | EKS Cluster | User | Before deployment |
 | OIDC Provider | User (eksctl) or `fix-irsa` | Before or during deployment |
 | Deployer IAM Permissions | User | Before deployment |
-| totogi-operator-role | Deployer (operator-nexus-test.sh / build-and-deploy) | During deployment |
+| nexus-operator-role | Deployer (operator-nexus-test.sh / build-and-deploy) | During deployment |
 | ECR Repository | build-and-push / deploy | During deployment |
 | Application IAM Roles ({capability}-{env}-app-role) | Operator | When capability deployed |
 
 ### Note on kube-operator/iam_policy.json
 
-The file `nexus-deployer/kube-operator/iam_policy.json` is the IAM policy for the **AWS Load Balancer Controller** (ALB Ingress), not for the Totogi operator itself. It is used when installing the ALB Controller via `operator-nexus-test.sh install-alb-controller` (or automatically during `deploy`). The operator’s own permissions are created by the deployer as the inline policy **totogi-operator-policy** on **totogi-operator-role**.
+The file `nexus-deployer/kube-operator/iam_policy.json` is the IAM policy for the **AWS Load Balancer Controller** (ALB Ingress), not for the Nexus AI operator itself. It is used when installing the ALB Controller via `operator-nexus-test.sh install-alb-controller` (or automatically during `deploy`). The operator’s own permissions are created by the deployer as the inline policy **nexus-operator-policy** on **nexus-operator-role**.
 
 ---
 

@@ -2,10 +2,10 @@
 #
 # Bootstrap IAM Policies & Roles for an EKS Cluster (one-shot, run by AWS admin)
 # ---------------------------------------------------------------------------
-# Creates the four IRSA roles required by the Totogi platform on a fresh
+# Creates the four IRSA roles required by the Nexus AI platform on a fresh
 # AWS account / EKS cluster:
 #
-#   1. totogi-operator-role               (operator pod, namespace: totogi-system)
+#   1. nexus-operator-role               (operator pod, namespace: nexus-system)
 #   2. <capability>-<env>-app-role        (application pods, namespace: <capability>-<env>)
 #   3. AmazonEKS_EBS_CSI_DriverRole       (EBS CSI controller)
 #   4. velero-backup-role                 (Velero backup controller)
@@ -63,8 +63,8 @@ DRY_RUN=false
 SKIP_CONFIRM=false
 
 # ── Constants (match permissions/ADMIN-SETUP.md conventions) ──
-OPERATOR_ROLE_NAME="totogi-operator-role"
-OPERATOR_INLINE_POLICY_NAME="totogi-operator-policy"
+OPERATOR_ROLE_NAME="nexus-operator-role"
+OPERATOR_INLINE_POLICY_NAME="nexus-operator-policy"
 EBS_CSI_ROLE_NAME="AmazonEKS_EBS_CSI_DriverRole"
 EBS_CSI_MANAGED_POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 VELERO_ROLE_NAME="velero-backup-role"
@@ -84,7 +84,7 @@ Bootstrap IAM Policies & Roles for an EKS Cluster
 
 One-shot bootstrap script run by an AWS administrator. Discovers the cluster
 OIDC provider, registers it in IAM if missing, and creates (or updates) the
-four IRSA roles required by the Totogi platform.
+four IRSA roles required by the Nexus AI platform.
 
 Usage:
   $0 [options]
@@ -406,7 +406,7 @@ upsert_role_inline "$OPERATOR_ROLE_NAME" \
     "${TMPDIR}/operator-trust.json" \
     "$OPERATOR_INLINE_POLICY_NAME" \
     "${TMPDIR}/operator-perms.json" \
-    "Totogi operator pod (IRSA) - cluster ${CLUSTER_NAME}"
+    "Nexus AI operator pod (IRSA) - cluster ${CLUSTER_NAME}"
 
 log_step "Role 2/4: ${APP_ROLE_NAME}"
 upsert_role_inline "$APP_ROLE_NAME" \

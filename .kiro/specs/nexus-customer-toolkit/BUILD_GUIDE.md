@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Build and Packaging Guide
 
 ## Overview
 
-This guide explains how to build and package the Totogi Capability Installer as a desktop application using React + FastAPI + Electron.
+This guide explains how to build and package the Nexus AI Capability Installer as a desktop application using React + FastAPI + Electron.
 
 ## Prerequisites
 
@@ -217,7 +218,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='totogi-backend',
+    name='nexus-installer-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -244,8 +245,8 @@ pip install pyinstaller
 # Build executable
 pyinstaller backend.spec
 
-# Output: backend/dist/totogi-backend.exe (Windows)
-#         backend/dist/totogi-backend (Mac/Linux)
+# Output: backend/dist/nexus-installer-backend.exe (Windows)
+#         backend/dist/nexus-installer-backend (Mac/Linux)
 ```
 
 ### Step 2: Build React Frontend
@@ -268,9 +269,9 @@ Update `electron/package.json`:
 
 ```json
 {
-  "name": "totogi-installer",
+  "name": "nexus-installer",
   "version": "1.0.0",
-  "description": "Totogi Capability Installation Wizard",
+  "description": "Nexus AI Capability Installation Wizard",
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
@@ -280,8 +281,8 @@ Update `electron/package.json`:
     "build:linux": "electron-builder --linux"
   },
   "build": {
-    "appId": "com.totogi.installer",
-    "productName": "Totogi Installer",
+    "appId": "com.nexus.installer",
+    "productName": "Nexus AI Installer",
     "directories": {
       "output": "dist"
     },
@@ -292,8 +293,8 @@ Update `electron/package.json`:
     ],
     "extraResources": [
       {
-        "from": "../backend/dist/totogi-backend${env.EXE_EXT}",
-        "to": "backend/totogi-backend${env.EXE_EXT}"
+        "from": "../backend/dist/nexus-installer-backend${env.EXE_EXT}",
+        "to": "backend/nexus-installer-backend${env.EXE_EXT}"
       },
       {
         "from": "../scripts/capabilities",
@@ -354,10 +355,10 @@ npm run build:mac    # macOS
 npm run build:linux  # Linux
 
 # Output: electron/dist/
-#   - Totogi-Installer-Setup-1.0.0.exe (Windows NSIS)
-#   - Totogi-Installer-1.0.0.exe (Windows Portable)
-#   - Totogi-Installer-1.0.0.dmg (macOS)
-#   - Totogi-Installer-1.0.0.AppImage (Linux)
+#   - Nexus AI-Installer-Setup-1.0.0.exe (Windows NSIS)
+#   - Nexus-Installer-1.0.0.exe (Windows Portable)
+#   - Nexus-Installer-1.0.0.dmg (macOS)
+#   - Nexus-Installer-1.0.0.AppImage (Linux)
 ```
 
 ## Automated Build Script
@@ -368,7 +369,7 @@ Create `build/build-all.sh`:
 #!/bin/bash
 set -e
 
-echo "=== Building Totogi Installer ==="
+echo "=== Building Nexus AI Installer ==="
 
 # Determine platform
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
@@ -419,7 +420,7 @@ chmod +x build/build-all.sh
 ```bash
 # Run the backend executable directly
 cd backend/dist
-./totogi-backend  # or totogi-backend.exe on Windows
+./nexus-installer-backend  # or nexus-installer-backend.exe on Windows
 
 # Should start FastAPI server on http://127.0.0.1:8000
 # Test with: curl http://127.0.0.1:8000/api/capabilities
@@ -445,7 +446,7 @@ python -m http.server 8080
 
 # Or test without installing (portable mode)
 cd electron/dist/win-unpacked  # or mac/linux equivalent
-./Totogi-Installer.exe
+./Nexus AI-Installer.exe
 ```
 
 ## Troubleshooting
@@ -477,7 +478,7 @@ hiddenimports=['boto3', 'botocore', 'botocore.vendored.requests']
 **Problem:** Backend executable not found
 ```bash
 # Solution: Check extraResources path in package.json
-# Ensure backend/dist/totogi-backend exists before building
+# Ensure backend/dist/nexus-installer-backend exists before building
 ```
 
 **Problem:** Large installer size
@@ -608,6 +609,6 @@ jobs:
 3. Package Electron: `npm run build`
 
 **Output:**
-- Windows: `Totogi-Installer-Setup-1.0.0.exe` (~200-250 MB)
-- macOS: `Totogi-Installer-1.0.0.dmg` (~200-250 MB)
-- Linux: `Totogi-Installer-1.0.0.AppImage` (~200-250 MB)
+- Windows: `Nexus AI-Installer-Setup-1.0.0.exe` (~200-250 MB)
+- macOS: `Nexus-Installer-1.0.0.dmg` (~200-250 MB)
+- Linux: `Nexus-Installer-1.0.0.AppImage` (~200-250 MB)

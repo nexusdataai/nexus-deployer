@@ -40,7 +40,7 @@ pip install aws-adfs && cd C:\mycode\nexus\nexus-deployer\deploy && .\aws-login.
 Your `.env.local` file is already configured with:
 - ADFS Host: `adfs.devfactory.com/adfs/ls/idpinitiatedsignon`
 - Username: `devfactory\papubhattacharya`
-- Role: `arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-TotogiPS-Admin`
+- Role: `arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-Nexus AIPS-Admin`
 - Profile: `default`
 
 ## Troubleshooting

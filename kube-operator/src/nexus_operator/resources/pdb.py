@@ -1,7 +1,7 @@
 """
 PodDisruptionBudget reconciler.
 
-Manages `policy/v1 PodDisruptionBudget` objects for a TotogiCapability's
+Manages `policy/v1 PodDisruptionBudget` objects for a NexusCapability's
 workloads. Driven by `spec.pdb` on the CR.
 
 Spec shape (from manifests/crd.yaml):
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class PDBReconciler:
-    """Reconcile PDB objects for a TotogiCapability's workloads."""
+    """Reconcile PDB objects for a NexusCapability's workloads."""
 
     def __init__(self, namespace: str):
         self.namespace = namespace

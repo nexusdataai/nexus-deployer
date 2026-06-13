@@ -135,7 +135,7 @@ print_success "S3 bucket policy update completed. Your site should now be access
 
 echo ""
 echo "🔗 Your website should now be available at:"
-echo "   https://mtn.totogicore.com"
+echo "   https://mtn.nexus.ai"
 echo ""
 echo "⏱️  Note: It may take 2-3 minutes for the changes to propagate globally."
 echo ""

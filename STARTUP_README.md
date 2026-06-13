@@ -1,4 +1,4 @@
-# Totogi Installer - Startup Guide
+# Nexus AI Installer - Startup Guide
 
 ## Quick Start
 
@@ -136,7 +136,7 @@ npm install
 
 **Error: "Backend not reachable"**
 - Check if backend is running: http://localhost:8001/api/health
-- Should return: `{"status":"healthy","service":"totogi-installer-backend","version":"1.0.0"}`
+- Should return: `{"status":"healthy","service":"nexus-installer-backend","version":"1.0.0"}`
 
 ## Manual Startup (Alternative)
 

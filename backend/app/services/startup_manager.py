@@ -1,5 +1,5 @@
 """
-Startup Manager for Totogi Capability Installer Backend
+Startup Manager for Nexus AI Capability Installer Backend
 Manages ordered initialization of backend components with health tracking.
 """
 import logging

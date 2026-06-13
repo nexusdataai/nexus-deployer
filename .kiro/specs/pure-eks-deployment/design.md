@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Pure EKS Deployment
 
 ## Overview
 
-This design document describes the architecture and implementation for Pure AWS EKS Based deployment using a Kubernetes Operator pattern. The solution enables deployment of Totogi capabilities to EKS clusters where a custom Kubernetes Operator manages the provisioning of application components and AWS data services.
+This design document describes the architecture and implementation for Pure AWS EKS Based deployment using a Kubernetes Operator pattern. The solution enables deployment of Nexus AI capabilities to EKS clusters where a custom Kubernetes Operator manages the provisioning of application components and AWS data services.
 
 The design follows these key principles:
 - **Operator Pattern**: A Kubernetes Operator manages the full lifecycle of capability deployments
@@ -28,13 +29,13 @@ graph TB
     end
     
     subgraph "EKS Cluster"
-        subgraph "totogi-system namespace"
-            OP[Totogi Operator]
-            CRD[TotogiCapability CRD]
+        subgraph "nexus-system namespace"
+            OP[Nexus AI Operator]
+            CRD[NexusCapability CRD]
         end
         
         subgraph "capability namespace"
-            CR[TotogiCapability CR]
+            CR[NexusCapability CR]
             FE_DEP[Frontend Deployment]
             BE_DEP[Backend Deployment]
             FE_SVC[Frontend Service]
@@ -203,7 +204,7 @@ async def check_operator_status(
     region: str,
     aws_session_id: str
 ) -> OperatorStatus:
-    """Check if Totogi Operator is installed and its version."""
+    """Check if Nexus AI Operator is installed and its version."""
     pass
 
 @router.get("/clusters/{cluster_name}/namespaces")
@@ -222,7 +223,7 @@ async def list_namespaces(
 
 ```python
 class OperatorDeploymentService:
-    """Service for deploying and managing the Totogi Operator."""
+    """Service for deploying and managing the Nexus AI Operator."""
     
     def __init__(self, credentials: Dict[str, str], cluster_name: str, region: str):
         self.credentials = credentials
@@ -237,10 +238,10 @@ class OperatorDeploymentService:
         callback: Optional[Callable] = None
     ) -> OperatorDeploymentResult:
         """
-        Deploy the Totogi Operator to the EKS cluster.
+        Deploy the Nexus AI Operator to the EKS cluster.
         
         Steps:
-        1. Create totogi-system namespace
+        1. Create nexus-system namespace
         2. Create IAM role for operator with IRSA
         3. Create ServiceAccount with IAM role annotation
         4. Apply CRD definitions
@@ -253,11 +254,11 @@ class OperatorDeploymentService:
         self,
         capability_name: str,
         environment: str,
-        config: TotogiCapabilitySpec,
+        config: NexusCapabilitySpec,
         namespace: str,
         callback: Optional[Callable] = None
     ) -> str:
-        """Create a TotogiCapability Custom Resource."""
+        """Create a NexusCapability Custom Resource."""
         pass
     
     async def watch_cr_status(
@@ -286,7 +287,7 @@ kube-operator/
 │   ├── main.py                    # Operator entry point
 │   ├── controllers/
 │   │   ├── __init__.py
-│   │   └── capability_controller.py  # TotogiCapability reconciler
+│   │   └── capability_controller.py  # NexusCapability reconciler
 │   ├── resources/
 │   │   ├── __init__.py
 │   │   ├── dynamodb.py            # DynamoDB provisioner
@@ -298,12 +299,12 @@ kube-operator/
 │   │   └── kubernetes.py          # K8s resource creator
 │   ├── models/
 │   │   ├── __init__.py
-│   │   └── capability.py          # TotogiCapability model
+│   │   └── capability.py          # NexusCapability model
 │   └── utils/
 │       ├── __init__.py
 │       └── naming.py              # Resource naming utilities
 ├── manifests/
-│   ├── crd.yaml                   # TotogiCapability CRD
+│   ├── crd.yaml                   # NexusCapability CRD
 │   ├── rbac.yaml                  # RBAC for operator
 │   └── deployment.yaml            # Operator deployment template
 └── tests/
@@ -312,7 +313,7 @@ kube-operator/
     └── test_resource_provisioners.py
 ```
 
-#### 3.2 TotogiCapability CRD
+#### 3.2 NexusCapability CRD
 
 **File**: `kube-operator/manifests/crd.yaml`
 
@@ -320,9 +321,9 @@ kube-operator/
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: totogicapabilities.totogi.com
+  name: nexuscapabilities.nexus.ai
 spec:
-  group: totogi.com
+  group: nexus.ai
   versions:
     - name: v1
       served: true
@@ -451,9 +452,9 @@ spec:
         status: {}
   scope: Namespaced
   names:
-    plural: totogicapabilities
-    singular: totogicapability
-    kind: TotogiCapability
+    plural: nexuscapabilities
+    singular: nexuscapability
+    kind: NexusCapability
     shortNames:
       - tc
 ```
@@ -479,10 +480,10 @@ from ..utils.naming import ResourceNaming
 logger = logging.getLogger(__name__)
 
 
-@kopf.on.create('totogi.com', 'v1', 'totogicapabilities')
+@kopf.on.create('nexus.ai', 'v1', 'nexuscapabilities')
 async def create_capability(spec: Dict[str, Any], name: str, namespace: str, 
                            status: Dict[str, Any], patch: kopf.Patch, **kwargs):
-    """Handle TotogiCapability creation."""
+    """Handle NexusCapability creation."""
     
     capability_name = spec['capabilityName']
     environment = spec['environment']
@@ -578,18 +579,18 @@ async def create_capability(spec: Dict[str, Any], name: str, namespace: str,
         raise kopf.PermanentError(str(e))
 
 
-@kopf.on.update('totogi.com', 'v1', 'totogicapabilities')
+@kopf.on.update('nexus.ai', 'v1', 'nexuscapabilities')
 async def update_capability(spec: Dict[str, Any], name: str, namespace: str,
                            status: Dict[str, Any], patch: kopf.Patch, **kwargs):
-    """Handle TotogiCapability updates - perform rolling update."""
+    """Handle NexusCapability updates - perform rolling update."""
     # Similar to create but updates existing resources
     pass
 
 
-@kopf.on.delete('totogi.com', 'v1', 'totogicapabilities')
+@kopf.on.delete('nexus.ai', 'v1', 'nexuscapabilities')
 async def delete_capability(spec: Dict[str, Any], name: str, namespace: str,
                            status: Dict[str, Any], **kwargs):
-    """Handle TotogiCapability deletion - cleanup all resources."""
+    """Handle NexusCapability deletion - cleanup all resources."""
     
     deletion_policy = spec.get('deletionPolicy', 'Delete')
     
@@ -612,16 +613,16 @@ async def delete_capability(spec: Dict[str, Any], name: str, namespace: str,
 
 ## Data Models
 
-### TotogiCapability Custom Resource
+### NexusCapability Custom Resource
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-dev
   namespace: call-processing-dev
   finalizers:
-    - totogi.com/cleanup
+    - nexus.ai/cleanup
 spec:
   capabilityName: call-processing
   version: "1.0.0"
@@ -770,7 +771,7 @@ interface ResourceSpec {
 
 ### Property 4: Operator Deployment Idempotency
 
-*For any* EKS cluster, deploying the Totogi Operator multiple times SHALL result in the same final state (operator running in totogi-system namespace with correct version), regardless of whether the operator was previously installed.
+*For any* EKS cluster, deploying the Nexus AI Operator multiple times SHALL result in the same final state (operator running in nexus-system namespace with correct version), regardless of whether the operator was previously installed.
 
 **Validates: Requirements 3.1, 3.9**
 
@@ -780,9 +781,9 @@ interface ResourceSpec {
 
 **Validates: Requirements 3.5, 3.6, 5.3, 5.4, 5.5**
 
-### Property 6: TotogiCapability CR Schema Compliance
+### Property 6: NexusCapability CR Schema Compliance
 
-*For any* TotogiCapability Custom Resource created by the deployment service, the CR SHALL contain all required fields (capabilityName, version, environment, region) and the spec SHALL conform to the CRD schema.
+*For any* NexusCapability Custom Resource created by the deployment service, the CR SHALL contain all required fields (capabilityName, version, environment, region) and the spec SHALL conform to the CRD schema.
 
 **Validates: Requirements 4.1, 4.2, 12.3**
 
@@ -800,13 +801,13 @@ interface ResourceSpec {
 
 ### Property 9: Operator Reconciliation Loop
 
-*For any* TotogiCapability CR, the operator SHALL continuously reconcile the desired state (CR spec) with the actual state (deployed resources), and any drift SHALL be corrected within the reconciliation interval.
+*For any* NexusCapability CR, the operator SHALL continuously reconcile the desired state (CR spec) with the actual state (deployed resources), and any drift SHALL be corrected within the reconciliation interval.
 
 **Validates: Requirements 4.3, 4.9, 4.10, 12.4**
 
 ### Property 10: Resource Cleanup on Deletion
 
-*For any* TotogiCapability CR with deletionPolicy "Delete", when the CR is deleted, the operator SHALL remove all managed resources (Kubernetes resources, SSM parameters, Secrets Manager secrets, IAM roles, and optionally data services) and the finalizer SHALL only be removed after successful cleanup.
+*For any* NexusCapability CR with deletionPolicy "Delete", when the CR is deleted, the operator SHALL remove all managed resources (Kubernetes resources, SSM parameters, Secrets Manager secrets, IAM roles, and optionally data services) and the finalizer SHALL only be removed after successful cleanup.
 
 **Validates: Requirements 4.11, 12.6**
 
@@ -824,13 +825,13 @@ interface ResourceSpec {
 
 ### Property 13: Deployment State Persistence
 
-*For any* completed EKS deployment, the deployment state service SHALL store a record containing: cluster ARN, namespace, TotogiCapability CR name, and all provisioned resource ARNs, and this record SHALL be retrievable for subsequent operations.
+*For any* completed EKS deployment, the deployment state service SHALL store a record containing: cluster ARN, namespace, NexusCapability CR name, and all provisioned resource ARNs, and this record SHALL be retrievable for subsequent operations.
 
 **Validates: Requirements 9.1, 9.6**
 
 ### Property 14: Existing Deployment Detection
 
-*For any* deployment attempt to an EKS cluster/namespace combination, the stack detection service SHALL correctly identify existing TotogiCapability CRs and offer appropriate strategy options (Update Existing or Clean Deploy).
+*For any* deployment attempt to an EKS cluster/namespace combination, the stack detection service SHALL correctly identify existing NexusCapability CRs and offer appropriate strategy options (Update Existing or Clean Deploy).
 
 **Validates: Requirements 9.2, 9.3**
 
@@ -930,7 +931,7 @@ Property-based tests verify universal properties across all inputs using the `hy
 
 1. **End-to-End Deployment Test**
    - Deploy operator to test cluster
-   - Create TotogiCapability CR
+   - Create NexusCapability CR
    - Verify all resources are created
    - Verify application is accessible
    - Delete CR and verify cleanup

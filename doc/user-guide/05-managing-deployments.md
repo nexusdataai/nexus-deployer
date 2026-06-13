@@ -391,13 +391,13 @@ Regularly review and delete:
 
 ## Managing Kubernetes (EKS) Deployments
 
-If you deployed using the **EKS (Kubernetes)** option, your capability runs as a `TotogiCapability` custom resource managed by the Kubernetes Operator.
+If you deployed using the **EKS (Kubernetes)** option, your capability runs as a `NexusCapability` custom resource managed by the Kubernetes Operator.
 
 ### Viewing Kubernetes Deployments
 
 ```bash
 # List all deployed capabilities
-kubectl get totogicapabilities -A
+kubectl get nexuscapabilities -A
 
 # Short form
 kubectl get tc -A
@@ -448,13 +448,13 @@ kubectl delete tc <name> -n <namespace>
 
 ```bash
 # Check operator status
-kubectl get pods -n totogi-system
+kubectl get pods -n nexus-system
 
 # View operator logs
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 
 # Restart operator
-kubectl -n totogi-system rollout restart deployment/totogi-operator
+kubectl -n nexus-system rollout restart deployment/nexus-operator
 ```
 
 ### Kubernetes-Specific Monitoring

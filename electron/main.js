@@ -1,5 +1,5 @@
 /**
- * Totogi Capability Installer - Electron Main Process
+ * Nexus AI Capability Installer - Electron Main Process
  * 
  * Uses StartupOrchestrator for coordinated startup sequence:
  * 1. Spawn backend process
@@ -27,8 +27,8 @@ let lastSentStatus = { phase: '', progress: -1 };  // Track last sent status to 
  */
 function getBackendPath() {
   const backendName = process.platform === 'win32' 
-    ? 'totogi-backend.exe' 
-    : 'totogi-backend';
+    ? 'nexus-installer-backend.exe' 
+    : 'nexus-installer-backend';
   
   return path.join(
     process.resourcesPath,
@@ -46,10 +46,10 @@ function killOrphanedBackendProcesses() {
   
   try {
     if (process.platform === 'win32') {
-      execSync('taskkill /F /IM totogi-backend.exe /T', { stdio: 'ignore' });
-      console.log('[Electron] Killed orphaned totogi-backend.exe processes');
+      execSync('taskkill /F /IM nexus-installer-backend.exe /T', { stdio: 'ignore' });
+      console.log('[Electron] Killed orphaned nexus-installer-backend.exe processes');
     } else {
-      execSync('pkill -f totogi-backend', { stdio: 'ignore' });
+      execSync('pkill -f nexus-installer-backend', { stdio: 'ignore' });
     }
   } catch (error) {
     // No processes found or already dead - this is fine
@@ -122,7 +122,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false
     },
-    title: 'Totogi Capability Installer',
+    title: 'Nexus AI Capability Installer',
     show: true, // Show immediately so user sees the app is starting
     backgroundColor: '#1a1a2e', // Dark background while loading
   });

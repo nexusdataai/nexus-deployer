@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document
 
 ## Overview
 
-The Totogi Capability Deployment Wizard is a streamlined desktop application that guides users through deploying business capabilities into their AWS environments. The design prioritizes simplicity and ease of use, eliminating authentication barriers and focusing solely on the deployment workflow. The wizard follows a linear step-by-step process: capability selection → AWS credential configuration → permission verification → deployment execution → post-verification → log collection.
+The Nexus AI Capability Deployment Wizard is a streamlined desktop application that guides users through deploying business capabilities into their AWS environments. The design prioritizes simplicity and ease of use, eliminating authentication barriers and focusing solely on the deployment workflow. The wizard follows a linear step-by-step process: capability selection → AWS credential configuration → permission verification → deployment execution → post-verification → log collection.
 
 Key architectural decisions:
 - **No authentication required** - wizard starts immediately without login
@@ -1089,12 +1090,12 @@ interface ErrorResponse {
 cd backend
 pip install -r requirements.txt
 pyinstaller --onefile \
-            --name totogi-backend \
+            --name nexus-installer-backend \
             --add-data "capabilities:capabilities" \
             --hidden-import boto3 \
             --hidden-import botocore \
             app/main.py
-# Output: backend/dist/totogi-backend.exe (Windows)
+# Output: backend/dist/nexus-installer-backend.exe (Windows)
 ```
 
 **2. Build React Frontend (Vite)**
@@ -1110,7 +1111,7 @@ npm run build
 cd electron
 npm install
 npm run build
-# Output: electron/dist/Totogi-Installer-Setup-1.0.0.exe
+# Output: electron/dist/Nexus AI-Installer-Setup-1.0.0.exe
 ```
 
 ### Electron Configuration
@@ -1118,12 +1119,12 @@ npm run build
 **electron/package.json:**
 ```json
 {
-  "name": "totogi-installer",
+  "name": "nexus-installer",
   "version": "1.0.0",
   "main": "main.js",
   "build": {
-    "appId": "com.totogi.installer",
-    "productName": "Totogi Capability Installer",
+    "appId": "com.nexus.installer",
+    "productName": "Nexus AI Capability Installer",
     "files": [
       "main.js",
       "preload.js",
@@ -1131,8 +1132,8 @@ npm run build
     ],
     "extraResources": [
       {
-        "from": "../backend/dist/totogi-backend.exe",
-        "to": "backend/totogi-backend.exe"
+        "from": "../backend/dist/nexus-installer-backend.exe",
+        "to": "backend/nexus-installer-backend.exe"
       },
       {
         "from": "../scripts/capabilities",
@@ -1176,8 +1177,8 @@ function startBackend() {
   } else {
     // Production: Run bundled executable
     const backendPath = process.platform === 'win32'
-      ? path.join(process.resourcesPath, 'backend', 'totogi-backend.exe')
-      : path.join(process.resourcesPath, 'backend', 'totogi-backend');
+      ? path.join(process.resourcesPath, 'backend', 'nexus-installer-backend.exe')
+      : path.join(process.resourcesPath, 'backend', 'nexus-installer-backend');
     
     backendProcess = spawn(backendPath);
   }
@@ -1289,14 +1290,14 @@ Property-based tests will be implemented using **fast-check** (JavaScript/TypeSc
 
 **Tag Format:**
 ```typescript
-// Feature: totogi-customer-toolkit, Property 6: Role ARN format validation
+// Feature: nexus-customer-toolkit, Property 6: Role ARN format validation
 ```
 
 **Property Test Examples:**
 
 1. **ARN Validation Property (Property 6):**
 ```typescript
-// Feature: totogi-customer-toolkit, Property 6: Role ARN format validation
+// Feature: nexus-customer-toolkit, Property 6: Role ARN format validation
 fc.assert(
   fc.property(fc.string(), (input) => {
     const result = validateRoleArn(input);
@@ -1309,7 +1310,7 @@ fc.assert(
 
 2. **Log Highlighting Property (Property 22, 23):**
 ```typescript
-// Feature: totogi-customer-toolkit, Property 22: Error log highlighting
+// Feature: nexus-customer-toolkit, Property 22: Error log highlighting
 fc.assert(
   fc.property(
     fc.record({
@@ -1332,7 +1333,7 @@ fc.assert(
 
 3. **State Clearing Property (Property 54):**
 ```typescript
-// Feature: totogi-customer-toolkit, Property 54: State clearing on new deployment
+// Feature: nexus-customer-toolkit, Property 54: State clearing on new deployment
 fc.assert(
   fc.property(
     fc.record({
@@ -1357,7 +1358,7 @@ fc.assert(
 
 4. **Diagnostic Log Content Property (Property 36):**
 ```typescript
-// Feature: totogi-customer-toolkit, Property 36: Diagnostic log content completeness
+// Feature: nexus-customer-toolkit, Property 36: Diagnostic log content completeness
 fc.assert(
   fc.property(
     fc.record({

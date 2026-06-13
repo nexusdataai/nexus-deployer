@@ -24,14 +24,14 @@ Probes 10 facts about the target cluster:
 |---|---|---|
 | `cluster_active` | `eks:DescribeCluster` returns `status=ACTIVE`, version >= 1.23 | Wait for cluster to finish creating, or upgrade the control plane |
 | `oidc_provider` | OIDC issuer present + registered in IAM with `sts.amazonaws.com` audience | `eksctl utils associate-iam-oidc-provider --cluster <name> --approve` |
-| `operator_iam_role` (preprovisioned only) | `totogi-operator-role` exists with IRSA trust | Admin creates role using `kube-operator/permissions/operator-policy.json` + `operator-trust-policy.json` |
+| `operator_iam_role` (preprovisioned only) | `nexus-operator-role` exists with IRSA trust | Admin creates role using `kube-operator/permissions/operator-policy.json` + `operator-trust-policy.json` |
 | `auth_mode` | `API` or `API_AND_CONFIG_MAP` | Switch the cluster auth mode away from CONFIG_MAP-only |
 | `access_entry` | Deployer principal has an Access Entry with policies attached | Deployer auto-creates during install (managed) or admin attaches |
 | `node_groups` | At least one node group, each node IAM role has `AmazonEC2ContainerRegistryReadOnly` + `AmazonEKSWorkerNodePolicy` + `AmazonEKS_CNI_Policy` | Create a managed node group; attach the missing policies |
-| `ecr_operator_image` | Repository `totogi-operator` exists with the `latest` tag | `./build-and-push.sh latest` from `kube-operator/` |
+| `ecr_operator_image` | Repository `nexus-operator` exists with the `latest` tag | `./build-and-push.sh latest` from `kube-operator/` |
 | `k8s_api_access` | Python kubernetes-client can `list_namespace` | Confirm Access Entry / aws-auth mapping for the deployer principal |
 | `alb_controller` | `kube-system/aws-load-balancer-controller` Deployment ready | Step 2 (managed) installs it; admin installs it (preprovisioned) |
-| `operator_status` | `totogi-system/totogi-operator` Deployment ready | Step 5 installs / updates it |
+| `operator_status` | `nexus-system/nexus-operator` Deployment ready | Step 5 installs / updates it |
 
 Endpoint: `GET /api/eks/pipeline/clusters/{cluster_name}/readiness`.
 
@@ -74,7 +74,7 @@ Endpoint: `GET /api/eks/pipeline/clusters/{cluster_name}/iam-audit`.
 Provisions the 13 region-prefixed VPC endpoints **directly via boto3 EC2
 calls** (see [`vpc_endpoint_provisioner.py`](../backend/app/services/vpc_endpoint_provisioner.py)).
 The deployer does this itself rather than driving the operator's
-`TotogiNetworkConfig` CR because step 6 runs in the pre-flight wizard
+`NexusNetworkConfig` CR because step 6 runs in the pre-flight wizard
 step, before the operator (and its CRDs) are installed.
 
 For region `R` (e.g. `us-east-1`) the deployer ensures:
@@ -116,7 +116,7 @@ DEPLOYMENT_EXECUTION (fresh) -> POST_VERIFICATION -> RESULTS
 ```
 
 On Continue the screen runs `POST /api/deployment/detect-stacks`
-(target-aware - returns Pure-EKS `TotogiCapability` CRs as well as
+(target-aware - returns Pure-EKS `NexusCapability` CRs as well as
 CloudFormation stacks), persists the result in wizard context, and
 routes to STRATEGY_SELECTION when `has_existing_stacks=true` or
 DEPLOYMENT_EXECUTION when the cluster is fresh.

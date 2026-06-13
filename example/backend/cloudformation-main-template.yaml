@@ -18,8 +18,8 @@ Parameters:
   
   BaseDomain:
     Type: String
-    Description: 'Base domain name (e.g., totogicore.com)'
-    Default: 'totogicore.com'
+    Description: 'Base domain name (e.g., nexus.ai)'
+    Default: 'nexus.ai'
   
   Subdomain:
     Type: String

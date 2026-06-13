@@ -216,7 +216,7 @@ class EbsCsiAddonInstaller:
                 self.iam.create_role(
                     RoleName=EBS_DEFAULT_ROLE_NAME,
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
-                    Description="EKS EBS CSI Driver IRSA role (managed by Totogi deployer)",
+                    Description="EKS EBS CSI Driver IRSA role (managed by Nexus AI deployer)",
                 )
             else:
                 raise

@@ -38,7 +38,7 @@ if [ -z "$ACCOUNT_ID" ]; then
     exit 1
 fi
 
-LOG_GROUP="/totogi/nexus-ai/${DEPLOY_ENV}"
+LOG_GROUP="/nexus/nexus-ai/${DEPLOY_ENV}"
 
 show_help() {
     echo "Usage: $0 {setup|verify|teardown}"
@@ -90,7 +90,7 @@ data:
     [INPUT]
         Name              tail
         Tag               operator.*
-        Path              /var/log/containers/*_totogi-system_*.log
+        Path              /var/log/containers/*_nexus-system_*.log
         Parser            docker
         DB                /var/fluent-bit/state/flb_operator.db
         Mem_Buf_Limit     10MB

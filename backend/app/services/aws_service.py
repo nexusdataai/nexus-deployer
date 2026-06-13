@@ -42,7 +42,7 @@ class AWSService:
         return False, None
     
     @staticmethod
-    def assume_role(role_arn: str, region: str, session_name: str = "TotogiInstaller") -> RoleValidationResponse:
+    def assume_role(role_arn: str, region: str, session_name: str = "NexusInstaller") -> RoleValidationResponse:
         """Assume an IAM role and validate access.
         
         Args:

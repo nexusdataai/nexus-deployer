@@ -36,14 +36,14 @@ AD_USERNAME=devfactory\\\\yourusername
 # AWS Role ARN (optional - if not set, will use DEFAULT_ROLE_INDEX for non-interactive mode)
 # Note: Console URL generation requires a specific role ARN to be set
 # Available roles:
-# AWS_ROLE_ARN=arn:aws:iam::617147411452:role/RAM-AWS-Prod-TelcoDR-telcodrtotogipresales1-Admin
-# AWS_ROLE_ARN=arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-TotogiPS-Admin
-# AWS_ROLE_ARN=arn:aws:iam::298722972165:role/RAM-AWS-Prod-Totogi-BSSMagicNexus-Admin
-# AWS_ROLE_ARN=arn:aws:iam::914357406961:role/RAM-AWS-Prod-Totogi-zainsudanbssmagic-Admin
+# AWS_ROLE_ARN=arn:aws:iam::617147411452:role/RAM-AWS-Prod-TelcoDR-telcodrnexuspresales1-Admin
+# AWS_ROLE_ARN=arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-Nexus AIPS-Admin
+# AWS_ROLE_ARN=arn:aws:iam::298722972165:role/RAM-AWS-Prod-Nexus AI-BSSMagicNexus-Admin
+# AWS_ROLE_ARN=arn:aws:iam::914357406961:role/RAM-AWS-Prod-Nexus AI-zainsudanbssmagic-Admin
 
 # Default role index for non-interactive mode (when AWS_ROLE_ARN is not set)
-# 0 = telcodrtotogipresales1 (617147411452)
-# 1 = TotogiPS (764119721991) <- DEFAULT
+# 0 = telcodrnexuspresales1 (617147411452)
+# 1 = Nexus AIPS (764119721991) <- DEFAULT
 # 2 = BSSMagicNexus (298722972165)
 # 3 = zainsudanbssmagic (914357406961)
 DEFAULT_ROLE_INDEX=1
@@ -82,10 +82,10 @@ fi
 : "${SSL_VERIFICATION:=false}"
 : "${PRINT_CONSOLE_URL:=false}"
 # Default role selection index (0-based) when running non-interactively
-# 0 = RAM-AWS-Prod-TelcoDR-telcodrtotogipresales1-Admin (617147411452)
-# 1 = RAM-AWS-Prod-TelcoDR-TotogiPS-Admin (764119721991) <- DEFAULT
-# 2 = RAM-AWS-Prod-Totogi-BSSMagicNexus-Admin (298722972165)
-# 3 = RAM-AWS-Prod-Totogi-zainsudanbssmagic-Admin (914357406961)
+# 0 = RAM-AWS-Prod-TelcoDR-telcodrnexuspresales1-Admin (617147411452)
+# 1 = RAM-AWS-Prod-TelcoDR-Nexus AIPS-Admin (764119721991) <- DEFAULT
+# 2 = RAM-AWS-Prod-Nexus AI-BSSMagicNexus-Admin (298722972165)
+# 3 = RAM-AWS-Prod-Nexus AI-zainsudanbssmagic-Admin (914357406961)
 : "${DEFAULT_ROLE_INDEX:=1}"
 
 # Allow command line arguments to override environment variables
@@ -113,8 +113,8 @@ while [[ "$#" -gt 0 ]]; do
             echo "  --console-url       Print AWS Console signin URL after login"
             echo "  --reset-role        Clear cached role and session data"
             echo "  --default-role N    Default role index for non-interactive mode (default: 1)"
-            echo "                      0 = telcodrtotogipresales1 (617147411452)"
-            echo "                      1 = TotogiPS (764119721991) <- DEFAULT"
+            echo "                      0 = telcodrnexuspresales1 (617147411452)"
+            echo "                      1 = Nexus AIPS (764119721991) <- DEFAULT"
             echo "                      2 = BSSMagicNexus (298722972165)"
             echo "                      3 = zainsudanbssmagic (914357406961)"
             echo "  --help              Show this help message"

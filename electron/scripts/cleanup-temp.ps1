@@ -1,12 +1,12 @@
 # cleanup-temp.ps1
-# Cleans up Totogi Installer temporary files
+# Cleans up Nexus AI Installer temporary files
 #
 # Usage:
 #   .\cleanup-temp.ps1
 #   .\cleanup-temp.ps1 -LogFile "C:\temp\uninstall.log"
 
 param(
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 function Write-UninstallLog {
@@ -70,14 +70,14 @@ function Remove-TempItems {
 
 # Main execution
 Write-UninstallLog "=========================================="
-Write-UninstallLog "Totogi Installer Temp File Cleanup"
+Write-UninstallLog "Nexus AI Installer Temp File Cleanup"
 Write-UninstallLog "=========================================="
 Write-UninstallLog "Temp directory: $env:TEMP"
 
 $results = @()
 
-# Clean totogi-* temp files and directories
-$results += Remove-TempItems -Pattern "totogi-*" -Description "Totogi temp files"
+# Clean nexus-* temp files and directories
+$results += Remove-TempItems -Pattern "nexus-*" -Description "Nexus AI temp files"
 
 # Clean PyInstaller temp directories (_MEI*)
 $results += Remove-TempItems -Pattern "_MEI*" -Description "PyInstaller temp directories"
@@ -86,10 +86,10 @@ $results += Remove-TempItems -Pattern "_MEI*" -Description "PyInstaller temp dir
 $results += Remove-TempItems -Pattern "electron-*" -Description "Electron builder temp files"
 
 # Clean crash dumps
-$results += Remove-TempItems -Pattern "totogi*.dmp" -Description "Crash dump files"
+$results += Remove-TempItems -Pattern "nexus*.dmp" -Description "Crash dump files"
 
 # Clean error logs
-$results += Remove-TempItems -Pattern "totogi*.log" -Description "Error log files"
+$results += Remove-TempItems -Pattern "nexus*.log" -Description "Error log files"
 
 # Also check LocalAppData\Temp
 $localTemp = "$env:LOCALAPPDATA\Temp"
@@ -98,7 +98,7 @@ if (Test-Path $localTemp) {
     Write-UninstallLog "Checking LocalAppData Temp: $localTemp"
     
     try {
-        $localItems = Get-ChildItem -Path $localTemp -Filter "totogi-*" -ErrorAction SilentlyContinue
+        $localItems = Get-ChildItem -Path $localTemp -Filter "nexus-*" -ErrorAction SilentlyContinue
         if ($localItems) {
             foreach ($item in $localItems) {
                 try {

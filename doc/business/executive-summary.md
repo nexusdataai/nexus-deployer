@@ -1,5 +1,5 @@
 # Executive Summary
-## Totogi Customer Toolkit Business Case
+## Nexus AI Customer Toolkit Business Case
 
 **Document Type:** Executive Summary  
 **Version:** 1.0  
@@ -12,13 +12,13 @@
 
 The global enterprise software market is experiencing a fundamental shift: **73% of B2B buyers now prefer self-service digital experiences over vendor-led implementations**. Traditional software deployments requiring 3-6 months and $100K-$500K in professional services fees are no longer competitive in a market demanding immediate value delivery.
 
-The **Totogi Customer Toolkit** capitalizes on this market transformation by enabling customers to deploy complex, enterprise-grade telecommunications capabilities in **under 30 minutes** with **zero professional services costs**, while maintaining complete control over their infrastructure.
+The **Nexus AI Customer Toolkit** capitalizes on this market transformation by enabling customers to deploy complex, enterprise-grade telecommunications capabilities in **under 30 minutes** with **zero professional services costs**, while maintaining complete control over their infrastructure.
 
 ---
 
 ## What It Is
 
-The Totogi Customer Toolkit is an enterprise-grade, self-service deployment platform that:
+The Nexus AI Customer Toolkit is an enterprise-grade, self-service deployment platform that:
 
 - **Deploys complex cloud capabilities in 15-30 minutes** (vs. 3-6 months traditionally)
 - **Eliminates professional services costs** ($100K-$500K per deployment)
@@ -66,7 +66,7 @@ Think of it as **"Shopify for enterprise telecom capabilities"** - a point-and-c
 - **Complete control** for security and compliance
 - **Self-service operations** eliminating vendor dependency
 
-### For Totogi:
+### For Nexus AI:
 
 **Revenue Growth:**
 - **2x more customers** (100 vs. 50) without doubling headcount
@@ -237,7 +237,7 @@ No competitor offers all three:
 
 ## Strategic Importance
 
-### Why This Matters for Totogi:
+### Why This Matters for Nexus AI:
 
 1. **Revenue Scaling Model:** Grow revenue 10x without 10x-ing professional services headcount
 2. **Margin Expansion:** 79% margins vs. 52% traditional (transformational improvement)
@@ -258,7 +258,7 @@ No competitor offers all three:
 
 **STRONG RECOMMENDATION TO PROCEED**
 
-The Totogi Customer Toolkit represents a **high-impact, medium-risk opportunity** that addresses clear market pain points with defensible differentiation.
+The Nexus AI Customer Toolkit represents a **high-impact, medium-risk opportunity** that addresses clear market pain points with defensible differentiation.
 
 ### Investment Decision Framework:
 
@@ -298,7 +298,7 @@ The Totogi Customer Toolkit represents a **high-impact, medium-risk opportunity*
 
 ## Conclusion
 
-The Totogi Customer Toolkit is not just a product—it's a **fundamental transformation of our business model** from labor-intensive professional services to high-margin, self-service software delivery.
+The Nexus AI Customer Toolkit is not just a product—it's a **fundamental transformation of our business model** from labor-intensive professional services to high-margin, self-service software delivery.
 
 **This is how modern B2B software companies win.**
 

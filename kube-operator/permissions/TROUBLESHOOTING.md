@@ -1,7 +1,7 @@
 # Permissions & Connectivity Troubleshooting Guide
 
 This guide covers how to diagnose and fix IAM permission failures, IRSA
-misconfigurations, and VPC endpoint connectivity issues for the Totogi
+misconfigurations, and VPC endpoint connectivity issues for the Nexus AI
 operator and capability deployments.
 
 ---
@@ -73,10 +73,10 @@ All commands are run from the `kube-operator/` directory.
 
 | Command | Alias | What It Does |
 |---|---|---|
-| `./operator-nexus-test.sh check-operator-permissions` | `check-operator` | Runs a Job in `totogi-system` as the operator SA — validates every IAM permission from `operator-policy.json` and tests reachability of 15 VPC endpoints |
+| `./operator-nexus-test.sh check-operator-permissions` | `check-operator` | Runs a Job in `nexus-system` as the operator SA — validates every IAM permission from `operator-policy.json` and tests reachability of 15 VPC endpoints |
 | `./operator-nexus-test.sh check-app-permissions` | `check-app` | Creates a temporary Job in `call-processing-{env}` as the app SA — validates every IAM permission from `app-policy.json` and tests reachability of 15 VPC endpoints |
-| `./operator-nexus-test.sh check-endpoints` | `endpoints-status` | Displays the status of the `TotogiNetworkConfig` CR (read-only kubectl output) |
-| `./operator-nexus-test.sh setup-endpoints` | `endpoints` | Applies the `TotogiNetworkConfig` CRD and CR, then monitors the operator as it provisions VPC endpoints |
+| `./operator-nexus-test.sh check-endpoints` | `endpoints-status` | Displays the status of the `NexusNetworkConfig` CR (read-only kubectl output) |
+| `./operator-nexus-test.sh setup-endpoints` | `endpoints` | Applies the `NexusNetworkConfig` CRD and CR, then monitors the operator as it provisions VPC endpoints |
 
 ---
 
@@ -90,7 +90,7 @@ All commands are run from the `kube-operator/` directory.
 
 **What happens under the hood:**
 
-1. Reads the operator deployment in `totogi-system` to discover its ServiceAccount name and IRSA role ARN.
+1. Reads the operator deployment in `nexus-system` to discover its ServiceAccount name and IRSA role ARN.
 2. Creates a ConfigMap `operator-perm-check` from `check-operator-permissions.py`.
 3. Launches a Kubernetes Job `check-operator-permissions` using the operator's ServiceAccount (so the Job assumes the same IRSA role as the operator pod).
 4. Streams the Job's logs in real-time and waits up to ~3 minutes for completion.
@@ -141,7 +141,7 @@ For interactive **app** checks (exec, `kubectl cp`, or AWS CLI with the app Serv
 If the Job pod stays in `Pending`:
 
 ```bash
-kubectl describe pod -l job-name=check-operator-permissions -n totogi-system
+kubectl describe pod -l job-name=check-operator-permissions -n nexus-system
 kubectl describe pod -l job-name=check-app-permissions -n call-processing-stage
 ```
 
@@ -172,7 +172,7 @@ kubectl auth whoami   # EKS 1.24+
 
 ```bash
 # Can the operator SA create DynamoDB tables?
-kubectl auth can-i create dynamodbtables --as=system:serviceaccount:totogi-system:totogi-operator
+kubectl auth can-i create dynamodbtables --as=system:serviceaccount:nexus-system:nexus-operator
 
 # Can the app SA list pods in its namespace?
 kubectl auth can-i list pods --as=system:serviceaccount:call-processing-stage:call-processing-stage-app-sa \
@@ -183,7 +183,7 @@ kubectl auth can-i list pods --as=system:serviceaccount:call-processing-stage:ca
 
 ```bash
 # Operator SA
-kubectl get sa totogi-operator -n totogi-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
+kubectl get sa nexus-operator -n nexus-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
 
 # App SA
 kubectl get sa call-processing-stage-app-sa -n call-processing-stage \
@@ -195,8 +195,8 @@ kubectl get sa call-processing-stage-app-sa -n call-processing-stage \
 ```bash
 # Operator role
 kubectl run perm-debug --rm -it --restart=Never \
-  -n totogi-system \
-  --overrides='{"spec":{"serviceAccountName":"totogi-operator"}}' \
+  -n nexus-system \
+  --overrides='{"spec":{"serviceAccountName":"nexus-operator"}}' \
   --image=python:3.11-slim -- bash
 
 # Inside the pod:
@@ -210,9 +210,9 @@ print(sts.get_caller_identity()['Arn'])
 **Quick exec into the running operator pod:**
 
 ```bash
-POD=$(kubectl get pod -n totogi-system -l app.kubernetes.io/name=totogi-operator \
+POD=$(kubectl get pod -n nexus-system -l app.kubernetes.io/name=nexus-operator \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl exec -n totogi-system $POD -c operator -- python3 -c "
+kubectl exec -n nexus-system $POD -c operator -- python3 -c "
 import boto3
 sts = boto3.client('sts', region_name='ap-southeast-1')
 print(sts.get_caller_identity()['Arn'])
@@ -270,7 +270,7 @@ curl -s -o /dev/null -w "%{http_code}" https://sts.ap-southeast-1.amazonaws.com/
 
 Use this when you want a shell inside the cluster with the **same IRSA identity** as the operator or app, without going through the Batch Job wrapper.
 
-**Defaults used below:** adjust `REGION`, namespace, ServiceAccount, and IAM role names to match your cluster. The automated scripts use `totogi-system` / `totogi-operator` (operator) and `call-processing-{env}` / `call-processing-{env}-app-sa` (app), with `REGION` from `operator-nexus-test.sh` (often `ap-southeast-1`).
+**Defaults used below:** adjust `REGION`, namespace, ServiceAccount, and IAM role names to match your cluster. The automated scripts use `nexus-system` / `nexus-operator` (operator) and `call-processing-{env}` / `call-processing-{env}-app-sa` (app), with `REGION` from `operator-nexus-test.sh` (often `ap-southeast-1`).
 
 #### 3.3.1 Run the official Python check inside the running operator pod
 
@@ -279,12 +279,12 @@ The operator container is named `operator`. It includes Python and the operator 
 ```bash
 cd kube-operator
 
-OP_POD=$(kubectl get pod -n totogi-system -l app.kubernetes.io/name=totogi-operator \
+OP_POD=$(kubectl get pod -n nexus-system -l app.kubernetes.io/name=nexus-operator \
   -o jsonpath='{.items[0].metadata.name}')
 
-kubectl cp check-operator-permissions.py "totogi-system/${OP_POD}:/tmp/check-operator-permissions.py" -c operator
+kubectl cp check-operator-permissions.py "nexus-system/${OP_POD}:/tmp/check-operator-permissions.py" -c operator
 
-kubectl exec -n totogi-system -c operator "$OP_POD" -- python3 /tmp/check-operator-permissions.py
+kubectl exec -n nexus-system -c operator "$OP_POD" -- python3 /tmp/check-operator-permissions.py
 ```
 
 `check-operator-permissions.py` has a fixed `REGION = "ap-southeast-1"` at the top; edit that line if your cluster is in another region, or rely on `./operator-nexus-test.sh check-operator` (which uses the script from the repo without editing the pod copy).
@@ -292,7 +292,7 @@ kubectl exec -n totogi-system -c operator "$OP_POD" -- python3 /tmp/check-operat
 #### 3.3.2 Interactive shell on the operator pod
 
 ```bash
-kubectl exec -n totogi-system deploy/totogi-operator -c operator -it -- /bin/sh
+kubectl exec -n nexus-system deploy/nexus-operator -c operator -it -- /bin/sh
 # If /bin/sh is missing, try: -- python3 (no TTY) or use a debug pod below.
 ```
 
@@ -372,9 +372,9 @@ If phase stays **`Pending`** for the whole loop, run **`kubectl describe pod "$P
 
 ```bash
 kubectl run aws-cli-operator --rm -it --restart=Never \
-  -n totogi-system \
+  -n nexus-system \
   --image=public.ecr.aws/aws-cli/aws-cli \
-  --overrides='{"spec":{"serviceAccountName":"totogi-operator"}}' \
+  --overrides='{"spec":{"serviceAccountName":"nexus-operator"}}' \
   --pod-running-timeout=5m \
   --command -- aws sts get-caller-identity
 ```
@@ -394,9 +394,9 @@ For an interactive shell, omit `--command` and trailing args (cluster policy per
 
 ```bash
 kubectl run aws-cli-debug --rm -it --restart=Never \
-  -n totogi-system \
+  -n nexus-system \
   --image=public.ecr.aws/aws-cli/aws-cli \
-  --overrides='{"spec":{"serviceAccountName":"totogi-operator"}}' \
+  --overrides='{"spec":{"serviceAccountName":"nexus-operator"}}' \
   --pod-running-timeout=5m
 ```
 
@@ -404,7 +404,7 @@ If your cluster enforces **restricted Pod Security Standards**, `kubectl run` ma
 
 #### 3.3.5 AWS CLI: read-only probes aligned with operator policy
 
-Run inside the operator IRSA pod (Section 3.3.4). Replace `REGION` and `totogi-operator-role` if yours differ. These mirror the checks in `check-operator-permissions.py` / `operator-policy.json`; expect `AccessDenied` or “not found” messages when IAM or resources are missing—that still proves **network + credentials** reached the API.
+Run inside the operator IRSA pod (Section 3.3.4). Replace `REGION` and `nexus-operator-role` if yours differ. These mirror the checks in `check-operator-permissions.py` / `operator-policy.json`; expect `AccessDenied` or “not found” messages when IAM or resources are missing—that still proves **network + credentials** reached the API.
 
 ```bash
 export AWS_REGION=ap-southeast-1   # or pass --region ap-southeast-1 on each command
@@ -426,8 +426,8 @@ aws secretsmanager describe-secret --secret-id nonexistent-check-12345 2>&1 | he
 aws glue get-databases --max-items 1
 aws glue get-database --name nonexistent_check_12345 2>&1 | head -5
 
-aws iam get-role --role-name totogi-operator-role 2>&1 | head -5
-aws iam get-role-policy --role-name totogi-operator-role --policy-name totogi-operator-policy 2>&1 | head -5
+aws iam get-role --role-name nexus-operator-role 2>&1 | head -5
+aws iam get-role-policy --role-name nexus-operator-role --policy-name nexus-operator-policy 2>&1 | head -5
 
 aws eks list-clusters
 aws eks describe-cluster --name nonexistent-check-12345 2>&1 | head -5
@@ -554,7 +554,7 @@ For roles with an exact SA match (e.g. operator role), `StringEquals` is correct
 ```json
 "StringEquals": {
   "oidc.eks.<region>.amazonaws.com/id/<ID>:sub":
-    "system:serviceaccount:totogi-system:totogi-operator"
+    "system:serviceaccount:nexus-system:nexus-operator"
 }
 ```
 
@@ -634,7 +634,7 @@ kubectl edit configmap aws-auth -n kube-system
 
 ### 4.5 Job Pod Stuck in `Pending`
 
-**Symptom:** `kubectl get pod -l job-name=check-operator-permissions -n totogi-system` shows `Pending`.
+**Symptom:** `kubectl get pod -l job-name=check-operator-permissions -n nexus-system` shows `Pending`.
 
 **Cause (most common):**
 
@@ -646,23 +646,23 @@ kubectl edit configmap aws-auth -n kube-system
 
 ### 4.6 Operator Pod in `CrashLoopBackOff`
 
-**Symptom:** `kubectl get pods -n totogi-system` shows the operator with many restarts and `CrashLoopBackOff`.
+**Symptom:** `kubectl get pods -n nexus-system` shows the operator with many restarts and `CrashLoopBackOff`.
 
-**Cause:** A pending `TotogiCapability` CR triggers the operator's reconciliation loop. Without VPC endpoints, the operator cannot reach DynamoDB/Glue/S3 and eventually gets OOM-killed (exit code 137).
+**Cause:** A pending `NexusCapability` CR triggers the operator's reconciliation loop. Without VPC endpoints, the operator cannot reach DynamoDB/Glue/S3 and eventually gets OOM-killed (exit code 137).
 
 **Fix:**
 
 ```bash
 # 1. Remove the pending capability to stop the crash loop
-kubectl delete totogicapability <name> -n <namespace> --timeout=30s 2>/dev/null || \
-  kubectl patch totogicapability <name> -n <namespace> \
+kubectl delete nexuscapability <name> -n <namespace> --timeout=30s 2>/dev/null || \
+  kubectl patch nexuscapability <name> -n <namespace> \
     --type merge -p '{"metadata":{"finalizers":[]}}'
 
 # 2. Delete the crashing pod (deployment will recreate it)
-kubectl delete pod -n totogi-system -l app.kubernetes.io/name=totogi-operator
+kubectl delete pod -n nexus-system -l app.kubernetes.io/name=nexus-operator
 
 # 3. Wait for the new pod to stabilize (no pending capability = no crash)
-sleep 30 && kubectl get pods -n totogi-system
+sleep 30 && kubectl get pods -n nexus-system
 ```
 
 Once stable, create the required VPC endpoints before re-applying any capability.
@@ -725,24 +725,24 @@ PERM_CHECK_SSL_VERIFY=0 ./operator-nexus-test.sh check-app
 
 The Job manifests pass `PERM_CHECK_SSL_VERIFY` through from your shell (default `1` = normal verification).
 
-### 4.10 Operator: `cannot list resource "totoginetworkconfigs"` (403) after redeploy
+### 4.10 Operator: `cannot list resource "nexusnetworkconfigs"` (403) after redeploy
 
-**Symptom:** Kopf logs show `User "system:serviceaccount:totogi-system:totogi-operator" cannot list resource "totoginetworkconfigs" ... at the cluster scope`.
+**Symptom:** Kopf logs show `User "system:serviceaccount:nexus-system:nexus-operator" cannot list resource "nexusnetworkconfigs" ... at the cluster scope`.
 
-**Cause:** `./operator-nexus-test.sh deploy` runs `backend/scripts/deploy_operator_to_cluster.py`, which creates/replaces **ClusterRole `totogi-operator-role`** (and binding `totogi-operator-binding`). That role is **not** the same object as **`ClusterRole/totogi-operator`** in `kube-operator/manifests/rbac.yaml`. If the Python deploy path never included `totoginetworkconfigs`, every redeploy kept a role **without** those permissions—applying `rbac.yaml` alone does not update `totogi-operator-role` unless you also bind the SA to that separate role.
+**Cause:** `./operator-nexus-test.sh deploy` runs `backend/scripts/deploy_operator_to_cluster.py`, which creates/replaces **ClusterRole `nexus-operator-role`** (and binding `nexus-operator-binding`). That role is **not** the same object as **`ClusterRole/nexus-operator`** in `kube-operator/manifests/rbac.yaml`. If the Python deploy path never included `nexusnetworkconfigs`, every redeploy kept a role **without** those permissions—applying `rbac.yaml` alone does not update `nexus-operator-role` unless you also bind the SA to that separate role.
 
-**Fix:** Deploy from a tree where `operator_deployment_service._create_rbac()` includes **`totoginetworkconfigs`** (and subresources), then re-run deploy with **`--force`**, or patch the live role:
+**Fix:** Deploy from a tree where `operator_deployment_service._create_rbac()` includes **`nexusnetworkconfigs`** (and subresources), then re-run deploy with **`--force`**, or patch the live role:
 
 ```bash
-kubectl get clusterrole totogi-operator-role -o yaml   # confirm rules
+kubectl get clusterrole nexus-operator-role -o yaml   # confirm rules
 # Re-run: cd ../backend && python3 scripts/deploy_operator_to_cluster.py --cluster <name> --region <region> --profile <profile> --force
-kubectl rollout restart deployment/totogi-operator -n totogi-system
+kubectl rollout restart deployment/nexus-operator -n nexus-system
 ```
 
 **Verify:**
 
 ```bash
-kubectl auth can-i list totoginetworkconfigs --as=system:serviceaccount:totogi-system:totogi-operator
+kubectl auth can-i list nexusnetworkconfigs --as=system:serviceaccount:nexus-system:nexus-operator
 ```
 
 ### 4.11 `InvalidIdentityToken` / No OpenIDConnect provider for `oidc.eks.../id/...`
@@ -759,7 +759,7 @@ kubectl auth can-i list totoginetworkconfigs --as=system:serviceaccount:totogi-s
 |---|---|
 | Provider never created | Run IAM setup from `ADMIN-SETUP.md` Step 1 or `./operator-nexus-test.sh fix-irsa` (from a machine with IAM API access). |
 | **Wrong cluster / Blue–Green** | The token’s `<OIDC_ID>` must match **this** EKS cluster. Compare `aws eks describe-cluster --name <cluster> --query cluster.identity.oidc.issuer` with the URL in the error. If you moved workloads to a new cluster, register **that** cluster’s issuer and update role trust policies. |
-| **Wrong AWS account** | OIDC provider must exist in the **same account** as `totogi-operator-role`. |
+| **Wrong AWS account** | OIDC provider must exist in the **same account** as `nexus-operator-role`. |
 
 **Verify (replace account and issuer path):**
 
@@ -777,7 +777,7 @@ aws iam get-open-id-connect-provider \
 
 `NoSuchEntity` means you must **create** the provider (see `ADMIN-SETUP.md` Step 1 — thumbprint + `create-open-id-connect-provider`, audience `sts.amazonaws.com`).
 
-**After the provider exists**, restart the operator pod so boto3 refreshes credentials: `kubectl rollout restart deployment/totogi-operator -n totogi-system`.
+**After the provider exists**, restart the operator pod so boto3 refreshes credentials: `kubectl rollout restart deployment/nexus-operator -n nexus-system`.
 
 ---
 
@@ -940,7 +940,7 @@ aws ec2 create-vpc-endpoint \
 **`spec.internalIngress.enabled` is true but `spec.ingress.enabled` is false or missing.**  
 The operator only creates Kubernetes `Ingress` objects (and thus ALBs via the AWS Load Balancer Controller) when **`ingress.enabled: true`**. The internal ALB is a *second* Ingress; it is never created unless the public Ingress path is enabled.
 
-Fix: set both in the `TotogiCapability` spec:
+Fix: set both in the `NexusCapability` spec:
 
 ```yaml
 ingress:
@@ -972,7 +972,7 @@ Then re-apply the CR and wait for phase **Running** (or watch operator logs for 
 
    Look for errors about subnets, security groups, certificates, or permissions.
 
-3. **Subnets / security groups** (internal ALB): subnets must be **in the cluster VPC** (usually private subnets for `scheme: internal`). The security group must allow traffic from clients to the ALB and from the ALB to pod targets. The **Load Balancer Controller’s** IAM role must be allowed to create/manage ALBs and use those subnets/SGs—not the Totogi app role.
+3. **Subnets / security groups** (internal ALB): subnets must be **in the cluster VPC** (usually private subnets for `scheme: internal`). The security group must allow traffic from clients to the ALB and from the ALB to pod targets. The **Load Balancer Controller’s** IAM role must be allowed to create/manage ALBs and use those subnets/SGs—not the Nexus AI app role.
 
 4. **`AmazonEKSLoadBalancerControllerRole` NOT FOUND** in inspect: the script checks a **fixed role name**; your cluster may use a different IAM role for the controller. Confirm the controller’s actual service account annotation (`eks.amazonaws.com/role-arn`) instead.
 
@@ -982,8 +982,8 @@ Then re-apply the CR and wait for phase **Running** (or watch operator logs for 
 
 | File | Role / Resource | Purpose | Validated By |
 |------|-----------------|---------|--------------|
-| `operator-policy.json` | `totogi-operator-role` (inline policy) | DynamoDB, S3, SSM, Secrets, Glue, IAM, EKS, Cognito, EC2/VPC | `check-operator-permissions.py` |
-| `operator-trust-policy.json` | `totogi-operator-role` (trust relationship) | IRSA trust for SA `totogi-system:totogi-operator` | `check-operator` (identity check) |
+| `operator-policy.json` | `nexus-operator-role` (inline policy) | DynamoDB, S3, SSM, Secrets, Glue, IAM, EKS, Cognito, EC2/VPC | `check-operator-permissions.py` |
+| `operator-trust-policy.json` | `nexus-operator-role` (trust relationship) | IRSA trust for SA `nexus-system:nexus-operator` | `check-operator` (identity check) |
 | `app-policy.json` | `<cap>-<env>-app-role` (inline policy) | DynamoDB, S3, SSM, Secrets, Glue, Athena, Cognito, CloudWatch Logs | `check-app-permissions.py` |
 | `app-trust-policy.json` | `<cap>-<env>-app-role` (trust relationship) | IRSA trust for SA `<cap>-<env>:<cap>-<env>-app-sa` | `check-app` (identity check) |
 | `deployer-policy.json` | Jumpbox role (e.g. `SH-Role-EKS-JH`) | EKS, ECR, IAM read/pass, SSM, Secrets, Cognito, S3, Logs, ACM | N/A (jumpbox CLI) |

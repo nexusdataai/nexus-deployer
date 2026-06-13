@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Welcome & Capability UI Redesign
 
 ## Overview
 
-This design document outlines the UI redesign for the Welcome Screen and Capability Selection screens in the Totogi Capability Installer. The goal is to simplify the welcome experience with a clean hero graphic representing Telco Business Capability deployment, show supported deployment platforms with visual indicators, and reorganize the capability selection to clearly distinguish between installed and available capabilities with appropriate actions.
+This design document outlines the UI redesign for the Welcome Screen and Capability Selection screens in the Nexus AI Capability Installer. The goal is to simplify the welcome experience with a clean hero graphic representing Telco Business Capability deployment, show supported deployment platforms with visual indicators, and reorganize the capability selection to clearly distinguish between installed and available capabilities with appropriate actions.
 
 ## Architecture
 
@@ -56,7 +57,7 @@ const DEPLOYMENT_PLATFORMS: DeploymentPlatform[] = [
 
 // Component structure:
 // - Hero illustration (SVG graphic representing Telco Business Capability)
-// - Title: "Totogi Capability Installer"
+// - Title: "Nexus AI Capability Installer"
 // - Subtitle: "Deploy Business Capability in your Environment"
 // - Platform icons row with support indicators
 // - "Get Started" button
@@ -89,7 +90,7 @@ interface PlatformIconProps {
 │              │      ↓ to Cloud         │                │
 │              └─────────────────────────┘                │
 │                                                         │
-│           Totogi Capability Installer                   │
+│           Nexus AI Capability Installer                   │
 │                                                         │
 │     Deploy Business Capability in your Environment      │
 │                                                         │

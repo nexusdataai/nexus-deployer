@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Implementation Plan: Installer Uninstall Cleanup
 
 ## Overview
@@ -55,7 +56,7 @@ This implementation plan addresses the issue where the backend process remains r
 
 - [x] 6. Create temp file cleanup script
   - [x] 6.1 Create electron/scripts/cleanup-temp.ps1
-    - Remove totogi-* temp files
+    - Remove nexus-* temp files
     - Remove PyInstaller temp directories
     - Remove crash dumps and error logs
     - _Requirements: 6.1, 6.2, 6.3_
@@ -65,8 +66,8 @@ This implementation plan addresses the issue where the backend process remains r
 
 - [x] 7. Create registry cleanup script
   - [x] 7.1 Create electron/scripts/cleanup-registry.ps1
-    - Remove HKCU\Software\totogi-installer keys
-    - Remove HKLM\Software\totogi-installer keys (if admin)
+    - Remove HKCU\Software\nexus-installer keys
+    - Remove HKLM\Software\nexus-installer keys (if admin)
     - Log registry cleanup actions
     - _Requirements: 4.1, 4.2, 4.3_
   - [x] 7.2 Write property test for registry cleanup
@@ -76,7 +77,7 @@ This implementation plan addresses the issue where the backend process remains r
 - [x] 8. Create uninstall logger module
   - [x] 8.1 Create electron/scripts/uninstall-logger.ps1
     - Implement logging functions
-    - Create log file at %TEMP%\totogi-uninstall.log
+    - Create log file at %TEMP%\nexus-uninstall.log
     - Add action logging with timestamps
     - Add summary generation
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
@@ -133,7 +134,7 @@ This implementation plan addresses the issue where the backend process remains r
   - Install application
   - Run backend process
   - Uninstall application
-  - Verify Task Manager shows no totogi-backend.exe
+  - Verify Task Manager shows no nexus-installer-backend.exe
   - Verify application data cleanup (when opted in)
   - Verify registry is clean
   - Ensure all tests pass, ask the user if questions arise

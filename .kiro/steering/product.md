@@ -1,6 +1,7 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Product Overview
 
-## Totogi Customer Toolkit
+## Nexus AI Customer Toolkit
 
 An enterprise-ready Management toolkit that enables customers to deploy modular business capabilities into their own AWS accounts. The solution provides a guided, license-controlled deployment experience with comprehensive operational tooling.
 

@@ -126,7 +126,7 @@ class ReachabilityProbe:
 
     def _pod_name(self, capability_name: str, environment: str) -> str:
         # Use a timestamped suffix so retries don't collide.
-        return f"totogi-reachability-probe-{capability_name}-{environment}-{int(time.time())}"
+        return f"nexus-reachability-probe-{capability_name}-{environment}-{int(time.time())}"
 
     def build_pod_spec(
         self,
@@ -142,8 +142,8 @@ class ReachabilityProbe:
                 "name": pod_name,
                 "namespace": namespace,
                 "labels": {
-                    "app.kubernetes.io/managed-by": "totogi-deployer",
-                    "totogi.com/diagnostic": "reachability-probe",
+                    "app.kubernetes.io/managed-by": "nexus-deployer",
+                    "nexus.ai/diagnostic": "reachability-probe",
                 },
             },
             "spec": {

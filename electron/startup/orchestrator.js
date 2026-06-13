@@ -407,9 +407,9 @@ class StartupOrchestrator {
   _killOrphanedProcesses() {
     try {
       if (process.platform === 'win32') {
-        execSync('taskkill /F /IM totogi-backend.exe /T', { stdio: 'ignore' });
+        execSync('taskkill /F /IM nexus-installer-backend.exe /T', { stdio: 'ignore' });
       } else {
-        execSync('pkill -f totogi-backend', { stdio: 'ignore' });
+        execSync('pkill -f nexus-installer-backend', { stdio: 'ignore' });
       }
     } catch (error) {
       // No processes found - this is fine

@@ -1,4 +1,4 @@
-# Totogi Installer - Smart Startup Script
+# Nexus AI Installer - Smart Startup Script
 # This script will:
 # 1. Check and stop existing processes on ports 8001 and 5173
 # 2. Start backend with venv
@@ -7,7 +7,7 @@
 # 5. Open browser
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Totogi Installer - Smart Startup" -ForegroundColor Cyan
+Write-Host "  Nexus AI Installer - Smart Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

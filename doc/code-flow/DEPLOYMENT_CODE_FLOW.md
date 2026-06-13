@@ -1,12 +1,12 @@
 # Deployment Code Flow
 
-This document explains the complete deployment flow from user click to resource creation in the Totogi Installer. The system supports two deployment architectures: **CloudFormation-based** (traditional) and **EKS Kubernetes Operator-based** (pure-eks-deployment).
+This document explains the complete deployment flow from user click to resource creation in the Nexus AI Installer. The system supports two deployment architectures: **CloudFormation-based** (traditional) and **EKS Kubernetes Operator-based** (pure-eks-deployment).
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                           TOTOGI INSTALLER ARCHITECTURE                              │
+│                           NEXUS AI INSTALLER ARCHITECTURE                            │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                      │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────────────────────────────┐ │
@@ -26,7 +26,7 @@ This document explains the complete deployment flow from user click to resource 
 │         │                    │              ▼                         ▼             │
 │         │                    │  ┌─────────────────────┐  ┌─────────────────────────┐│
 │         │                    │  │  AWS CloudFormation │  │  Kubernetes Operator    ││
-│         │                    │  │  (10 Stacks)        │  │  (TotogiCapability CR)  ││
+│         │                    │  │  (10 Stacks)        │  │  (NexusCapability CR)  ││
 │         │                    │  └─────────────────────┘  └─────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -161,7 +161,7 @@ The EKS deployment path uses a Kubernetes Operator pattern to provision AWS reso
 │                                    ▼                                                 │
 │                         ┌─────────────────────┐                                      │
 │                         │  2. Create          │                                      │
-│                         │  TotogiCapability CR│                                      │
+│                         │  NexusCapability CR│                                      │
 │                         └──────────┬──────────┘                                      │
 │                                    │                                                 │
 │                                    ▼                                                 │
@@ -200,7 +200,7 @@ const handleStartEKSDeployment = async () => {
     await eksApi.deployOperator({ cluster_name: clusterName });
   }
   
-  // Stage 2: Create TotogiCapability CR (30-50%)
+  // Stage 2: Create NexusCapability CR (30-50%)
   const crResult = await eksApi.deployCapability({
     cluster_name: clusterName,
     capability_name: capabilityName,
@@ -230,8 +230,8 @@ Key endpoints:
 - `GET /api/eks/clusters` - List EKS clusters
 - `GET /api/eks/clusters/{name}` - Get cluster details
 - `GET /api/eks/clusters/{name}/operator-status` - Check operator installation
-- `POST /api/eks/clusters/{name}/deploy-operator` - Deploy Totogi Operator
-- `POST /api/eks/clusters/{name}/deploy-capability` - Create TotogiCapability CR
+- `POST /api/eks/clusters/{name}/deploy-operator` - Deploy Nexus AI Operator
+- `POST /api/eks/clusters/{name}/deploy-capability` - Create NexusCapability CR
 - `GET /api/eks/clusters/{name}/capability/{cr_name}/status` - Get capability status
 
 ### Layer 3: EKS Service
@@ -244,12 +244,12 @@ class EKSService:
         """List all EKS clusters in the region."""
         
     async def deploy_operator(self, cluster_name: str, operator_version: Optional[str] = None):
-        """Deploy the Totogi Operator to the cluster."""
+        """Deploy the Nexus AI Operator to the cluster."""
         service = get_operator_deployment_service(aws_session_id, region)
         return await service.deploy_operator(cluster_name, operator_version)
     
     async def deploy_capability(self, cluster_name: str, capability_name: str, ...):
-        """Deploy a capability by creating a TotogiCapability CR."""
+        """Deploy a capability by creating a NexusCapability CR."""
         service = get_operator_deployment_service(aws_session_id, region)
         return await service.create_capability_cr(...)
 ```
@@ -262,22 +262,22 @@ class EKSService:
 class OperatorDeploymentService:
     async def deploy_operator(self, cluster_name: str, operator_version: Optional[str] = None):
         """
-        Deploy the Totogi Operator to an EKS cluster.
+        Deploy the Nexus AI Operator to an EKS cluster.
         
         Steps:
-        1. Create totogi-system namespace
+        1. Create nexus-system namespace
         2. Create IAM role with IRSA trust policy
         3. Create ServiceAccount with IAM role annotation
-        4. Apply CRD (TotogiCapability)
+        4. Apply CRD (NexusCapability)
         5. Create RBAC (ClusterRole, ClusterRoleBinding)
         6. Deploy operator Deployment
         """
         
     async def create_capability_cr(self, cluster_name: str, capability_name: str, ...):
-        """Create a TotogiCapability Custom Resource."""
+        """Create a NexusCapability Custom Resource."""
         cr = {
-            "apiVersion": "totogi.com/v1",
-            "kind": "TotogiCapability",
+            "apiVersion": "nexus.ai/v1",
+            "kind": "NexusCapability",
             "metadata": {"name": cr_name, "namespace": namespace},
             "spec": {
                 "capabilityName": capability_name,
@@ -298,15 +298,15 @@ class OperatorDeploymentService:
 
 ### Layer 5: Kubernetes Operator (kopf-based)
 
-**File:** `kube-operator/src/totogi_operator/main.py`
+**File:** `kube-operator/src/nexus_operator/main.py`
 
-The operator uses [kopf](https://kopf.readthedocs.io/) framework to watch for TotogiCapability CRs and reconcile them.
+The operator uses [kopf](https://kopf.readthedocs.io/) framework to watch for NexusCapability CRs and reconcile them.
 
 ```python
-@kopf.on.create("totogi.com", "v1", "totogicapabilities")
+@kopf.on.create("nexus.ai", "v1", "nexuscapabilities")
 async def create_capability(spec: dict, name: str, namespace: str, ...):
     """
-    Handle TotogiCapability creation.
+    Handle NexusCapability creation.
     
     Phases:
     1. Provisioning - Create AWS data services
@@ -356,7 +356,7 @@ async def create_capability(spec: dict, name: str, namespace: str, ...):
 
 ### Operator Resource Provisioners
 
-**Directory:** `kube-operator/src/totogi_operator/resources/`
+**Directory:** `kube-operator/src/nexus_operator/resources/`
 
 | File | Purpose |
 |------|---------|
@@ -368,14 +368,14 @@ async def create_capability(spec: dict, name: str, namespace: str, ...):
 | `iam.py` | Create IAM roles with IRSA trust policy |
 | `kubernetes.py` | Create K8s resources (Deployments, Services, Ingress) |
 
-### TotogiCapability CRD Schema
+### NexusCapability CRD Schema
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-dev
-  namespace: totogi-apps
+  namespace: nexus-apps
 spec:
   capabilityName: call-processing
   version: "1.0.0"
@@ -473,10 +473,10 @@ React Frontend (handleStartEKSDeployment)
        │         └── POST /api/eks/clusters/{name}/deploy-operator
        │                  │
        │                  └── OperatorDeploymentService.deploy_operator()
-       │                           ├── Create namespace (totogi-system)
+       │                           ├── Create namespace (nexus-system)
        │                           ├── Create IAM role with IRSA
        │                           ├── Create ServiceAccount
-       │                           ├── Apply TotogiCapability CRD
+       │                           ├── Apply NexusCapability CRD
        │                           ├── Create RBAC
        │                           └── Deploy operator Deployment
        │
@@ -484,7 +484,7 @@ React Frontend (handleStartEKSDeployment)
        │         └── POST /api/eks/clusters/{name}/deploy-capability
        │                  │
        │                  └── OperatorDeploymentService.create_capability_cr()
-       │                           └── Create TotogiCapability CR
+       │                           └── Create NexusCapability CR
        │
        └──▶ Poll eksApi.getCapabilityStatus()
                  └── GET /api/eks/clusters/{name}/capability/{cr}/status
@@ -576,20 +576,20 @@ React Frontend (handleStartEKSDeployment)
 ### Kubernetes Operator
 | File | Purpose |
 |------|---------|
-| `kube-operator/src/totogi_operator/main.py` | Operator entry point and kopf handlers |
-| `kube-operator/src/totogi_operator/resources/dynamodb.py` | DynamoDB provisioner |
-| `kube-operator/src/totogi_operator/resources/s3.py` | S3 provisioner |
-| `kube-operator/src/totogi_operator/resources/glue.py` | Glue provisioner |
-| `kube-operator/src/totogi_operator/resources/ssm.py` | SSM parameter provisioner |
-| `kube-operator/src/totogi_operator/resources/secrets.py` | Secrets Manager provisioner |
-| `kube-operator/src/totogi_operator/resources/iam.py` | IAM role provisioner |
-| `kube-operator/src/totogi_operator/resources/kubernetes.py` | K8s resource creator |
-| `kube-operator/src/totogi_operator/utils/naming.py` | Resource naming conventions |
+| `kube-operator/src/nexus_operator/main.py` | Operator entry point and kopf handlers |
+| `kube-operator/src/nexus_operator/resources/dynamodb.py` | DynamoDB provisioner |
+| `kube-operator/src/nexus_operator/resources/s3.py` | S3 provisioner |
+| `kube-operator/src/nexus_operator/resources/glue.py` | Glue provisioner |
+| `kube-operator/src/nexus_operator/resources/ssm.py` | SSM parameter provisioner |
+| `kube-operator/src/nexus_operator/resources/secrets.py` | Secrets Manager provisioner |
+| `kube-operator/src/nexus_operator/resources/iam.py` | IAM role provisioner |
+| `kube-operator/src/nexus_operator/resources/kubernetes.py` | K8s resource creator |
+| `kube-operator/src/nexus_operator/utils/naming.py` | Resource naming conventions |
 
 ### Operator Manifests
 | File | Purpose |
 |------|---------|
-| `kube-operator/manifests/crd.yaml` | TotogiCapability CRD definition |
+| `kube-operator/manifests/crd.yaml` | NexusCapability CRD definition |
 | `kube-operator/manifests/rbac.yaml` | Operator RBAC configuration |
 | `kube-operator/manifests/deployment.yaml` | Operator deployment manifest |
 
@@ -644,10 +644,10 @@ The operator handles errors at multiple levels:
 
 ### EKS Operator Deployment Logs
 ```
-[10:50:02 PM] Checking if Totogi Operator is installed on cluster...
+[10:50:02 PM] Checking if Nexus AI Operator is installed on cluster...
 [10:50:05 PM] Operator already installed (version: latest)
-[10:50:06 PM] Creating TotogiCapability Custom Resource...
-[10:50:08 PM] TotogiCapability 'call-processing-dev' created in namespace 'totogi-apps'
+[10:50:06 PM] Creating NexusCapability Custom Resource...
+[10:50:08 PM] NexusCapability 'call-processing-dev' created in namespace 'nexus-apps'
 [10:50:10 PM] [Provisioning] Provisioning AWS data services
 [10:50:25 PM] [Provisioning] DynamoDB tables created
 [10:50:35 PM] [Provisioning] S3 buckets created

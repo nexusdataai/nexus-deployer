@@ -31,7 +31,7 @@ if [ -z "$ACCOUNT_ID" ]; then
     exit 1
 fi
 
-LOG_GROUP="/totogi/nexus-ai/${DEPLOY_ENV}"
+LOG_GROUP="/nexus/nexus-ai/${DEPLOY_ENV}"
 NAMESPACE_PREFIX="CallSense-${DEPLOY_ENV}"
 DASHBOARD_NAME="CallSense-${DEPLOY_ENV}-Monitoring"
 SNS_TOPIC_NAME="callsense-${DEPLOY_ENV}-alerts"

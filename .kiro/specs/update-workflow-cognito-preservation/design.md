@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Update Workflow Cognito Preservation
 
 ## Overview
 
-This design document describes the architecture and implementation approach for differentiating install and update workflows in the Totogi Customer Toolkit deployer, with a primary focus on preserving Cognito User Pool data during update operations.
+This design document describes the architecture and implementation approach for differentiating install and update workflows in the Nexus AI Customer Toolkit deployer, with a primary focus on preserving Cognito User Pool data during update operations.
 
 The current system treats both install and update operations similarly, which can result in the Cognito User Pool being recreated during updates, erasing all user data. This design introduces workflow classification, selective stack updates, and data preservation mechanisms to ensure user authentication data is protected during capability updates.
 

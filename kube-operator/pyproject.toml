@@ -1,14 +1,14 @@
 [project]
-name = "totogi-operator"
+name = "nexus-operator"
 version = "0.1.0"
-description = "Kubernetes Operator for Totogi Capability deployments"
+description = "Kubernetes Operator for Nexus AI Capability deployments"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Proprietary"}
 authors = [
-    {name = "Totogi", email = "support@totogi.com"}
+    {name = "Nexus AI", email = "support@nexus.ai"}
 ]
-keywords = ["kubernetes", "operator", "totogi", "aws", "eks"]
+keywords = ["kubernetes", "operator", "nexus", "aws", "eks"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -39,14 +39,14 @@ dev = [
 ]
 
 [project.scripts]
-totogi-operator = "totogi_operator.main:main"
+nexus-operator = "nexus_operator.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/totogi_operator"]
+packages = ["src/nexus_operator"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

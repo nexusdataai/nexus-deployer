@@ -1,11 +1,11 @@
 # uninstall-logger.ps1
-# Logging module for Totogi Installer uninstallation
+# Logging module for Nexus AI Installer uninstallation
 #
 # This module provides logging functions for the uninstall process.
 # It can be dot-sourced by other scripts: . .\uninstall-logger.ps1
 
 param(
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 # Global log file path
@@ -38,7 +38,7 @@ function Initialize-UninstallLog {
     try {
         $header = @"
 ========================================
-Totogi Installer Uninstall Log
+Nexus AI Installer Uninstall Log
 ========================================
 Started: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Computer: $env:COMPUTERNAME

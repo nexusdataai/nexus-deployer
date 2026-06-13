@@ -15,7 +15,7 @@ from hypothesis import given, strategies as st, settings
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from totogi_operator.utils.naming import ResourceNaming
+from nexus_operator.utils.naming import ResourceNaming
 
 
 def get_trust_policy(account_id: str, oidc_provider: str, namespace: str, service_account: str) -> dict:

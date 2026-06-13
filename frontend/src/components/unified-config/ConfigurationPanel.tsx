@@ -155,7 +155,7 @@ const DomainCDNTab: React.FC<TabProps> = ({ config, renderInput }) => {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Base Domain</label>
-            {renderInput('infrastructure.domain.base', config.infrastructure.domain.base || 'totogicore.com', 'text')}
+            {renderInput('infrastructure.domain.base', config.infrastructure.domain.base || 'nexus.ai', 'text')}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Hosted Zone ID</label>

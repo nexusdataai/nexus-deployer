@@ -1,6 +1,6 @@
-# Totogi Kubernetes Operator
+# Nexus AI Kubernetes Operator
 
-A Kubernetes Operator for managing Totogi Capability deployments on EKS clusters.
+A Kubernetes Operator for managing Nexus AI Capability deployments on EKS clusters.
 
 ## Table of Contents
 
@@ -9,7 +9,7 @@ A Kubernetes Operator for managing Totogi Capability deployments on EKS clusters
 - [Quick Start](#quick-start)
 - [E2E Deployment Pipeline](#e2e-deployment-pipeline)
 - [Management Commands](#management-commands)
-- [TotogiCapability Custom Resource](#totogicapability-custom-resource)
+- [NexusCapability Custom Resource](#nexuscapability-custom-resource)
 - [Deployment Flow](#deployment-flow)
 - [ALB Ingress](#alb-ingress)
 - [BSS Magic Runtime](#bss-magic-runtime)
@@ -26,7 +26,7 @@ A Kubernetes Operator for managing Totogi Capability deployments on EKS clusters
 
 ## Overview
 
-The Totogi Operator automates the full lifecycle of Totogi capabilities in Kubernetes. When you create a `TotogiCapability` custom resource, the operator:
+The Nexus AI Operator automates the full lifecycle of Nexus AI capabilities in Kubernetes. When you create a `NexusCapability` custom resource, the operator:
 
 1. Provisions AWS data services (DynamoDB, S3, Glue)
 2. Creates SSM Parameters and Secrets Manager secrets
@@ -51,9 +51,9 @@ The Totogi Operator automates the full lifecycle of Totogi capabilities in Kuber
 ┌──────────────────────────────┼────────────┼──────────────┼────────┐
 │  EKS Cluster                 │            │              │        │
 │                              │            │              │        │
-│  totogi-system namespace     │            │              │        │
+│  nexus-system namespace     │            │              │        │
 │  ┌────────────────────────┐  │            │              │        │
-│  │    Totogi Operator     │  │            │              │        │
+│  │    Nexus AI Operator     │  │            │              │        │
 │  │  Watches CRs, provisions │            │              │        │
 │  │  AWS + K8s resources   │  │            │              │        │
 │  └────────────────────────┘  │            │              │        │
@@ -145,10 +145,10 @@ flowchart LR
 | Step | Name | Script / Command | What It Does | Skip Flag |
 |:----:|------|------------------|--------------|-----------|
 | 1 | **Cleanup** | `operator-nexus-test.sh delete --full` | Remove operator, IAM, ECR, ALB Controller. Refresh kubeconfig. | `--skip-clean` |
-| 2 | **Build Operator** | `build-and-push.sh` | Build `totogi-operator` image, push to ECR | -- |
+| 2 | **Build Operator** | `build-and-push.sh` | Build `nexus-operator` image, push to ECR | -- |
 | 3 | **Build Apps** | `nexus-backend/build.sh` + `nexus-ui/build.sh` | Build `ai-job-engine` + `nexus-ui` images, push to ECR | `--skip-app-build` |
 | 4 | **Deploy Operator** | `operator-nexus-test.sh deploy` | Create namespace, apply CRD + RBAC + Deployment, install ALB Controller | -- |
-| 5 | **Apply Capability** | `kubectl apply -f capability.yaml` | Create namespace, apply TotogiCapability CR, trigger reconciliation | -- |
+| 5 | **Apply Capability** | `kubectl apply -f capability.yaml` | Create namespace, apply NexusCapability CR, trigger reconciliation | -- |
 | 6 | **Monitor & Wait** | `operator-nexus-test.sh monitor` | Watch AWS provisioning, wait for pods Ready, ALB DNS, HTTP response | -- |
 | 7 | **Verify** | `operator-nexus-test.sh verify-capability` | Validate AWS resources, K8s workloads, app health, IRSA connectivity | -- |
 
@@ -159,14 +159,14 @@ sequenceDiagram
     actor Dev as Developer
     participant ECR as AWS ECR
     participant EKS as EKS Cluster
-    participant Op as Totogi Operator
+    participant Op as Nexus AI Operator
 
     Note over Dev,Op: Step 1 - Cleanup (skippable)
     Dev->>EKS: Delete operator, IAM, ALB Controller
     Dev->>EKS: Refresh kubeconfig
 
     Note over Dev,Op: Steps 2-3 - Build Images
-    Dev->>ECR: Push totogi-operator image
+    Dev->>ECR: Push nexus-operator image
     Dev->>ECR: Push ai-job-engine image
     Dev->>ECR: Push nexus-ui image
 
@@ -176,7 +176,7 @@ sequenceDiagram
     EKS-->>Dev: Operator pod running
 
     Note over Dev,Op: Step 5 - Apply Capability
-    Dev->>EKS: kubectl apply TotogiCapability CR
+    Dev->>EKS: kubectl apply NexusCapability CR
     EKS->>Op: CR created event
 
     Note over Dev,Op: Step 6 - Monitor & Wait
@@ -212,13 +212,13 @@ All commands via `./operator-nexus-test.sh`:
 
 ---
 
-## TotogiCapability Custom Resource
+## NexusCapability Custom Resource
 
 ### Minimal Example
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: myapp-dev
   namespace: myapp-dev
@@ -247,15 +247,15 @@ spec:
 ### Full Example with ALB Ingress
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-prod
   namespace: call-processing-prod
   labels:
     app.kubernetes.io/name: call-processing
     app.kubernetes.io/version: "2.5.0"
-    totogi.com/environment: prod
+    nexus.ai/environment: prod
 spec:
   capabilityName: call-processing
   version: "2.5.0"
@@ -334,7 +334,7 @@ See `examples/call-processing-complete.yaml` for a complete working example.
 
 ## Deployment Flow
 
-When you apply a TotogiCapability, the operator executes these steps (visible via `monitor`):
+When you apply a NexusCapability, the operator executes these steps (visible via `monitor`):
 
 | Step | Phase | What Happens |
 |------|-------|-------------|
@@ -587,7 +587,7 @@ This runs 4 verification sections:
 ### Operator Logs
 
 ```bash
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 ```
 
 ### Check Capability Status
@@ -871,7 +871,7 @@ aws eks update-kubeconfig --name nexus-test --region ap-southeast-1 --profile ex
 |----------|-------------|---------|
 | `AWS_REGION` | AWS region for resources | `ap-southeast-1` |
 | `EKS_CLUSTER_NAME` | Cluster name for OIDC discovery | (auto-detected) |
-| `OPERATOR_NAMESPACE` | Namespace for operator | `totogi-system` |
+| `OPERATOR_NAMESPACE` | Namespace for operator | `nexus-system` |
 | `LOG_LEVEL` | Logging verbosity | `INFO` |
 
 ---
@@ -881,10 +881,10 @@ aws eks update-kubeconfig --name nexus-test --region ap-southeast-1 --profile ex
 ```
 kube-operator/
   manifests/
-    crd.yaml                        # TotogiCapability CRD
+    crd.yaml                        # NexusCapability CRD
     deployment.yaml                 # Operator deployment manifest
     rbac.yaml                       # ClusterRole and bindings
-  src/totogi_operator/
+  src/nexus_operator/
     main.py                         # Kopf handlers (create/update/delete)
     resources/
       dynamodb.py                   # DynamoDB provisioner

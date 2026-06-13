@@ -91,7 +91,7 @@ class ConfigurationService:
         
         # Get defaults from preset service
         defaults = preset_service.get_defaults()
-        base_domain = defaults.get('base_domain', 'totogicore.com')
+        base_domain = defaults.get('base_domain', 'nexus.ai')
         hosted_zone_id = defaults.get('hosted_zone_id', 'Z084501638STQ2EKKSIA')
         
         # Determine subdomains based on environment

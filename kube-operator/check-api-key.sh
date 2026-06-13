@@ -377,8 +377,8 @@ esac
 case "$PROBLEMS" in
     *frontend-configmap-missing*)
         red "  ConfigMap $FRONTEND_CM does not exist. This requires a full operator"
-        red "  reconcile to recreate (e.g., kubectl rollout restart -n totogi-system"
-        red "  deploy/totogi-operator, then re-run this script)."
+        red "  reconcile to recreate (e.g., kubectl rollout restart -n nexus-system"
+        red "  deploy/nexus-operator, then re-run this script)."
         red "  WARNING: if the operator is still on the pre-idempotent image, the"
         red "  restart will rotate the backend API_KEY too. Roll out the operator"
         red "  with the kubernetes.py fix first to avoid that cycle."

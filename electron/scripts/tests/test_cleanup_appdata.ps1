@@ -54,13 +54,13 @@ Write-TestResult "Has LogFile parameter" $hasLogFile
 # Test 3: Target directories
 Write-Host "`n=== Test 3: Target Directories ===" -ForegroundColor Cyan
 
-$hasAppData = $scriptContent -match 'APPDATA.*totogi-installer'
-$hasLocalAppData = $scriptContent -match 'LOCALAPPDATA.*totogi-installer'
-$hasTotogiInstaller = $scriptContent -match 'Totogi Installer'
+$hasAppData = $scriptContent -match 'APPDATA.*nexus-installer'
+$hasLocalAppData = $scriptContent -match 'LOCALAPPDATA.*nexus-installer'
+$hasNexusInstaller = $scriptContent -match 'Nexus AI Installer'
 
 Write-TestResult "Targets APPDATA directory" $hasAppData
 Write-TestResult "Targets LOCALAPPDATA directory" $hasLocalAppData
-Write-TestResult "Targets 'Totogi Installer' directory" $hasTotogiInstaller
+Write-TestResult "Targets 'Nexus AI Installer' directory" $hasNexusInstaller
 
 # Test 4: Safe removal function
 Write-Host "`n=== Test 4: Safe Removal Logic ===" -ForegroundColor Cyan

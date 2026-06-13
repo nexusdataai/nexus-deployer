@@ -296,7 +296,7 @@ class ResourceNaming:
         """
         Generate CloudWatch log group name.
         
-        Pattern: /totogi/{capability}/{env}
+        Pattern: /nexus/{capability}/{env}
         """
         return f"/nexus/{self.capability_name}/{self.environment}"
     

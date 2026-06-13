@@ -42,7 +42,7 @@ INTERFACE_SERVICES = [
 
 SG_TAG_KEY = "nexus-operator"
 SG_TAG_VALUE = "vpc-endpoints"
-SG_NAME = "totogi-vpc-endpoints"
+SG_NAME = "nexus-vpc-endpoints"
 
 VPC_PROFILE_TAG = "nexus:network-profile"
 NAT_INSTANCE_TAG = "nexus:nat-instance"
@@ -218,7 +218,7 @@ class VPCEndpointProvisioner:
                 TagSpecifications=[{
                     "ResourceType": "vpc-endpoint",
                     "Tags": [
-                        {"Key": "Name", "Value": f"totogi-{service_name.split('.')[-1]}"},
+                        {"Key": "Name", "Value": f"nexus-{service_name.split('.')[-1]}"},
                         {"Key": SG_TAG_KEY, "Value": SG_TAG_VALUE},
                     ],
                 }],
@@ -248,7 +248,7 @@ class VPCEndpointProvisioner:
                 TagSpecifications=[{
                     "ResourceType": "vpc-endpoint",
                     "Tags": [
-                        {"Key": "Name", "Value": f"totogi-{service_name.split('.')[-1]}"},
+                        {"Key": "Name", "Value": f"nexus-{service_name.split('.')[-1]}"},
                         {"Key": SG_TAG_KEY, "Value": SG_TAG_VALUE},
                     ],
                 }],
@@ -268,6 +268,37 @@ class VPCEndpointProvisioner:
 def is_legacy_provisioning_enabled() -> bool:
     """Whether the operator should provision the VPC topology (legacy mode)."""
     return os.environ.get("OPERATOR_PROVISION_LEGACY", "").strip().lower() in ("1", "true", "yes")
+
+
+def read_vpc_profile_tag(region: str, cluster_name: str) -> Optional[str]:
+    """Return the ``nexus:network-profile`` tag value of the cluster's VPC.
+
+    Used as a fallback when the NexusNetworkConfig CR is missing — lets the
+    operator pick up the cluster's intended profile straight from the VPC
+    tag stamped by ``aws-eks/create-hardened-eks-cluster.sh``. Returns
+    ``None`` on any error so callers can fall through to their own default.
+    """
+    if not cluster_name:
+        return None
+    try:
+        eks = vpc_boto3_client("eks", region_name=region)
+        ec2 = vpc_boto3_client("ec2", region_name=region)
+        vpc_id = eks.describe_cluster(name=cluster_name)["cluster"]["resourcesVpcConfig"]["vpcId"]
+        for tag in ec2.describe_vpcs(VpcIds=[vpc_id]).get("Vpcs", [{}])[0].get("Tags", []):
+            if tag.get("Key") == VPC_PROFILE_TAG:
+                value = tag.get("Value")
+                if value in VALID_MODES:
+                    return value
+                logger.warning(
+                    f"VPC tag {VPC_PROFILE_TAG}={value!r} on {vpc_id} is not a "
+                    f"recognised mode; ignoring (valid: {VALID_MODES})"
+                )
+                return None
+    except ClientError as e:
+        logger.debug(f"read_vpc_profile_tag fallback unavailable: {e}")
+    except Exception as e:
+        logger.debug(f"read_vpc_profile_tag unexpected error: {e}")
+    return None
 
 
 class NetworkTopologyValidator:

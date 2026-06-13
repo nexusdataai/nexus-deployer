@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Totogi Installer - Stop Script
+# Nexus AI Installer - Stop Script
 # This script stops all running services
 
 # Colors
@@ -11,7 +11,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}========================================"
-echo -e "  Totogi Installer - Stopping Services"
+echo -e "  Nexus AI Installer - Stopping Services"
 echo -e "========================================${NC}"
 echo ""
 

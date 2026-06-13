@@ -559,7 +559,7 @@ def _discover_eks_capabilities(
                 
                 # Check cluster tags for capability info
                 tags = cluster.get("tags", {})
-                capability_name = tags.get("CapabilityName") or tags.get("capability-name") or tags.get("totogi:capability")
+                capability_name = tags.get("CapabilityName") or tags.get("capability-name") or tags.get("nexus:capability")
                 environment = tags.get("Environment") or tags.get("environment") or tags.get("env")
                 
                 if capability_name and environment:
@@ -609,7 +609,7 @@ def _discover_eks_capabilities(
                         for ng_name in nodegroups:
                             ng_info = eks_client.describe_nodegroup(clusterName=cluster_name, nodegroupName=ng_name)
                             ng_tags = ng_info.get("nodegroup", {}).get("tags", {})
-                            ng_cap = ng_tags.get("CapabilityName") or ng_tags.get("capability-name") or ng_tags.get("totogi:capability")
+                            ng_cap = ng_tags.get("CapabilityName") or ng_tags.get("capability-name") or ng_tags.get("nexus:capability")
                             ng_env = ng_tags.get("Environment") or ng_tags.get("environment") or ng_tags.get("env")
                             if ng_cap and ng_env:
                                 _add_discovery_log(job_id, "INFO", f"    Found capability from nodegroup {ng_name}: {ng_cap} ({ng_env})")

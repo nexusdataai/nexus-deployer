@@ -102,7 +102,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
         {/* Logo/Brand */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-white">
-            Totogi Customer Toolkit
+            Nexus AI Customer Toolkit
           </h1>
         </div>
 

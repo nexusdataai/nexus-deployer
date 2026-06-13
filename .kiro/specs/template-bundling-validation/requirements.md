@@ -1,12 +1,13 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-This specification addresses the critical issue where CloudFormation templates are not properly bundled with the Totogi Installer, causing deployment failures. The deployer expects templates at runtime in a specific location (`deploy/templates/`), but these templates are not included in the installer's `extraResources` configuration, resulting in "Template not found" errors during capability deployment.
+This specification addresses the critical issue where CloudFormation templates are not properly bundled with the Nexus AI Installer, causing deployment failures. The deployer expects templates at runtime in a specific location (`deploy/templates/`), but these templates are not included in the installer's `extraResources` configuration, resulting in "Template not found" errors during capability deployment.
 
 ## Glossary
 
-- **Installer**: The Electron-based Totogi Installer application that packages the deployment wizard
+- **Installer**: The Electron-based Nexus AI Installer application that packages the deployment wizard
 - **Template_Bundle**: The collection of CloudFormation YAML templates required for capability deployment
 - **Template_Validator**: A component that verifies template presence and integrity before deployment
 - **Resource_Resolver**: A component that determines the correct path to bundled resources at runtime

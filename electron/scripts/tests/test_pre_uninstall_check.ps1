@@ -37,7 +37,7 @@ function Assert-NotNull {
 }
 
 function New-TestDirectory {
-    $testDir = Join-Path $env:TEMP "totogi-preuninstall-test-$(Get-Random)"
+    $testDir = Join-Path $env:TEMP "nexus-preuninstall-test-$(Get-Random)"
     New-Item -ItemType Directory -Path $testDir -Force | Out-Null
     return $testDir
 }

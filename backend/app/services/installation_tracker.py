@@ -602,7 +602,7 @@ class InstallationTracker:
             account_id: AWS account ID
             cluster_arn: EKS cluster ARN
             namespace: Kubernetes namespace
-            cr_name: TotogiCapability CR name
+            cr_name: NexusCapability CR name
             operator_version: Operator version if known
             
         Returns:
@@ -660,7 +660,7 @@ class InstallationTracker:
             frontend_url: Frontend URL
             backend_url: Backend URL
             resources: Dict of provisioned AWS resources
-            cr_status: TotogiCapability CR status
+            cr_status: NexusCapability CR status
             
         Returns:
             True if updated successfully

@@ -8,7 +8,7 @@
 export type EKSClusterStatus = 'CREATING' | 'ACTIVE' | 'DELETING' | 'FAILED' | 'UPDATING' | 'PENDING';
 
 /**
- * Totogi Operator installation status
+ * Nexus AI Operator installation status
  */
 export type OperatorStatus = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unknown';
 

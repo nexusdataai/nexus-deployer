@@ -1,8 +1,8 @@
 @echo off
-REM Totogi Installer - Simple Startup Script (Batch wrapper)
+REM Nexus AI Installer - Simple Startup Script (Batch wrapper)
 
 echo ========================================
-echo   Totogi Installer - Simple Startup
+echo   Nexus AI Installer - Simple Startup
 echo ========================================
 echo.
 

@@ -1,7 +1,7 @@
 """
 Tests for OperatorDeploymentService.create_capability_cr.
 
-Ensures the CR body shape matches the TotogiCapability CRD: required spec
+Ensures the CR body shape matches the NexusCapability CRD: required spec
 keys are present, optional keys round-trip when supplied, unknown config
 keys are not blindly forwarded.
 """
@@ -72,8 +72,8 @@ async def test_create_capability_cr_builds_full_spec(service):
 
     assert result["success"] is True
     body = captured["body"]
-    assert body["apiVersion"] == "totogi.com/v1"
-    assert body["kind"] == "TotogiCapability"
+    assert body["apiVersion"] == "nexus.ai/v1"
+    assert body["kind"] == "NexusCapability"
     assert body["metadata"]["name"] == "nexus-ai-dev"
     assert body["metadata"]["namespace"] == "myapp-dev"
 

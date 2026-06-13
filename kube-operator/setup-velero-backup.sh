@@ -29,7 +29,7 @@ CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test1}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 BUCKET_NAME="${BUCKET_NAME:-${_ENV_LOCAL_BSL#s3://}}"
-BUCKET_NAME="${BUCKET_NAME:-totogi-eks-backup-bucket}"
+BUCKET_NAME="${BUCKET_NAME:-nexus-eks-backup-bucket}"
 VELERO_NAMESPACE="velero"
 VELERO_SA="velero"
 VELERO_PLUGIN_VERSION="${VELERO_PLUGIN_VERSION:-v1.11.0}"
@@ -68,7 +68,7 @@ Environment variables (or set in .env.local):
   CLUSTER_NAME           EKS cluster name       (default: from .env.local or nexus-test1)
   REGION                 AWS region             (default: us-east-1)
   AWS_PROFILE            AWS CLI profile        (default: external-access)
-  BUCKET_NAME            S3 backup bucket       (default: from .env.local BackupStorageLocation or totogi-eks-backup-bucket)
+  BUCKET_NAME            S3 backup bucket       (default: from .env.local BackupStorageLocation or nexus-eks-backup-bucket)
   VELERO_PLUGIN_VERSION  AWS plugin version     (default: v1.11.0)
 
 EOF

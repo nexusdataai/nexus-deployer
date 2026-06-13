@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Inspect TotogiCapability Resources
+# Inspect NexusCapability Resources
 # Lists all cluster and AWS resources provisioned by the operator in tabular format.
 # Reads defaults from .env.local when run from a dev machine.
 #
@@ -13,7 +13,7 @@
 #   Uses pod service account credentials (no --profile). Detected when KUBERNETES_SERVICE_HOST is set.
 #   Requires aws CLI + kubectl in the container (see kube-operator Dockerfile).
 #
-#   kubectl exec -n totogi-system deploy/totogi-operator -- \
+#   kubectl exec -n nexus-system deploy/nexus-operator -- \
 #     env DEPLOY_ENV=stage AWS_REGION=ap-southeast-1 /bin/bash /app/inspect-capability.sh
 #
 #   In-cluster AWS calls use the pod service account (IRSA). DynamoDB checks use boto3 (same as the
@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
         --cluster) CLUSTER_NAME="$2"; shift 2 ;;
         --local)   INSPECT_FORCE_LOCAL=1; shift ;;
         --help|-h)
-            echo "Inspect TotogiCapability Resources"
+            echo "Inspect NexusCapability Resources"
             echo ""
             echo "Usage: $0 [--env ENV] [--cluster NAME] [--local]"
             echo ""
@@ -129,7 +129,7 @@ taws() {
     fi
 }
 
-# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as totogi-operator process).
+# In-cluster: describe DynamoDB via boto3 (same default credential chain / IRSA as nexus-operator process).
 # Table name -> prints "STATUS|details" where details are items/billing/tags (empty if NOT FOUND).
 inspect_ddb_boto3_line() {
     local tn="$1"
@@ -241,11 +241,11 @@ header "Kubernetes Resources (Cluster: ${CLUSTER_NAME})"
 NS_STATUS=$(kubectl get ns "${NS}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NOT FOUND")
 row "Namespace: ${NS}" "${NS_STATUS}" ""
 
-# TotogiCapability CR (operator reconciliation status)
-for TCR in $(kubectl get totogicapabilities.totogi.com -n "${NS}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null); do
-    TCPHASE=$(kubectl get totogicapabilities.totogi.com "$TCR" -n "${NS}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "?")
-    TCMSG=$(kubectl get totogicapabilities.totogi.com "$TCR" -n "${NS}" -o jsonpath='{.status.message}' 2>/dev/null || echo "")
-    row "TotogiCapability: ${TCR}" "${TCPHASE}" "${TCMSG}"
+# NexusCapability CR (operator reconciliation status)
+for TCR in $(kubectl get nexuscapabilities.nexus.ai -n "${NS}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null); do
+    TCPHASE=$(kubectl get nexuscapabilities.nexus.ai "$TCR" -n "${NS}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "?")
+    TCMSG=$(kubectl get nexuscapabilities.nexus.ai "$TCR" -n "${NS}" -o jsonpath='{.status.message}' 2>/dev/null || echo "")
+    row "NexusCapability: ${TCR}" "${TCPHASE}" "${TCMSG}"
 done
 
 # Pods (multi-container ready counts)
@@ -1908,7 +1908,7 @@ echo "================================================================"
 echo ""
 
 K8S_COUNT=$( (kubectl get pods,svc,deploy,statefulset,ingress,sa,configmap,pvc -n "${NS}" --no-headers 2>/dev/null
-    kubectl get totogicapabilities.totogi.com -n "${NS}" --no-headers 2>/dev/null) | wc -l)
+    kubectl get nexuscapabilities.nexus.ai -n "${NS}" --no-headers 2>/dev/null) | wc -l)
 echo "  Kubernetes resources in ${NS}: ${K8S_COUNT}"
 
 DDB_OK=0

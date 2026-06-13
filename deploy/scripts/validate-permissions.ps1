@@ -1,4 +1,4 @@
-# IAM Permission Validation Script for Totogi Deployment (PowerShell)
+# IAM Permission Validation Script for Nexus AI Deployment (PowerShell)
 # This script checks if the current AWS credentials have all required permissions
 
 param(
@@ -51,7 +51,7 @@ function Test-ServiceAccess {
 
 Write-Host ""
 Write-Host "==============================================" -ForegroundColor Cyan
-Write-Host "  Totogi Deployment Permission Validator" -ForegroundColor Cyan
+Write-Host "  Nexus AI Deployment Permission Validator" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -177,7 +177,7 @@ if ($script:Failed -gt 0) {
     Write-ColorOutput "Some permissions are missing. Please update your IAM policy." "Red"
     Write-Host "Missing access to: $($script:FailedServices -join ', ')"
     Write-Host ""
-    Write-Host "Download the required policy from the Totogi installer wizard."
+    Write-Host "Download the required policy from the Nexus AI installer wizard."
     exit 1
 }
 else {

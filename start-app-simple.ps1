@@ -1,8 +1,8 @@
-# Totogi Installer - Simple Startup Script
+# Nexus AI Installer - Simple Startup Script
 # This is a simpler version that just starts both services with a delay
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Totogi Installer - Simple Startup" -ForegroundColor Cyan
+Write-Host "  Nexus AI Installer - Simple Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

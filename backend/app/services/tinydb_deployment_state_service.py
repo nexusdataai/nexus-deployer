@@ -419,7 +419,7 @@ class TinyDBDeploymentStateService:
             region: AWS region
             cluster_arn: EKS cluster ARN
             namespace: Kubernetes namespace
-            cr_name: TotogiCapability CR name
+            cr_name: NexusCapability CR name
             resources: Dict of provisioned AWS resources
             deployment_metadata: Additional metadata
             

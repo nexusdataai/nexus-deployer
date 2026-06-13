@@ -1,4 +1,4 @@
-# build-windows.ps1 - Complete Windows build script for Totogi Capability Installer
+# build-windows.ps1 - Complete Windows build script for Nexus AI Capability Installer
 # Creates a distributable Windows installer (.exe)
 #
 # Usage:
@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Totogi Capability Installer - Windows Build" -ForegroundColor Cyan
+Write-Host "Nexus AI Capability Installer - Windows Build" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Build started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 if ($Clean) {
@@ -149,12 +149,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Verify output
-if (-not (Test-Path "dist\totogi-backend.exe")) {
-    Write-Error "Backend build failed - totogi-backend.exe not found"
+if (-not (Test-Path "dist\nexus-installer-backend.exe")) {
+    Write-Error "Backend build failed - nexus-installer-backend.exe not found"
     exit 1
 }
 
-$backendSize = (Get-Item "dist\totogi-backend.exe").Length / 1MB
+$backendSize = (Get-Item "dist\nexus-installer-backend.exe").Length / 1MB
 Write-Host "  Backend build complete! Size: $([math]::Round($backendSize, 2)) MB" -ForegroundColor Green
 
 # ============================================

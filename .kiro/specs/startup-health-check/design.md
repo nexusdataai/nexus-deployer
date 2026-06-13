@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Startup Health Check
 
 ## Overview
 
-This design document describes the architecture and implementation approach for a robust startup health check system in the Totogi Capability Installer. The system ensures all services (Electron shell, Python backend, React frontend) are properly initialized before the user interface becomes interactive, eliminating the race condition that causes errors when fetching capabilities on startup.
+This design document describes the architecture and implementation approach for a robust startup health check system in the Nexus AI Capability Installer. The system ensures all services (Electron shell, Python backend, React frontend) are properly initialized before the user interface becomes interactive, eliminating the race condition that causes errors when fetching capabilities on startup.
 
 ## Architecture
 

@@ -55,7 +55,7 @@ class TinyDBStateManager:
                 # Running as packaged app - use AppData for writable storage
                 import os
                 app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
-                self.db_path = Path(app_data) / "TotogiInstaller" / "data" / "state.db"
+                self.db_path = Path(app_data) / "NexusInstaller" / "data" / "state.db"
                 logger.info(f"Running in packaged mode, using AppData for database")
             else:
                 # Development mode - use backend/data/state.db

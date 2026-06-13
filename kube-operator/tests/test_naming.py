@@ -14,7 +14,7 @@ from hypothesis import given, strategies as st, assume
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from totogi_operator.utils.naming import ResourceNaming
+from nexus_operator.utils.naming import ResourceNaming
 
 
 # Strategies for generating valid inputs

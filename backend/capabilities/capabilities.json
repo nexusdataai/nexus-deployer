@@ -34,7 +34,7 @@
         "backend": ["ecs-fargate", "eks"]
       },
       "estimated_deployment_time": 20,
-      "documentation_url": "https://docs.totogi.com/call-processing",
+      "documentation_url": "https://docs.nexus.ai/call-processing",
       "required_iam_permissions": [
         "cloudformation:CreateStack",
         "cloudformation:DescribeStacks",
@@ -107,7 +107,7 @@
       },
       "artifacts": {
         "frontend": {
-          "s3_uri": "s3://totogi-artifacts/billing-engine/frontend-v2.0.1.zip",
+          "s3_uri": "s3://nexus-artifacts/billing-engine/frontend-v2.0.1.zip",
           "size_mb": 12
         },
         "backend": {
@@ -120,7 +120,7 @@
         "backend": ["ecs-fargate"]
       },
       "estimated_deployment_time": 18,
-      "documentation_url": "https://docs.totogi.com/billing-engine",
+      "documentation_url": "https://docs.nexus.ai/billing-engine",
       "required_iam_permissions": [
         "cloudformation:CreateStack",
         "cloudformation:DescribeStacks",
@@ -166,7 +166,7 @@
       },
       "artifacts": {
         "frontend": {
-          "s3_uri": "s3://totogi-artifacts/customer-portal/frontend-v1.0.5.zip",
+          "s3_uri": "s3://nexus-artifacts/customer-portal/frontend-v1.0.5.zip",
           "size_mb": 18
         },
         "backend": {
@@ -179,7 +179,7 @@
         "backend": ["ecs-fargate"]
       },
       "estimated_deployment_time": 15,
-      "documentation_url": "https://docs.totogi.com/customer-portal",
+      "documentation_url": "https://docs.nexus.ai/customer-portal",
       "required_iam_permissions": [
         "cloudformation:CreateStack",
         "cloudformation:DescribeStacks",

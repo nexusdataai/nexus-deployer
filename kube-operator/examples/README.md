@@ -1,4 +1,4 @@
-# TotogiCapability Examples
+# NexusCapability Examples
 
 ## Available Examples
 
@@ -80,25 +80,25 @@ Even though you can't specify these in the CR, the operator hardcodes:
 
 ---
 
-# TotogiCapability Examples
+# NexusCapability Examples
 
-Example Custom Resources for testing the Totogi Operator.
+Example Custom Resources for testing the Nexus AI Operator.
 
 ## Prerequisites
 
 1. **Operator must be installed** on the cluster:
    ```bash
-   kubectl -n totogi-system get deployment totogi-operator
+   kubectl -n nexus-system get deployment nexus-operator
    ```
 
 2. **Check CRD is registered**:
    ```bash
-   kubectl get crd totogicapabilities.totogi.com
+   kubectl get crd nexuscapabilities.nexus.ai
    ```
 
 3. **Verify operator is running**:
    ```bash
-   kubectl -n totogi-system logs -f deployment/totogi-operator
+   kubectl -n nexus-system logs -f deployment/nexus-operator
    ```
 
 ## Example 1: Basic Test Capability
@@ -117,16 +117,16 @@ kubectl apply -f test-capability.yaml
 
 ```bash
 # List all capabilities
-kubectl get totogicapabilities -A
+kubectl get nexuscapabilities -A
 
 # Watch for changes
-kubectl get totogicapabilities -A -w
+kubectl get nexuscapabilities -A -w
 
 # Get detailed status
-kubectl describe totogicapability test-capability
+kubectl describe nexuscapability test-capability
 
 # Check operator logs
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 ```
 
 ### Expected Resources Created
@@ -159,16 +159,16 @@ The operator will create:
 
 ```bash
 # Get capability status
-kubectl get totogicapability test-capability -o yaml
+kubectl get nexuscapability test-capability -o yaml
 
 # Check phase
-kubectl get totogicapability test-capability -o jsonpath='{.status.phase}'
+kubectl get nexuscapability test-capability -o jsonpath='{.status.phase}'
 
 # Get frontend URL
-kubectl get totogicapability test-capability -o jsonpath='{.status.frontendUrl}'
+kubectl get nexuscapability test-capability -o jsonpath='{.status.frontendUrl}'
 
 # Get backend URL
-kubectl get totogicapability test-capability -o jsonpath='{.status.backendUrl}'
+kubectl get nexuscapability test-capability -o jsonpath='{.status.backendUrl}'
 ```
 
 ### Verify Kubernetes Resources
@@ -225,8 +225,8 @@ Full production deployment with:
 - Custom domain
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-prod
   namespace: call-processing-prod
@@ -239,7 +239,7 @@ spec:
   frontend:
     enabled: true
     replicas: 3
-    image: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/totogi-frontend:1.0.0"
+    image: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-frontend:1.0.0"
     resources:
       requests:
         cpu: "500m"
@@ -251,7 +251,7 @@ spec:
   backend:
     enabled: true
     replicas: 3
-    image: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/totogi-backend:1.0.0"
+    image: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-installer-backend:1.0.0"
     resources:
       requests:
         cpu: "1000m"
@@ -299,7 +299,7 @@ To update a capability, modify the YAML and reapply:
 
 ```bash
 # Edit the capability
-kubectl edit totogicapability test-capability
+kubectl edit nexuscapability test-capability
 
 # Or apply updated YAML
 kubectl apply -f test-capability-updated.yaml
@@ -310,7 +310,7 @@ The operator will perform a rolling update of changed resources.
 ## Deleting a Capability
 
 ```bash
-kubectl delete totogicapability test-capability
+kubectl delete nexuscapability test-capability
 ```
 
 Based on `deletionPolicy`:
@@ -322,13 +322,13 @@ Based on `deletionPolicy`:
 ### Check Operator Logs
 
 ```bash
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 ```
 
 ### Check Capability Events
 
 ```bash
-kubectl describe totogicapability test-capability
+kubectl describe nexuscapability test-capability
 ```
 
 ### Check Pod Status
@@ -376,14 +376,14 @@ kubectl delete -f test-capability.yaml
 ### Delete All Capabilities
 
 ```bash
-kubectl delete totogicapabilities --all -A
+kubectl delete nexuscapabilities --all -A
 ```
 
 ### Verify Cleanup
 
 ```bash
 # Check Kubernetes resources
-kubectl get totogicapabilities -A
+kubectl get nexuscapabilities -A
 kubectl get namespaces | grep call-processing
 
 # Check AWS resources (should be deleted if deletionPolicy: Delete)
@@ -395,4 +395,4 @@ aws s3 ls | grep call-processing
 
 - [Operator Deployment Guide](../../backend/scripts/README_OPERATOR_DEPLOYMENT.md)
 - [CRD Specification](../manifests/crd.yaml)
-- [Operator Source Code](../src/totogi_operator/)
+- [Operator Source Code](../src/nexus_operator/)

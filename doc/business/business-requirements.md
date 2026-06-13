@@ -1,5 +1,5 @@
 # Business Requirements Document
-## Totogi Customer Toolkit
+## Nexus AI Customer Toolkit
 
 **Version:** 1.0  
 **Date:** January 2026  
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The **Totogi Customer Toolkit** is an enterprise-grade deployment platform that revolutionizes how telecommunications companies and enterprise customers adopt and deploy cloud-native business capabilities. By providing a self-service, guided deployment experience, the toolkit eliminates the complexity and risk associated with traditional software implementations while maintaining complete customer control over their infrastructure.
+The **Nexus AI Customer Toolkit** is an enterprise-grade deployment platform that revolutionizes how telecommunications companies and enterprise customers adopt and deploy cloud-native business capabilities. By providing a self-service, guided deployment experience, the toolkit eliminates the complexity and risk associated with traditional software implementations while maintaining complete customer control over their infrastructure.
 
 This document outlines the business justification, customer benefits, and operational use cases that drive the need for this strategic platform.
 
@@ -166,7 +166,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 | **Multi-Cloud Freedom** | Deploy to AWS, Azure, GCP, or on-premise infrastructure | Avoid vendor lock-in and optimize costs |
 | **Ecosystem Expansion** | Marketplace of available capabilities continues to grow | Access continuous innovation without re-procurement |
 
-### 3.2 For Totogi (Vendor)
+### 3.2 For Nexus AI (Vendor)
 
 **Revenue Growth:**
 
@@ -197,10 +197,10 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 #### Use Case 1: Initial Capability Deployment
 
-**Scenario:** A telecommunications company purchases access to Totogi's "Charging-as-a-Service" capability and needs to deploy it to their AWS environment.
+**Scenario:** A telecommunications company purchases access to Nexus AI's "Charging-as-a-Service" capability and needs to deploy it to their AWS environment.
 
 **Without Toolkit:**
-1. Schedule kickoff call with Totogi professional services (2-3 weeks lead time)
+1. Schedule kickoff call with Nexus AI professional services (2-3 weeks lead time)
 2. Complete infrastructure assessment and requirements gathering (1-2 weeks)
 3. Receive and review Statement of Work (1 week)
 4. Obtain approvals and sign SOW (1-2 weeks)
@@ -209,7 +209,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 7. **Total Time: 8-16 weeks, Cost: $150K-$300K**
 
 **With Toolkit:**
-1. Launch Totogi Customer Toolkit desktop application
+1. Launch Nexus AI Customer Toolkit desktop application
 2. Enter license key and authenticate
 3. Select "Charging-as-a-Service" capability from catalog
 4. Choose deployment architecture (CloudFront+S3 frontend, ECS Fargate backend)
@@ -262,7 +262,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 #### Use Case 3: Capability Updates and Patch Management
 
-**Scenario:** Totogi releases a security patch for a deployed capability that must be applied within 30 days per company security policy.
+**Scenario:** Nexus AI releases a security patch for a deployed capability that must be applied within 30 days per company security policy.
 
 **Workflow:**
 
@@ -310,7 +310,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 #### Use Case 5: Evaluation and Proof-of-Concept
 
-**Scenario:** An enterprise is evaluating Totogi capabilities before committing to enterprise license.
+**Scenario:** An enterprise is evaluating Nexus AI capabilities before committing to enterprise license.
 
 **Workflow:**
 
@@ -621,7 +621,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 ### 7.1 Comparison to Traditional Deployment Models
 
-| Aspect | Traditional Professional Services | SaaS/Managed Service | **Totogi Customer Toolkit** |
+| Aspect | Traditional Professional Services | SaaS/Managed Service | **Nexus AI Customer Toolkit** |
 |--------|-----------------------------------|----------------------|---------------------------|
 | **Deployment Time** | 3-6 months | Instant (but limited control) | 15-30 minutes |
 | **Deployment Cost** | $100K-$500K | Included in subscription | $0 (self-service) |
@@ -701,7 +701,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 ---
 
-### 8.2 Totogi (Vendor) ROI Analysis
+### 8.2 Nexus AI (Vendor) ROI Analysis
 
 **Scenario:** 50 customers deploy average 5 capabilities each in Year 1
 
@@ -765,7 +765,7 @@ Enterprises are adopting multi-cloud strategies to avoid vendor lock-in:
 
 ## 10. Conclusion
 
-The **Totogi Customer Toolkit** represents a fundamental shift in how enterprise software is deployed and managed. By eliminating the friction, cost, and complexity of traditional deployment models, the toolkit enables customers to realize value in hours instead of months while maintaining complete control over their infrastructure.
+The **Nexus AI Customer Toolkit** represents a fundamental shift in how enterprise software is deployed and managed. By eliminating the friction, cost, and complexity of traditional deployment models, the toolkit enables customers to realize value in hours instead of months while maintaining complete control over their infrastructure.
 
 ### Key Takeaways:
 
@@ -775,7 +775,7 @@ The **Totogi Customer Toolkit** represents a fundamental shift in how enterprise
 - **Complete infrastructure control** meeting strictest compliance requirements
 - **Self-service operations** eliminating vendor dependency
 
-**For Totogi:**
+**For Nexus AI:**
 - **Revenue scaling** without proportional headcount growth
 - **Higher margins** (79% vs. 52%) through automation
 - **Competitive differentiation** with unique self-service model
@@ -787,7 +787,7 @@ The **Totogi Customer Toolkit** represents a fundamental shift in how enterprise
 - **Operational efficiency** through automation and standardization
 - **Innovation acceleration** enabling rapid capability adoption
 
-The toolkit is not just a deployment tool—it's a strategic platform that transforms how telecommunications and enterprise customers adopt cloud-native capabilities, positioning Totogi as the leader in customer-controlled, self-service enterprise software delivery.
+The toolkit is not just a deployment tool—it's a strategic platform that transforms how telecommunications and enterprise customers adopt cloud-native capabilities, positioning Nexus AI as the leader in customer-controlled, self-service enterprise software delivery.
 
 ---
 
@@ -802,4 +802,4 @@ The toolkit is not just a deployment tool—it's a strategic platform that trans
 
 ---
 
-*This document is confidential and proprietary to Totogi. Unauthorized distribution is prohibited.*
+*This document is confidential and proprietary to Nexus AI. Unauthorized distribution is prohibited.*

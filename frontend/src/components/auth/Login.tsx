@@ -109,7 +109,7 @@ export const Login: React.FC<LoginProps> = ({
             Sign in to your account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Totogi Customer Toolkit
+            Nexus AI Customer Toolkit
           </p>
         </div>
 

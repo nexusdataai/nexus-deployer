@@ -141,7 +141,7 @@ Each environment has specific configuration:
 ```yaml
 ENVIRONMENT: dev
 STACK_NAME: econet-ui-dev-stack
-DOMAIN_NAME: dev.econet.totogicore.com
+DOMAIN_NAME: dev.econet.nexus.ai
 BUILD_ENVIRONMENT: development
 NODE_ENV: development
 ```
@@ -156,7 +156,7 @@ NODE_ENV: development
 ```yaml
 ENVIRONMENT: stage
 STACK_NAME: econet-ui-stage-stack
-DOMAIN_NAME: stage.econet.totogicore.com
+DOMAIN_NAME: stage.econet.nexus.ai
 BUILD_ENVIRONMENT: staging
 NODE_ENV: production
 ```
@@ -171,7 +171,7 @@ NODE_ENV: production
 ```yaml
 ENVIRONMENT: prod
 STACK_NAME: econet-ui-prod-stack
-DOMAIN_NAME: econet.totogicore.com
+DOMAIN_NAME: econet.nexus.ai
 BUILD_ENVIRONMENT: production
 NODE_ENV: production
 ```
@@ -343,8 +343,8 @@ Modify health check URLs in workflows:
 - name: Advanced Health Check
   run: |
     # Custom health endpoints for static website
-    curl -f "https://dev.econet.totogicore.com/"
-    curl -f "https://dev.econet.totogicore.com/health" # if you have a health endpoint
+    curl -f "https://dev.econet.nexus.ai/"
+    curl -f "https://dev.econet.nexus.ai/health" # if you have a health endpoint
 ```
 
 ### Blue/Green Deployments
@@ -358,7 +358,7 @@ For production zero-downtime deployments:
     ./deploy/deploy.sh prod deploy-only
     
     # Health check new deployment
-    curl -f https://econet.totogicore.com/
+    curl -f https://econet.nexus.ai/
     
     # CloudFront automatically serves from new S3 content
 ```

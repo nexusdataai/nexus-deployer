@@ -956,7 +956,7 @@ class OperatorCleanup:
         
         # Fallback to kubectl
         try:
-            # List all namespaces with totogi labels
+            # List all namespaces with nexus labels
             result = subprocess.run(
                 ["kubectl", "get", "namespaces", "-l", "app.kubernetes.io/managed-by=nexus-operator", "-o", "jsonpath={.items[*].metadata.name}"],
                 capture_output=True,
@@ -991,7 +991,7 @@ class OperatorCleanup:
     def _cleanup_capability_namespaces_via_api(self) -> bool:
         """Delete capability namespaces using Python API."""
         try:
-            # List all namespaces with totogi label
+            # List all namespaces with nexus label
             namespaces = self._k8s_core_api.list_namespace(
                 label_selector="app.kubernetes.io/managed-by=nexus-operator"
             )

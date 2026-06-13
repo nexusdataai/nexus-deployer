@@ -36,7 +36,7 @@ identity, etc.).
 | 14 | `secrets` | Secrets Manager under `<capability>/<env>/` |
 | 15 | `iam` | Operator role + per-capability app role: ARN + attached policies |
 | 16 | `cognito` | User pools matching `<capability>-<env>` |
-| 17 | `alb` | ALBs tagged with `totogi.com/capability=<capability>` |
+| 17 | `alb` | ALBs tagged with `nexus.ai/capability=<capability>` |
 
 ## Verdict aggregation
 

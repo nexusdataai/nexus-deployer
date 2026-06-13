@@ -2,7 +2,7 @@
 HorizontalPodAutoscaler reconciler.
 
 Manages `autoscaling/v2 HorizontalPodAutoscaler` objects for the backend (and
-optionally frontend) Deployment of a TotogiCapability. Driven entirely by
+optionally frontend) Deployment of a NexusCapability. Driven entirely by
 `spec.hpa` on the CR.
 
 Spec shape (from manifests/crd.yaml):
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class HPAReconciler:
-    """Reconcile HPA objects for a TotogiCapability's workloads."""
+    """Reconcile HPA objects for a NexusCapability's workloads."""
 
     def __init__(self, namespace: str):
         self.namespace = namespace

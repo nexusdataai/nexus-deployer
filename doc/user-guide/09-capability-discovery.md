@@ -125,7 +125,7 @@ Click on **AWS** to proceed (it should be selected by default).
 | **Name** | Yes | Friendly name for this account | "Production Account" |
 | **AWS Account ID** | Yes | 12-digit AWS account number | "123456789012" |
 | **Default Region** | Yes | Primary region for discovery | "ap-southeast-1" |
-| **Account Alias** | No | AWS account alias if configured | "totogi-prod" |
+| **Account Alias** | No | AWS account alias if configured | "nexus-prod" |
 
 <!-- Screenshot placeholder: Add Landing Zone Form -->
 ![Add Landing Zone Form](./screen-shots/add-landing-zone.png)
@@ -501,16 +501,16 @@ This indicates an incomplete deployment. Common scenarios:
 If issues persist:
 
 1. **Check Application Logs**
-   - Windows: `%APPDATA%\Totogi Installer\logs\`
-   - macOS: `~/Library/Logs/Totogi Installer/`
-   - Linux: `~/.config/Totogi Installer/logs/`
+   - Windows: `%APPDATA%\Nexus AI Installer\logs\`
+   - macOS: `~/Library/Logs/Nexus AI Installer/`
+   - Linux: `~/.config/Nexus AI Installer/logs/`
 
 2. **Review AWS CloudFormation Console**
    - Direct visibility into stack states
    - Detailed error messages in stack events
 
 3. **Contact Support**
-   - Email: support@totogi.com
+   - Email: support@nexus.ai
    - Include discovery logs and error messages
 
 ---

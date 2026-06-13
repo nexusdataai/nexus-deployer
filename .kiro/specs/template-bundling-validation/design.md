@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Template Bundling Validation
 
 ## Overview
 
-This design addresses the critical issue where CloudFormation templates are not properly bundled with the Totogi Installer, causing deployment failures with "Template not found" errors. The solution involves:
+This design addresses the critical issue where CloudFormation templates are not properly bundled with the Nexus AI Installer, causing deployment failures with "Template not found" errors. The solution involves:
 
 1. Updating the Electron build configuration to include templates in `extraResources`
 2. Enhancing the backend's path resolution to handle Electron's resource paths
@@ -50,7 +51,7 @@ Update `electron/package.json` to include templates in `extraResources`:
     {
       "from": "../backend/dist/",
       "to": "backend/",
-      "filter": ["totogi-backend.exe"]
+      "filter": ["nexus-installer-backend.exe"]
     },
     {
       "from": "../scripts/capabilities",

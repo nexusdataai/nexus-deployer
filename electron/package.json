@@ -1,7 +1,7 @@
 {
-  "name": "totogi-installer",
+  "name": "nexus-installer",
   "version": "1.0.0",
-  "description": "Totogi Capability Installation Wizard",
+  "description": "Nexus AI Capability Installation Wizard",
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
@@ -11,8 +11,8 @@
     "build:linux": "electron-builder --linux"
   },
   "build": {
-    "appId": "com.totogi.installer",
-    "productName": "Totogi Installer",
+    "appId": "com.nexus.installer",
+    "productName": "Nexus AI Installer",
     "directories": {
       "output": "dist"
     },
@@ -30,7 +30,7 @@
       {
         "from": "../backend/dist/",
         "to": "backend/",
-        "filter": ["totogi-backend.exe"]
+        "filter": ["nexus-installer-backend.exe"]
       },
       {
         "from": "../backend/capabilities",
@@ -69,7 +69,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "include": "installer.nsh",
-      "uninstallDisplayName": "Totogi Installer"
+      "uninstallDisplayName": "Nexus AI Installer"
     },
     "mac": {
       "target": "dmg",

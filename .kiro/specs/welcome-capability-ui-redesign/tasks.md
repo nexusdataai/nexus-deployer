@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Implementation Plan
 
 - [x] 1. Redesign WelcomeScreen component
@@ -11,7 +12,7 @@
     - Remove workflow steps grid
     - Remove key features section
     - Add hero graphic at top
-    - Keep title "Totogi Capability Installer" and brief subtitle
+    - Keep title "Nexus AI Capability Installer" and brief subtitle
     - Change button text to "Get Started"
     - _Requirements: 1.2, 1.3, 1.4_
 

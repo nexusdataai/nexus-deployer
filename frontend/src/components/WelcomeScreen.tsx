@@ -1,6 +1,6 @@
 /**
  * Welcome Screen Component
- * Simplified hero-style landing page for Totogi Capability Installer
+ * Simplified hero-style landing page for Nexus AI Capability Installer
  */
 import React, { useState } from 'react';
 import { useWizard } from '../context/WizardContext';
@@ -271,7 +271,7 @@ const WelcomeScreen: React.FC = () => {
 
         {/* Title */}
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Totogi Capability Installer
+          Nexus AI Capability Installer
         </h1>
         
         {/* Subtitle */}

@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Unified Environment Configuration
 
 ## Overview
@@ -295,7 +296,7 @@ case WizardStep.UNIFIED_ENVIRONMENT_CONFIG:
 │ │  Domain Configuration                                           │ │
 │ │  ┌──────────────────────┐  ┌──────────────────────┐            │ │
 │ │  │ Base Domain          │  │ Hosted Zone ID       │            │ │
-│ │  │ [totogicore.com    ] │  │ [Z084501638STQ2EK  ] │            │ │
+│ │  │ [nexus.ai    ] │  │ [Z084501638STQ2EK  ] │            │ │
 │ │  └──────────────────────┘  └──────────────────────┘            │ │
 │ │                                                                 │ │
 │ │  CloudFront CDN                                                 │ │

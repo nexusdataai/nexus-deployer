@@ -1,5 +1,5 @@
 # cleanup-appdata.ps1
-# Cleans up Totogi Installer application data directories
+# Cleans up Nexus AI Installer application data directories
 #
 # Usage:
 #   .\cleanup-appdata.ps1                    # Prompt for confirmation
@@ -9,7 +9,7 @@
 param(
     [switch]$DeleteData,
     [switch]$PreserveData,
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 function Write-UninstallLog {
@@ -133,15 +133,15 @@ public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFile
 
 # Main execution
 Write-UninstallLog "=========================================="
-Write-UninstallLog "Totogi Installer Application Data Cleanup"
+Write-UninstallLog "Nexus AI Installer Application Data Cleanup"
 Write-UninstallLog "=========================================="
 
 # Define application data directories
 $appDataDirs = @(
-    "$env:APPDATA\totogi-installer",
-    "$env:LOCALAPPDATA\totogi-installer",
-    "$env:LOCALAPPDATA\Totogi Installer",
-    "$env:LOCALAPPDATA\totogi-installer-updater"
+    "$env:APPDATA\nexus-installer",
+    "$env:LOCALAPPDATA\nexus-installer",
+    "$env:LOCALAPPDATA\Nexus AI Installer",
+    "$env:LOCALAPPDATA\nexus-installer-updater"
 )
 
 # Check if we should delete or preserve

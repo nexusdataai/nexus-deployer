@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and resolve common issues with the Totogi Capability Installer.
+This guide helps you diagnose and resolve common issues with the Nexus AI Capability Installer.
 
 ---
 
@@ -480,9 +480,9 @@ When contacting support, provide:
 ### Log Locations
 
 **Application logs:**
-- Windows: `%APPDATA%\Totogi Installer\logs\`
-- macOS: `~/Library/Logs/Totogi Installer/`
-- Linux: `~/.config/Totogi Installer/logs/`
+- Windows: `%APPDATA%\Nexus AI Installer\logs\`
+- macOS: `~/Library/Logs/Nexus AI Installer/`
+- Linux: `~/.config/Nexus AI Installer/logs/`
 
 **AWS logs:**
 - CloudFormation: AWS Console → CloudFormation → Events
@@ -492,8 +492,8 @@ When contacting support, provide:
 ### Support Channels
 
 - **Documentation**: This user guide
-- **Support Portal**: [support.totogi.com](https://support.totogi.com)
-- **Email**: support@totogi.com
+- **Support Portal**: [support.nexus.ai](https://support.nexus.ai)
+- **Email**: support@nexus.ai
 
 ---
 

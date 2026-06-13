@@ -212,7 +212,7 @@ const EKSClusterSelector: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Select EKS Cluster</h1>
         <p className="text-gray-600">
           Choose an existing EKS cluster for deploying your capability. 
-          The Totogi Operator will be installed if not already present.
+          The Nexus AI Operator will be installed if not already present.
         </p>
       </div>
 
@@ -318,9 +318,9 @@ const EKSClusterSelector: React.FC = () => {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <div>
-              <p className="font-medium text-blue-800">Totogi Operator Required</p>
+              <p className="font-medium text-blue-800">Nexus AI Operator Required</p>
               <p className="text-sm text-blue-700">
-                The Totogi Operator will be automatically installed to this cluster during deployment.
+                The Nexus AI Operator will be automatically installed to this cluster during deployment.
                 This enables declarative capability management via Kubernetes Custom Resources.
               </p>
             </div>

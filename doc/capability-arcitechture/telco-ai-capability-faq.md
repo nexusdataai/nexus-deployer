@@ -55,7 +55,7 @@ A task engine that can run AI analysis jobs reliably.
 
 ## What is a Provisioner/Deployer?
 
-The **Provisioner** (also called **Deployer** or **Totogi Customer Toolkit**) is an enterprise-grade, self-service platform that enables customers to deploy Telco AI Capabilities to their own cloud infrastructure **in under 30 minutes with zero cloud expertise required**.
+The **Provisioner** (also called **Deployer** or **Nexus AI Customer Toolkit**) is an enterprise-grade, self-service platform that enables customers to deploy Telco AI Capabilities to their own cloud infrastructure **in under 30 minutes with zero cloud expertise required**.
 
 ### What Problem Does It Solve?
 

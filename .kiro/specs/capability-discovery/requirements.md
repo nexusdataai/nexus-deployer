@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-This document defines the requirements for the Capability Discovery feature in the Totogi Customer Toolkit. The feature enables users to discover capabilities that have been deployed to AWS accounts by scanning CloudFormation stacks, solving the problem of inconsistent capability visibility when multiple users deploy capabilities using different local TinyDB instances.
+This document defines the requirements for the Capability Discovery feature in the Nexus AI Customer Toolkit. The feature enables users to discover capabilities that have been deployed to AWS accounts by scanning CloudFormation stacks, solving the problem of inconsistent capability visibility when multiple users deploy capabilities using different local TinyDB instances.
 
 Currently, the Toolkit stores installed capability metadata in a local TinyDB database. This creates a fragmented view where each user only sees capabilities they personally deployed. The Capability Discovery feature provides a unified view by scanning actual AWS infrastructure and synchronizing the local database with the real deployment state.
 

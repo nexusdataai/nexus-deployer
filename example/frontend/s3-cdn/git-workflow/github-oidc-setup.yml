@@ -105,8 +105,8 @@ Resources:
                   - s3:PutBucketVersioning
                   - s3:GetBucketVersioning
                 Resource: 
-                  - "arn:aws:s3:::econet-totogicore-*"
-                  - "arn:aws:s3:::econet-totogicore-*/*"
+                  - "arn:aws:s3:::econet-nexuscore-*"
+                  - "arn:aws:s3:::econet-nexuscore-*/*"
               
               # CloudFront permissions for CDN management
               - Effect: Allow

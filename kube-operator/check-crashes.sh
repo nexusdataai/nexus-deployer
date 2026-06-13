@@ -80,7 +80,7 @@ Options:
   --pod NAME          Investigate one specific pod (skips restart filter)
   --tail LINES        Lines of previous-container log to show (default: 200)
   --save DIR          Save per-pod artifacts (yaml, describe, prev log, events) to DIR
-  --cloudwatch        Also scan CloudWatch log group /totogi/{cap}/{env} for ERROR
+  --cloudwatch        Also scan CloudWatch log group /nexus/{cap}/{env} for ERROR
   --cw-since DURATION CloudWatch scan window (default: 1h)
   --watch, -w         Watch one pod and dump each NEW crash as it happens (Ctrl-C to stop)
   --interval N        Poll interval in seconds for --watch (default: 30)
@@ -100,7 +100,7 @@ increases. Auto-picks the pod if exactly one crashed pod matches the component
 filter, otherwise requires --pod NAME.
 
 In --watch-cw mode, streams new ERROR lines live from the Fluent-Bit log group
-/totogi/{cap}/{env}. Filter pattern is built from --pod or the first component.
+/nexus/{cap}/{env}. Filter pattern is built from --pod or the first component.
 Useful when SIGKILL'd containers never flush stdout to kubelet but Fluent Bit
 already shipped the line. Mutually exclusive with --watch.
 
@@ -346,7 +346,7 @@ if [ "$WATCH_CW" = "1" ]; then
         red "aws CLI not on PATH (required for --watch-cw)"; exit 1
     fi
 
-    LOG_GROUP="/totogi/${CAPABILITY}/${ENV}"
+    LOG_GROUP="/nexus/${CAPABILITY}/${ENV}"
 
     # Build a CloudWatch Logs filter pattern.
     # Filter-pattern AND-combines quoted substrings; we always require "ERROR",
@@ -451,9 +451,9 @@ done
 # ── CloudWatch fallback scan ─────────────────────────────────────
 if [ "$CW_SCAN" = "1" ]; then
     hr
-    sub "CloudWatch ERROR scan (last ${CW_SINCE}, log group /totogi/${CAPABILITY}/${ENV})"
+    sub "CloudWatch ERROR scan (last ${CW_SINCE}, log group /nexus/${CAPABILITY}/${ENV})"
     if command -v aws >/dev/null 2>&1; then
-        aws logs tail "/totogi/${CAPABILITY}/${ENV}" \
+        aws logs tail "/nexus/${CAPABILITY}/${ENV}" \
             --since "${CW_SINCE}" \
             --filter-pattern "ERROR" \
             --profile "${AWS_PROFILE}" \

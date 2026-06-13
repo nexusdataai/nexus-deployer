@@ -46,10 +46,10 @@ def test_example_validates_against_crd(example_path):
 
     with example_path.open() as f:
         # Some examples are multi-document (e.g. include CronJob templates);
-        # only validate the TotogiCapability ones.
+        # only validate the NexusCapability ones.
         for doc in yaml.safe_load_all(f):
             if not isinstance(doc, dict):
                 continue
-            if doc.get("kind") != "TotogiCapability":
+            if doc.get("kind") != "NexusCapability":
                 continue
             jsonschema.validate(instance=doc.get("spec", {}), schema=spec_schema)

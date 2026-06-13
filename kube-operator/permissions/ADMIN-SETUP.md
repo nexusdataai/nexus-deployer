@@ -15,7 +15,7 @@ Before using any policy file, replace these placeholders with actual values:
 | `${OIDC_PROVIDER}` | `oidc.eks.ap-southeast-1.amazonaws.com/id/98DAC2C48D003C3A23F43EF39C854FCF` | `aws eks describe-cluster --name <cluster> --query "cluster.identity.oidc.issuer" --output text` (strip `https://`) |
 | `<region>` | `ap-southeast-1` | Your AWS region |
 | `<account-id>` | `433193941624` | Same as `${ACCOUNT_ID}` |
-| `<capability>` | `call-processing` | The capability name from the TotogiCapability manifest |
+| `<capability>` | `call-processing` | The capability name from the NexusCapability manifest |
 | `<env>` | `dev`, `stage`, or `prod` | The environment name |
 
 ### Set variables (used by all CLI commands below)
@@ -95,7 +95,7 @@ aws iam add-client-id-to-open-id-connect-provider \
 
 ---
 
-## Step 2: Create `totogi-operator-role`
+## Step 2: Create `nexus-operator-role`
 
 This role is used by the operator pod running inside EKS via IRSA.
 
@@ -108,8 +108,8 @@ This role is used by the operator pod running inside EKS via IRSA.
 3. Paste the content from **`operator-trust-policy.json`** (replace `${ACCOUNT_ID}` and `${OIDC_PROVIDER}`)
 4. Click Next -> Create inline policy -> JSON tab
 5. Paste the content from **`operator-policy.json`** (replace `<region>` and `<account-id>`)
-6. Policy name: `totogi-operator-policy`
-7. Role name: **`totogi-operator-role`** (must be this exact name)
+6. Policy name: `nexus-operator-policy`
+7. Role name: **`nexus-operator-role`** (must be this exact name)
 
 **CLI:**
 
@@ -126,18 +126,18 @@ sed -e "s|<region>|${REGION}|g" \
 
 # Create the role
 aws iam create-role \
-  --role-name totogi-operator-role \
+  --role-name nexus-operator-role \
   --assume-role-policy-document file:///tmp/operator-trust.json \
-  --description "IAM role for Totogi Operator pod (IRSA)"
+  --description "IAM role for Nexus AI Operator pod (IRSA)"
 
 # Attach the inline permissions policy
 aws iam put-role-policy \
-  --role-name totogi-operator-role \
-  --policy-name totogi-operator-policy \
+  --role-name nexus-operator-role \
+  --policy-name nexus-operator-policy \
   --policy-document file:///tmp/operator-perms.json
 
 # Verify
-aws iam get-role --role-name totogi-operator-role \
+aws iam get-role --role-name nexus-operator-role \
   --query "Role.{Arn:Arn,CreateDate:CreateDate}" --output table
 ```
 
@@ -382,7 +382,7 @@ kubectl get nodes
 
 ```bash
 # Check all roles exist
-for role in totogi-operator-role AmazonEKS_EBS_CSI_DriverRole velero-backup-role call-processing-dev-app-role; do
+for role in nexus-operator-role AmazonEKS_EBS_CSI_DriverRole velero-backup-role call-processing-dev-app-role; do
   echo -n "${role}: "
   aws iam get-role --role-name $role --query "Role.Arn" --output text 2>/dev/null || echo "NOT FOUND"
 done
@@ -406,8 +406,8 @@ aws iam get-role-policy \
 | File | Used For | Applied To |
 |---|---|---|
 | `deployer-policy.json` | Jumpbox deployment permissions (no IAM create/delete) | `SH-Role-EKS-JH` |
-| `operator-policy.json` | Operator pod permissions (no IAM create/delete) | `totogi-operator-role` |
-| `operator-trust-policy.json` | IRSA trust for operator ServiceAccount | `totogi-operator-role` (trust) |
+| `operator-policy.json` | Operator pod permissions (no IAM create/delete) | `nexus-operator-role` |
+| `operator-trust-policy.json` | IRSA trust for operator ServiceAccount | `nexus-operator-role` (trust) |
 | `ebs-csi-trust-policy.json` | IRSA trust for EBS CSI controller | `AmazonEKS_EBS_CSI_DriverRole` (trust) |
 | `velero-backup-policy.json` | Velero S3 + EC2 snapshot permissions (template) | `VeleroBackupPolicy` (managed policy) |
 | `velero-backup-trust-policy.json` | IRSA trust for Velero ServiceAccount | `velero-backup-role` (trust) |

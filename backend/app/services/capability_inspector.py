@@ -62,7 +62,7 @@ def _section_status(rows: List[Dict[str, Any]], failure_keys: Tuple[str, ...] = 
 # ---------- main service ---------------------------------------------------
 
 class CapabilityInspector:
-    """One-shot full inspection of a deployed TotogiCapability.
+    """One-shot full inspection of a deployed NexusCapability.
 
     Constructed per-call by the orchestrator; holds AWS clients tied to
     the wizard's session. All methods are synchronous boto3/k8s calls
@@ -445,7 +445,7 @@ class CapabilityInspector:
     def section_iam(self) -> InspectionSection:
         rows: List[Dict[str, Any]] = []
         candidates = [
-            ("operator_role", "totogi-operator-role"),
+            ("operator_role", "nexus-operator-role"),
             ("app_role", f"{self.capability_name}-{self.environment}-app-role"),
         ]
         for label, name in candidates:
@@ -521,7 +521,7 @@ class CapabilityInspector:
                 name="alb", label="ALB Load Balancers",
                 status="fail", summary="boto3 elbv2 client failed", rows=[],
             )
-        # Match ALBs by tag totogi.com/capability or by name prefix.
+        # Match ALBs by tag nexus.ai/capability or by name prefix.
         try:
             paginator = elbv2.get_paginator("describe_load_balancers")
             for page in paginator.paginate():
@@ -537,8 +537,8 @@ class CapabilityInspector:
                     ) or []
                     tags = {t.get("Key"): t.get("Value") for t in tags_resp}
                     if (
-                        tags.get("totogi.com/capability") == self.capability_name
-                        and tags.get("totogi.com/environment") == self.environment
+                        tags.get("nexus.ai/capability") == self.capability_name
+                        and tags.get("nexus.ai/environment") == self.environment
                     ) or self.cr_name in (lb.get("LoadBalancerName") or ""):
                         listeners = _swallow(
                             lambda a=arn: elbv2.describe_listeners(LoadBalancerArn=a)

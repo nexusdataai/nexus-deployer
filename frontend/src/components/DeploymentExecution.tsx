@@ -251,16 +251,16 @@ const DeploymentExecution: React.FC = () => {
 
       // Stage 1: Check/Deploy Operator (0-30%)
       setEksDeploymentStage('Checking operator status...');
-      setCurrentStage('Checking Totogi Operator installation');
-      addLog('Checking if Totogi Operator is installed on cluster...');
+      setCurrentStage('Checking Nexus AI Operator installation');
+      addLog('Checking if Nexus AI Operator is installed on cluster...');
       setProgress(5);
 
       const operatorStatus = await eksApi.checkOperatorStatus(clusterName, awsSessionId || undefined);
       
       if (!operatorStatus.operator_installed || operatorStatus.operator_status !== 'installed') {
-        setEksDeploymentStage('Deploying Totogi Operator...');
-        setCurrentStage('Deploying Totogi Operator');
-        addLog('Operator not found. Deploying Totogi Operator...');
+        setEksDeploymentStage('Deploying Nexus AI Operator...');
+        setCurrentStage('Deploying Nexus AI Operator');
+        addLog('Operator not found. Deploying Nexus AI Operator...');
         setProgress(10);
 
         const deployResult = await eksApi.deployOperator({
@@ -283,10 +283,10 @@ const DeploymentExecution: React.FC = () => {
         setProgress(25);
       }
 
-      // Stage 2: Create TotogiCapability CR (30-50%)
+      // Stage 2: Create NexusCapability CR (30-50%)
       setEksDeploymentStage('Creating capability deployment...');
-      setCurrentStage('Creating TotogiCapability resource');
-      addLog('Creating TotogiCapability Custom Resource...');
+      setCurrentStage('Creating NexusCapability resource');
+      addLog('Creating NexusCapability Custom Resource...');
       setProgress(35);
 
       const capabilityConfig = {
@@ -323,7 +323,7 @@ const DeploymentExecution: React.FC = () => {
       }
 
       setCrName(crResult.cr_name);
-      addLog(`TotogiCapability '${crResult.cr_name}' created in namespace '${namespace}'`);
+      addLog(`NexusCapability '${crResult.cr_name}' created in namespace '${namespace}'`);
       setProgress(50);
 
       // Stage 3: Poll for reconciliation progress (50-100%)
@@ -770,7 +770,7 @@ const DeploymentExecution: React.FC = () => {
                 <div>
                   <p className="text-sm font-medium text-blue-900">Kubernetes Operator Deployment</p>
                   <p className="text-sm text-blue-700 mt-1">
-                    This deployment uses the Totogi Kubernetes Operator to manage resources.
+                    This deployment uses the Nexus AI Kubernetes Operator to manage resources.
                     The operator will provision AWS data services (DynamoDB, S3, Glue) and deploy
                     your application to the EKS cluster.
                   </p>

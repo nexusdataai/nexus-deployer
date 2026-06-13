@@ -1,8 +1,8 @@
-# Totogi Installer - Stop Script
+# Nexus AI Installer - Stop Script
 # This script stops all running services
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Totogi Installer - Stopping Services" -ForegroundColor Cyan
+Write-Host "  Nexus AI Installer - Stopping Services" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

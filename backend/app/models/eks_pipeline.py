@@ -78,7 +78,7 @@ class OperatorInstallReport(BaseModel):
 
 
 class NetworkConfigReport(BaseModel):
-    """Step 6 report: TotogiNetworkConfig CR + VPC endpoint state."""
+    """Step 6 report: NexusNetworkConfig CR + VPC endpoint state."""
     cluster_name: str
     cr_name: str = "vpc-endpoints"
     phase: str

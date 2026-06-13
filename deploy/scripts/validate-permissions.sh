@@ -1,5 +1,5 @@
 #!/bin/bash
-# IAM Permission Validation Script for Totogi Deployment
+# IAM Permission Validation Script for Nexus AI Deployment
 # This script checks if the current AWS credentials have all required permissions
 
 set -e
@@ -16,7 +16,7 @@ FAILED=0
 WARNINGS=0
 
 echo "=============================================="
-echo "  Totogi Deployment Permission Validator"
+echo "  Nexus AI Deployment Permission Validator"
 echo "=============================================="
 echo ""
 
@@ -263,7 +263,7 @@ echo ""
 
 if [ $FAILED -gt 0 ]; then
     echo -e "${RED}Some permissions are missing. Please update your IAM policy.${NC}"
-    echo "Download the required policy from the Totogi installer wizard."
+    echo "Download the required policy from the Nexus AI installer wizard."
     exit 1
 else
     echo -e "${GREEN}All required permissions are available!${NC}"

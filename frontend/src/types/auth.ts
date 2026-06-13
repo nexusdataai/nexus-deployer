@@ -1,5 +1,5 @@
 /**
- * Authentication types for the Totogi Customer Toolkit.
+ * Authentication types for the Nexus AI Customer Toolkit.
  */
 
 // User roles for RBAC

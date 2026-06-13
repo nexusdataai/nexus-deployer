@@ -12,6 +12,7 @@ from .vpc_endpoints import (
     VPCEndpointProvisioner,
     NetworkTopologyValidator,
     is_legacy_provisioning_enabled,
+    read_vpc_profile_tag,
 )
 from .mimir import MimirProvisioner
 
@@ -19,6 +20,7 @@ __all__ = [
     "VPCEndpointProvisioner",
     "NetworkTopologyValidator",
     "is_legacy_provisioning_enabled",
+    "read_vpc_profile_tag",
     "DynamoDBProvisioner",
     "S3Provisioner",
     "GlueProvisioner",

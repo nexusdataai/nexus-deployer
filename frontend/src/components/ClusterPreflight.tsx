@@ -293,7 +293,7 @@ const ClusterPreflight: React.FC = () => {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Pre-deployment Verification</h1>
         <p className="text-sm text-gray-600">
-          Verifies the target EKS cluster is ready for the Totogi Operator and the
+          Verifies the target EKS cluster is ready for the Nexus AI Operator and the
           capability's container images are pullable. AWS account access, network
           baseline, and IAM-permission catalogs are not re-checked here - the
           landing-zone cluster is assumed to be properly configured by the platform

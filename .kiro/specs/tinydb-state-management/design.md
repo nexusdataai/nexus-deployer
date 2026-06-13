@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document
 
 ## Overview
@@ -384,7 +385,7 @@ class MigrationService:
         "backend": ["ecs-fargate"]
     },
     "estimated_deployment_time": 20,
-    "documentation_url": "https://docs.totogi.com/call-processing",
+    "documentation_url": "https://docs.nexus.ai/call-processing",
     "required_iam_permissions": [...],
     "prerequisites": [...],
     "created_at": "2025-12-01T00:00:00.000000",

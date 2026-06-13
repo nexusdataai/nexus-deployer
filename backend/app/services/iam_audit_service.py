@@ -195,11 +195,11 @@ class IamAuditService:
             IrsaRoleSpec(
                 name="operator_role",
                 label="Operator role (admin-managed)",
-                role_name="totogi-operator-role",
+                role_name="nexus-operator-role",
                 namespace=OPERATOR_NAMESPACE,
                 service_account=OPERATOR_SERVICE_ACCOUNT,
                 admin_managed_remediation=(
-                    "Create totogi-operator-role using "
+                    "Create nexus-operator-role using "
                     "kube-operator/permissions/operator-policy.json + "
                     "operator-trust-policy.json with the cluster's OIDC "
                     "provider ID substituted."
@@ -247,7 +247,7 @@ class IamAuditService:
                     "Create the per-capability app role using "
                     "kube-operator/permissions/app-policy.json + "
                     "app-trust-policy.json. Forward the ARN via "
-                    "spec.appRoleArn on the TotogiCapability CR."
+                    "spec.appRoleArn on the NexusCapability CR."
                 ),
             ))
 

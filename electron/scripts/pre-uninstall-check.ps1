@@ -1,5 +1,5 @@
 # pre-uninstall-check.ps1
-# Pre-uninstall validation script for Totogi Installer
+# Pre-uninstall validation script for Nexus AI Installer
 # Checks for running processes, active deployments, and permissions
 
 param(
@@ -18,14 +18,14 @@ $script:ValidationWarnings = @()
 function Test-RunningApplication {
     <#
     .SYNOPSIS
-        Check if the Totogi application is currently running
+        Check if the Nexus AI application is currently running
     .OUTPUTS
         Returns $true if application is running, $false otherwise
     #>
     
     $processes = @(
-        "totogi-backend",
-        "Totogi Installer"
+        "nexus-installer-backend",
+        "Nexus AI Installer"
     )
     
     $runningProcesses = @()
@@ -55,8 +55,8 @@ function Test-ActiveDeployments {
     
     # Check for deployment lock files
     $lockPaths = @(
-        "$env:LOCALAPPDATA\totogi-installer\deployment.lock",
-        "$env:APPDATA\totogi-installer\deployment.lock"
+        "$env:LOCALAPPDATA\nexus-installer\deployment.lock",
+        "$env:APPDATA\nexus-installer\deployment.lock"
     )
     
     foreach ($lockPath in $lockPaths) {
@@ -70,7 +70,7 @@ function Test-ActiveDeployments {
     }
     
     # Check for in-progress status in state file
-    $statePath = "$env:LOCALAPPDATA\totogi-installer\deployment-state.json"
+    $statePath = "$env:LOCALAPPDATA\nexus-installer\deployment-state.json"
     if (Test-Path $statePath) {
         try {
             $state = Get-Content $statePath -Raw | ConvertFrom-Json
@@ -114,7 +114,7 @@ function Test-InstallationDirectory {
     
     if (-not $InstallPath) {
         # Try to find from registry
-        $InstallPath = Get-ItemProperty -Path "HKCU:\Software\totogi-installer" -Name "InstallPath" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty InstallPath
+        $InstallPath = Get-ItemProperty -Path "HKCU:\Software\nexus-installer" -Name "InstallPath" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty InstallPath
     }
     
     if (-not $InstallPath -or -not (Test-Path $InstallPath)) {
@@ -154,8 +154,8 @@ function Test-LockedFiles {
     }
     
     $filesToCheck = @(
-        "totogi-backend.exe",
-        "Totogi Installer.exe"
+        "nexus-installer-backend.exe",
+        "Nexus AI Installer.exe"
     )
     
     foreach ($fileName in $filesToCheck) {

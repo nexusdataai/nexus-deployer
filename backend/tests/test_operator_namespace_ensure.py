@@ -71,8 +71,8 @@ async def test_missing_namespace_is_created_when_flag_set():
     core.create_namespace.assert_called_once()
     body = core.create_namespace.call_args.args[0]
     assert body.metadata.name == "my-ns"
-    assert body.metadata.labels["totogi.com/capability"] == "x"
-    assert body.metadata.labels["totogi.com/environment"] == "dev"
+    assert body.metadata.labels["nexus.ai/capability"] == "x"
+    assert body.metadata.labels["nexus.ai/environment"] == "dev"
     custom.create_namespaced_custom_object.assert_called_once()
 
 

@@ -43,7 +43,7 @@ async def test_check_operator_status_installed_with_replicas():
     svc = _service()
     apps_v1 = MagicMock()
     apps_v1.read_namespaced_deployment.return_value = _fake_deployment(
-        ready=2, desired=2, image="123.dkr.ecr.us-east-1.amazonaws.com/totogi-operator:1.0.0"
+        ready=2, desired=2, image="123.dkr.ecr.us-east-1.amazonaws.com/nexus-operator:1.0.0"
     )
     core_v1 = MagicMock()
 

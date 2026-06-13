@@ -114,11 +114,11 @@ Write-TestResult "Handles child processes" $hasChildProcessHandling
 # Test 7: Verify target processes
 Write-Host "`n=== Test 7: Target Process Names ===" -ForegroundColor Cyan
 
-$hasBackendProcess = $scriptContent -match 'totogi-backend'
-$hasElectronProcess = $scriptContent -match 'Totogi Installer'
+$hasBackendProcess = $scriptContent -match 'nexus-installer-backend'
+$hasElectronProcess = $scriptContent -match 'Nexus AI Installer'
 
-Write-TestResult "Targets totogi-backend process" $hasBackendProcess
-Write-TestResult "Targets Totogi Installer process" $hasElectronProcess
+Write-TestResult "Targets nexus-installer-backend process" $hasBackendProcess
+Write-TestResult "Targets Nexus AI Installer process" $hasElectronProcess
 
 # Test 8: Verify result object structure
 Write-Host "`n=== Test 8: Result Object Structure ===" -ForegroundColor Cyan

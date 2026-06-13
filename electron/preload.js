@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 });
 
 // Log that preload script has loaded
-console.log('Totogi Installer - Preload script loaded successfully');
+console.log('Nexus AI Installer - Preload script loaded successfully');
 
 // You can also expose Node.js APIs safely
 contextBridge.exposeInMainWorld('nodeAPI', {

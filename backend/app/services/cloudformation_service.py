@@ -1810,7 +1810,7 @@ class CloudFormationDeploymentService:
             tags.append({'Key': key, 'Value': str(value)})
         
         # Add deployment metadata
-        tags.append({'Key': 'DeployedBy', 'Value': 'TotogiInstaller'})
+        tags.append({'Key': 'DeployedBy', 'Value': 'NexusInstaller'})
         tags.append({'Key': 'DeploymentTime', 'Value': datetime.utcnow().isoformat()})
         
         return tags

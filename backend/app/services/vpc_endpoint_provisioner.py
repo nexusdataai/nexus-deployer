@@ -1,7 +1,7 @@
 """
 Direct VPC endpoint provisioner (pipeline step 6).
 
-Replaces the earlier `TotogiNetworkConfig` CR-driven flow with direct
+Replaces the earlier `NexusNetworkConfig` CR-driven flow with direct
 boto3 EC2 calls. The operator CR path required the operator's CRD to be
 installed first, but step 6 runs in the pre-flight wizard step BEFORE
 operator install (step 5 / DEPLOYMENT_EXECUTION) - so the CRD is
@@ -488,8 +488,8 @@ class VpcEndpointProvisioner:
         return [{
             "ResourceType": "vpc-endpoint",
             "Tags": [
-                {"Key": "app.kubernetes.io/managed-by", "Value": "totogi-deployer"},
-                {"Key": "totogi.com/component", "Value": "vpc-endpoints"},
+                {"Key": "app.kubernetes.io/managed-by", "Value": "nexus-deployer"},
+                {"Key": "nexus.ai/component", "Value": "vpc-endpoints"},
             ],
         }]
 

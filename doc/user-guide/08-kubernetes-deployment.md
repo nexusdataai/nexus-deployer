@@ -1,12 +1,12 @@
 # Kubernetes (EKS) Deployment Guide
 
-This guide covers deploying Totogi capabilities to Amazon EKS using the Kubernetes Operator.
+This guide covers deploying Nexus AI capabilities to Amazon EKS using the Kubernetes Operator.
 
 ---
 
 ## Overview
 
-When you select **EKS (Kubernetes)** as your backend architecture, the Totogi Kubernetes Operator handles the deployment. The operator uses the Kubernetes pattern to:
+When you select **EKS (Kubernetes)** as your backend architecture, the Nexus AI Kubernetes Operator handles the deployment. The operator uses the Kubernetes pattern to:
 
 - Provision AWS data services (DynamoDB, S3, Glue)
 - Create SSM Parameters and Secrets Manager secrets
@@ -67,10 +67,10 @@ When deploying to EKS, the following resources are created:
 ┌─────────────────────────────────────────────────────────────┐
 │                     EKS Cluster                              │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              totogi-system namespace                 │    │
+│  │              nexus-system namespace                 │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
-│  │  │           Totogi Operator                    │    │    │
-│  │  │  - Watches TotogiCapability CRs             │    │    │
+│  │  │           Nexus AI Operator                    │    │    │
+│  │  │  - Watches NexusCapability CRs             │    │    │
 │  │  │  - Provisions AWS resources                 │    │    │
 │  │  │  - Deploys K8s workloads                    │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
@@ -127,9 +127,9 @@ When EKS is selected, additional configuration options appear:
 ### Step 3: Operator Activation
 
 The installer will:
-1. Check if the Totogi Operator is installed
-2. If not, deploy the operator to `totogi-system` namespace
-3. Create the TotogiCapability custom resource
+1. Check if the Nexus AI Operator is installed
+2. If not, deploy the operator to `nexus-system` namespace
+3. Create the NexusCapability custom resource
 
 ### Step 4: Monitor Deployment
 
@@ -149,13 +149,13 @@ The deployment screen shows Kubernetes-specific stages:
 
 ---
 
-## TotogiCapability Custom Resource
+## NexusCapability Custom Resource
 
-The operator manages deployments through `TotogiCapability` custom resources:
+The operator manages deployments through `NexusCapability` custom resources:
 
 ```yaml
-apiVersion: totogi.com/v1
-kind: TotogiCapability
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
   name: call-processing-prod
   namespace: call-processing-prod
@@ -168,7 +168,7 @@ spec:
   frontend:
     enabled: true
     replicas: 2
-    image: "123456789.dkr.ecr.ap-southeast-1.amazonaws.com/totogi-frontend:1.0.0"
+    image: "123456789.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-frontend:1.0.0"
     resources:
       requests:
         cpu: "100m"
@@ -180,7 +180,7 @@ spec:
   backend:
     enabled: true
     replicas: 2
-    image: "123456789.dkr.ecr.ap-southeast-1.amazonaws.com/totogi-backend:1.0.0"
+    image: "123456789.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-installer-backend:1.0.0"
     resources:
       requests:
         cpu: "250m"
@@ -208,7 +208,7 @@ spec:
 
 ```bash
 # List all capabilities
-kubectl get totogicapabilities -A
+kubectl get nexuscapabilities -A
 
 # Short form
 kubectl get tc -A
@@ -241,7 +241,7 @@ kubectl logs -f deployment/call-processing-frontend -n call-processing-prod
 kubectl logs -f deployment/call-processing-backend -n call-processing-prod
 
 # Operator logs
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 ```
 
 ### Scale Deployments
@@ -259,7 +259,7 @@ kubectl edit tc call-processing-prod -n call-processing-prod
 
 ```bash
 kubectl patch tc call-processing-prod -n call-processing-prod \
-  --type=merge -p '{"spec":{"backend":{"image":"123456789.dkr.ecr.ap-southeast-1.amazonaws.com/totogi-backend:2.0.0"}}}'
+  --type=merge -p '{"spec":{"backend":{"image":"123456789.dkr.ecr.ap-southeast-1.amazonaws.com/nexus-installer-backend:2.0.0"}}}'
 ```
 
 ### Delete Deployment
@@ -278,19 +278,19 @@ kubectl delete tc call-processing-prod -n call-processing-prod
 
 ```bash
 # Operator pods
-kubectl get pods -n totogi-system
+kubectl get pods -n nexus-system
 
 # Operator deployment
-kubectl get deployment totogi-operator -n totogi-system
+kubectl get deployment nexus-operator -n nexus-system
 
 # Operator logs
-kubectl -n totogi-system logs -f deployment/totogi-operator
+kubectl -n nexus-system logs -f deployment/nexus-operator
 ```
 
 ### Restart Operator
 
 ```bash
-kubectl -n totogi-system rollout restart deployment/totogi-operator
+kubectl -n nexus-system rollout restart deployment/nexus-operator
 ```
 
 ### Update Operator
@@ -352,13 +352,13 @@ kubectl exec -it deployment/call-processing-backend -n call-processing-prod -- a
 
 ```bash
 # Check operator status
-kubectl get pods -n totogi-system
+kubectl get pods -n nexus-system
 
 # Check for errors
-kubectl describe pod -l app.kubernetes.io/name=totogi-operator -n totogi-system
+kubectl describe pod -l app.kubernetes.io/name=nexus-operator -n nexus-system
 
 # View operator logs
-kubectl -n totogi-system logs deployment/totogi-operator --tail=100
+kubectl -n nexus-system logs deployment/nexus-operator --tail=100
 ```
 
 ### Capability Stuck in Provisioning
@@ -368,7 +368,7 @@ kubectl -n totogi-system logs deployment/totogi-operator --tail=100
 kubectl describe tc <name> -n <namespace>
 
 # Check operator logs for errors
-kubectl -n totogi-system logs deployment/totogi-operator | grep <capability-name>
+kubectl -n nexus-system logs deployment/nexus-operator | grep <capability-name>
 ```
 
 ### Pods Not Starting

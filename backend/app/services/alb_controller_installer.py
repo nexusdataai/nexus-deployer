@@ -9,7 +9,7 @@ remediation when missing.
 We deliberately do not vendor upstream manifests in v1: the upstream
 manifest set is large and version-sensitive (ServiceAccount, Deployment,
 ClusterRole+Bindings, Service, two Webhook configurations). Bundling
-them inside `totogi-backend.exe` makes maintenance painful. The helm
+them inside `nexus-installer-backend.exe` makes maintenance painful. The helm
 path mirrors what the existing operator script does.
 
 If `helm` is unavailable on PATH, we surface a fail-with-remediation
@@ -251,7 +251,7 @@ class AlbControllerInstaller:
                 self.iam.create_role(
                     RoleName=ALB_ROLE_NAME,
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
-                    Description="AWS Load Balancer Controller IRSA role (Totogi deployer)",
+                    Description="AWS Load Balancer Controller IRSA role (Nexus AI deployer)",
                 )
             else:
                 raise
@@ -307,7 +307,7 @@ class AlbControllerInstaller:
                     annotations=annotations,
                     labels={
                         "app.kubernetes.io/name": ALB_DEPLOYMENT_NAME,
-                        "app.kubernetes.io/managed-by": "totogi-deployer",
+                        "app.kubernetes.io/managed-by": "nexus-deployer",
                     },
                 ),
             )

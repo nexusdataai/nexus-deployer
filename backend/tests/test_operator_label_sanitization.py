@@ -76,8 +76,8 @@ async def test_namespace_creation_uses_sanitized_labels(monkeypatch, tmp_path):
     assert result["success"] is True
 
     body = core.create_namespace.call_args.args[0]
-    assert body.metadata.labels["totogi.com/capability"] == "nexus-ai"
-    assert body.metadata.labels["totogi.com/environment"] == "test"
+    assert body.metadata.labels["nexus.ai/capability"] == "nexus-ai"
+    assert body.metadata.labels["nexus.ai/environment"] == "test"
 
     # The CR body should also use sanitized values for spec and labels.
     cr_body = custom.create_namespaced_custom_object.call_args.kwargs["body"]

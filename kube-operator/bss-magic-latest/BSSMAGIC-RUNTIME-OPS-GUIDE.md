@@ -1,7 +1,7 @@
 # BSS Magic Runtime — Operations Guide
 
 **Scope:** Production cluster `nexus-ai-prod` namespace, single StatefulSet pod `nexus-ai-prod-bssmagic-0`.
-**Audience:** Operators with `kubectl` access to the prod jumphost and access to the `totogi-operator` pod for elevated AWS actions.
+**Audience:** Operators with `kubectl` access to the prod jumphost and access to the `nexus-operator` pod for elevated AWS actions.
 **Last reviewed:** May 2026, after the Axway UAT→PROD credential flip and the RBAC/lead-tracking work.
 
 This guide covers four things in order. Read **Part 1** at least once even if you only need a specific procedure — it explains the moving parts the other sections reference.
@@ -44,11 +44,11 @@ This guide covers four things in order. Read **Part 1** at least once even if yo
 3. init-bssmagic-table-list.sh  background — build `_bssmagic_table_list` AND propagate Axway env
                                               vars into the FDW foreign_server (ALTER SERVER)
 4. start-tmf-rest-api.sh        background — Python TMF gateway on :8000
-5. bssmagic-entrypoint.sh       foreground — original Totogi entrypoint, runs:
+5. bssmagic-entrypoint.sh       foreground — original Nexus AI entrypoint, runs:
    ├── PostgreSQL on :5432
    └── controller-wrapper.sh    instead of node build/index.js directly:
-       ├── thing-login.sh       X.509 cert → Totogi IoT credentials (STS)
-       ├── exports AWS_*         (Totogi-scoped, overrides IRSA in this process tree)
+       ├── thing-login.sh       X.509 cert → Nexus AI IoT credentials (STS)
+       ├── exports AWS_*         (Nexus AI-scoped, overrides IRSA in this process tree)
        └── node build/index.js   the controller, every 45 min cycle for cred refresh
 ```
 
@@ -62,11 +62,11 @@ This is where most production confusion comes from. **They have nothing to do wi
 
 | Item | Detail |
 |---|---|
-| Purpose | Prove this runtime is licensed; Totogi can kill-switch it |
+| Purpose | Prove this runtime is licensed; Nexus AI can kill-switch it |
 | Storage | AWS Secrets Manager `nexus-ai/prod/bssmagic-credentials` (SecretBinary, base64 ZIP) |
 | Contents of ZIP | `cert.pem` (X.509), `private.key`, `config.json` (IoT endpoints + client ID) |
 | Mounted at | `/credentials` in pod, extracted to `/tmp/cert.pem`, `/tmp/private.key`, `/tmp/config.json` by entrypoint |
-| Used by | `thing-login.sh` → Totogi IoT Credential Provider in **Totogi's AWS account, us-east-1** |
+| Used by | `thing-login.sh` → Nexus AI IoT Credential Provider in **Nexus AI's AWS account, us-east-1** |
 | Refresh | `controller-wrapper.sh` re-runs `thing-login.sh` every 45 min (STS creds expire in ~1 h) |
 | Visible signal | `curl http://localhost:3000/health` returns `iot:true` while the MQTT connection holds |
 | Failure mode | If certificate revoked or network blocked, controller logs MQTT errors, port-3000 `/health` returns `iot:false`, and **port-8000 TMF API returns `503 HEARTBEAT_LOST`** |
@@ -114,7 +114,7 @@ kubectl -n nexus-ai-prod exec nexus-ai-prod-bssmagic-0 -c bssmagic-runtime -- \
 
 | Symptom | Root cause | Action |
 |---|---|---|
-| `iot:false` everything else true | MQTT to Totogi IoT Core dropped. Certificate may be revoked, expired, network egress blocked, or controller mid-restart. | Inspect controller logs (2.6). If certificate is expired, rotate `credentials.zip` (Part 3). If network blocked, check the two outbound firewall rules in the heartbeat architecture doc. |
+| `iot:false` everything else true | MQTT to Nexus AI IoT Core dropped. Certificate may be revoked, expired, network egress blocked, or controller mid-restart. | Inspect controller logs (2.6). If certificate is expired, rotate `credentials.zip` (Part 3). If network blocked, check the two outbound firewall rules in the heartbeat architecture doc. |
 | `database:false` | PostgreSQL not yet up after restart, or PVC unhealthy. | Wait 60s and retry. If persistent, `kubectl describe pvc` and check the StatefulSet event log. |
 | `heartbeat:false` only | Controller process crashed or in restart cycle. | `kubectl logs` and check for `[controller-wrapper]` lines. |
 | HTTP refused | Controller never started. | Look at the entrypoint sequence in logs. |
@@ -212,16 +212,16 @@ Useful signals to look for:
 ## Part 3 — Replacing `credentials.zip` and Restarting
 
 **When you need this:**
-1. Totogi issued a new certificate (annual rotation, license renewal).
+1. Nexus AI issued a new certificate (annual rotation, license renewal).
 2. The current certificate is revoked or expired and `iot:false` won't recover.
-3. You're moving the runtime to a new instance ID (almost never — Totogi controls this).
+3. You're moving the runtime to a new instance ID (almost never — Nexus AI controls this).
 
 **What changes:**
 - The SecretBinary value of `nexus-ai/prod/bssmagic-credentials` in AWS Secrets Manager.
 - The pod must restart so the init container re-mounts and the entrypoint re-extracts the new files.
 
 **Roles required:**
-- Operator pod (`totogi-operator`) — has `secretsmanager:UpdateSecret` (proven in PROD-FLIP-CREDS-V3).
+- Operator pod (`nexus-operator`) — has `secretsmanager:UpdateSecret` (proven in PROD-FLIP-CREDS-V3).
 - Your prod jumphost role (`SH_ROLE_EC2`) — can `kubectl exec` and `kubectl rollout restart`, but **cannot** call `secretsmanager:UpdateSecret`. We've seen this before.
 
 ### 3.1 Preflight — capture current state (rollback insurance)
@@ -229,13 +229,13 @@ Useful signals to look for:
 ```bash
 NS=nexus-ai-prod
 SECRET_ID=nexus-ai/prod/bssmagic-credentials
-OP_POD=$(kubectl -n totogi-system get pod -l app=totogi-operator -o jsonpath='{.items[0].metadata.name}')
+OP_POD=$(kubectl -n nexus-system get pod -l app=nexus-operator -o jsonpath='{.items[0].metadata.name}')
 TS=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR=~/bssmagic-cred-backup-${TS}
 mkdir -p "$BACKUP_DIR"
 
 # 1) Snapshot the current secret value (binary) to the jumphost
-kubectl -n totogi-system exec "$OP_POD" -- \
+kubectl -n nexus-system exec "$OP_POD" -- \
   aws --region us-east-1 secretsmanager get-secret-value \
     --secret-id "$SECRET_ID" \
     --version-stage AWSCURRENT \
@@ -243,7 +243,7 @@ kubectl -n totogi-system exec "$OP_POD" -- \
   > "$BACKUP_DIR/credentials.zip.b64"
 
 # 2) Note the current secret's VersionId so we can roll back by tag flip
-kubectl -n totogi-system exec "$OP_POD" -- \
+kubectl -n nexus-system exec "$OP_POD" -- \
   aws --region us-east-1 secretsmanager describe-secret \
     --secret-id "$SECRET_ID" \
   | tee "$BACKUP_DIR/secret-describe-before.json"
@@ -260,7 +260,7 @@ You now have:
 
 ### 3.2 Validate the new `credentials.zip`
 
-Before uploading, sanity-check what Totogi sent you. The zip must contain exactly three files: `cert.pem`, `private.key`, `config.json`. Anything else is wrong.
+Before uploading, sanity-check what Nexus AI sent you. The zip must contain exactly three files: `cert.pem`, `private.key`, `config.json`. Anything else is wrong.
 
 On the jumphost (assuming you have the new zip at `~/new-credentials.zip`):
 
@@ -273,7 +273,7 @@ unzip -p ~/new-credentials.zip config.json | python -m json.tool | head -20
 # Should show keys like clientId, iotEndpoint, credentialProviderEndpoint, etc.
 ```
 
-If the package looks wrong, **stop**. Ask Totogi for a corrected zip. Do not upload.
+If the package looks wrong, **stop**. Ask Nexus AI for a corrected zip. Do not upload.
 
 ### 3.3 Upload the new secret via the operator pod
 
@@ -282,18 +282,18 @@ If the package looks wrong, **stop**. Ask Totogi for a corrected zip. Do not upl
 base64 -w 0 ~/new-credentials.zip > /tmp/new-credentials.b64
 
 # Copy the encoded file into the operator pod
-kubectl -n totogi-system cp /tmp/new-credentials.b64 \
+kubectl -n nexus-system cp /tmp/new-credentials.b64 \
   "$OP_POD":/tmp/new-credentials.b64
 
 # Update the secret (uses --secret-binary so AWS treats it as raw bytes)
-kubectl -n totogi-system exec "$OP_POD" -- sh -lc '
+kubectl -n nexus-system exec "$OP_POD" -- sh -lc '
   aws --region us-east-1 secretsmanager update-secret \
     --secret-id nexus-ai/prod/bssmagic-credentials \
     --secret-binary fileb:///tmp/new-credentials.b64
 '
 
 # Confirm a new version was created and is now AWSCURRENT
-kubectl -n totogi-system exec "$OP_POD" -- \
+kubectl -n nexus-system exec "$OP_POD" -- \
   aws --region us-east-1 secretsmanager describe-secret \
     --secret-id "$SECRET_ID" \
   | tee "$BACKUP_DIR/secret-describe-after.json"
@@ -346,7 +346,7 @@ for v,labels in d["VersionIdsToStages"].items():
 echo "rolling back to $PREV_VERSION"
 
 # Flip AWSCURRENT back to the previous version (no need to re-upload bytes)
-kubectl -n totogi-system exec "$OP_POD" -- \
+kubectl -n nexus-system exec "$OP_POD" -- \
   aws --region us-east-1 secretsmanager update-secret-version-stage \
     --secret-id "$SECRET_ID" \
     --version-stage AWSCURRENT \

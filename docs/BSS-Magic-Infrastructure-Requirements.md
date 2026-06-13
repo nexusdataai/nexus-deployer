@@ -25,7 +25,7 @@ There are also **Kubernetes-level changes** to the operator's ClusterRole (addin
 |-----------|--------------|---------|
 | Frontend (nexus-ui) | Deployment (stateless) | None — serves static assets |
 | Backend (ai-job-engine) | Deployment (stateless) | None — uses DynamoDB/S3 |
-| Totogi Operator | Deployment (stateless) | None — watches CRDs |
+| Nexus AI Operator | Deployment (stateless) | None — watches CRDs |
 
 All existing workloads are **stateless Deployments**. If a pod dies, Kubernetes recreates it with zero data loss because there is no local data.
 
@@ -288,8 +288,8 @@ The following are **not** infra team responsibilities. They are handled by `e2e-
 | ClusterRole with `statefulsets` | `deploy_operator_to_cluster.py` | Step 5: Deploy operator |
 | Namespace creation | `e2e-deploy.sh` | Step 6: Apply capability |
 | ECR repositories (frontend, backend, bssmagic, operator) | `build-and-push.sh` / `e2e-deploy.sh` | Steps 2-4 |
-| AWS Secrets Manager secrets (credentials, Axway config) | Operator (Kopf handler) | On TotogiCapability CR creation |
-| StatefulSet creation with correct PGDATA, probes | Operator (kubernetes.py) | On TotogiCapability CR creation |
+| AWS Secrets Manager secrets (credentials, Axway config) | Operator (Kopf handler) | On NexusCapability CR creation |
+| StatefulSet creation with correct PGDATA, probes | Operator (kubernetes.py) | On NexusCapability CR creation |
 | PVC request (triggers EBS volume creation) | Kubernetes + EBS CSI Driver | Automatic when StatefulSet creates pod |
 
 ---

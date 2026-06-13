@@ -23,8 +23,8 @@ const IAMSetupGuideModal: React.FC<IAMSetupGuideModalProps> = ({
   isCrossAccount = false
 }) => {
   const [selectedMethod, setSelectedMethod] = useState<SetupMethod>('cloudformation');
-  const [externalId] = useState('totogi-deployment-' + Math.random().toString(36).substring(7));
-  const [roleName] = useState('TotogiDeploymentRole');
+  const [externalId] = useState('nexus-deployment-' + Math.random().toString(36).substring(7));
+  const [roleName] = useState('Nexus AIDeploymentRole');
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   
   // Suppress unused variable warning
@@ -76,11 +76,11 @@ const IAMSetupGuideModal: React.FC<IAMSetupGuideModalProps> = ({
   const cliCreateRoleCommand = `aws iam create-role \\
   --role-name ${roleName} \\
   --assume-role-policy-document file://trust-policy.json \\
-  --description "Role for Totogi capability deployment"`;
+  --description "Role for Nexus AI capability deployment"`;
 
   const cliAttachPolicyCommand = `aws iam put-role-policy \\
   --role-name ${roleName} \\
-  --policy-name TotogiDeploymentPolicy \\
+  --policy-name Nexus AIDeploymentPolicy \\
   --policy-document file://deployment-role-policy.json`;
 
   return (
@@ -225,11 +225,11 @@ const IAMSetupGuideModal: React.FC<IAMSetupGuideModalProps> = ({
                       <pre className="text-sm text-gray-100 overflow-x-auto">
 {`aws iam put-role-policy \\
   --role-name ${roleName} \\
-  --policy-name TotogiDeploymentPolicy \\
+  --policy-name Nexus AIDeploymentPolicy \\
   --policy-document file://deployment-role-policy.json`}
                       </pre>
                       <button
-                        onClick={() => copyToClipboard(`aws iam put-role-policy --role-name ${roleName} --policy-name TotogiDeploymentPolicy --policy-document file://deployment-role-policy.json`, 'cf-command')}
+                        onClick={() => copyToClipboard(`aws iam put-role-policy --role-name ${roleName} --policy-name Nexus AIDeploymentPolicy --policy-document file://deployment-role-policy.json`, 'cf-command')}
                         className="absolute top-2 right-2 p-1 text-gray-400 hover:text-white"
                       >
                         {copiedCommand === 'cf-command' ? (

@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-This document defines the requirements for implementing a robust startup health check system for the Totogi Capability Installer. The current implementation has a race condition where the frontend UI loads and attempts to fetch capabilities before the backend service is fully initialized, resulting in errors displayed to users on the first screen. This feature will ensure all services are ready before the UI becomes interactive, providing a smooth startup experience.
+This document defines the requirements for implementing a robust startup health check system for the Nexus AI Capability Installer. The current implementation has a race condition where the frontend UI loads and attempts to fetch capabilities before the backend service is fully initialized, resulting in errors displayed to users on the first screen. This feature will ensure all services are ready before the UI becomes interactive, providing a smooth startup experience.
 
 ## Glossary
 

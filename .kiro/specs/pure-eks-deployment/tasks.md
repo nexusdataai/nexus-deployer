@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Implementation Plan: Pure EKS Deployment
 
 ## Overview
@@ -92,14 +93,14 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
     - Create `kube-operator/Dockerfile` for operator container image
     - _Requirements: 12.1, 12.2_
 
-  - [x] 6.2 Create TotogiCapability CRD manifest
+  - [x] 6.2 Create NexusCapability CRD manifest
     - Create `kube-operator/manifests/crd.yaml` with full schema
     - Include spec fields: capabilityName, version, environment, region, frontend, backend, dataServices, deletionPolicy
     - Include status fields: phase, message, frontendUrl, backendUrl, resources, lastReconcileTime
     - _Requirements: 12.3_
 
   - [x] 6.3 Write property test for CRD schema compliance
-    - **Property 6: TotogiCapability CR Schema Compliance**
+    - **Property 6: NexusCapability CR Schema Compliance**
     - **Validates: Requirements 4.1, 4.2, 12.3**
 
 - [x] 7. Implement Operator Resource Provisioners
@@ -175,7 +176,7 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
 - [x] 9. Implement Capability Controller
   - [x] 9.1 Create capability controller with kopf
     - Create `kube-operator/src/controllers/capability_controller.py`
-    - Implement `@kopf.on.create` handler for TotogiCapability
+    - Implement `@kopf.on.create` handler for NexusCapability
     - Implement resource provisioning sequence: data services → SSM → Secrets → IAM → K8s resources
     - Update CR status at each phase
     - _Requirements: 4.3, 4.9, 12.4_
@@ -185,13 +186,13 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
     - **Validates: Requirements 4.3, 4.9, 4.10, 12.4**
 
   - [x] 9.3 Implement update handler
-    - Implement `@kopf.on.update` handler for TotogiCapability
+    - Implement `@kopf.on.update` handler for NexusCapability
     - Perform rolling updates for container image changes
     - Update SSM/Secrets if configuration changes
     - _Requirements: 4.10_
 
   - [x] 9.4 Implement delete handler with finalizer
-    - Implement `@kopf.on.delete` handler for TotogiCapability
+    - Implement `@kopf.on.delete` handler for NexusCapability
     - Add finalizer on CR creation
     - Implement cleanup sequence: K8s resources → IAM → Secrets → SSM → Glue → S3 → DynamoDB
     - Remove finalizer only after successful cleanup
@@ -222,7 +223,7 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
 
   - [x] 10.3 Create operator deployment manifest
     - Create `kube-operator/manifests/deployment.yaml`
-    - Configure operator Deployment in totogi-system namespace
+    - Configure operator Deployment in nexus-system namespace
     - Include ServiceAccount with IRSA annotation placeholder
     - Configure resource requests/limits
     - _Requirements: 3.2, 3.3_
@@ -244,8 +245,8 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
     - **Property 4: Operator Deployment Idempotency**
     - **Validates: Requirements 3.1, 3.9**
 
-  - [x] 12.3 Implement TotogiCapability CR creation ✓
-    - Add method to create TotogiCapability CR from wizard configuration
+  - [x] 12.3 Implement NexusCapability CR creation ✓
+    - Add method to create NexusCapability CR from wizard configuration
     - Implement CR status watching for deployment progress
     - _Requirements: 4.1, 4.2_
 
@@ -342,7 +343,7 @@ This implementation plan breaks down the Pure EKS Deployment feature into discre
 
   - [x] 18.2 Add EKS deletion workflow ✓
     - Capability deletion via CR deletion implemented in operator delete handler
-    - DeletionPolicy (Delete/Retain) supported in TotogiCapability CR
+    - DeletionPolicy (Delete/Retain) supported in NexusCapability CR
     - _Requirements: 9.5_
 
   - [ ] 18.3 Update cost estimation for EKS

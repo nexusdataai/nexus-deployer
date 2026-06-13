@@ -46,7 +46,7 @@ async def cluster_readiness(
     cluster ACTIVE + version, OIDC provider, operator IAM role
     (preprovisioned mode), authentication mode, EKS Access Entry,
     node groups + node IAM policies, ECR operator image, K8s API access,
-    AWS Load Balancer Controller, Totogi Operator readiness.
+    AWS Load Balancer Controller, Nexus AI Operator readiness.
     """
     try:
         orchestrator = get_eks_pipeline_orchestrator(aws_session_id=aws_session_id)
@@ -168,7 +168,7 @@ async def apply_network_config(
 ):
     """
     Step 6: provision VPC private endpoints by applying the cluster-scoped
-    TotogiNetworkConfig CR named 'vpc-endpoints'. The operator's existing
+    NexusNetworkConfig CR named 'vpc-endpoints'. The operator's existing
     VPCEndpointProvisioner does the EC2 work.
     """
     try:

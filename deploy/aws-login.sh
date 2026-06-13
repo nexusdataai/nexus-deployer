@@ -36,9 +36,9 @@ AD_USERNAME=devfactory\\\\yourusername
 # AWS Role ARN (optional - if not set, will show interactive selection)
 # Note: Console URL generation requires a specific role ARN to be set
 # Available roles:
-# AWS_ROLE_ARN=arn:aws:iam::617147411452:role/RAM-AWS-Prod-TelcoDR-telcodrtotogipresales1-Admin
-# AWS_ROLE_ARN=arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-TotogiPS-Admin
-# AWS_ROLE_ARN=arn:aws:iam::914357406961:role/RAM-AWS-Prod-Totogi-zainsudanbssmagic-Admin
+# AWS_ROLE_ARN=arn:aws:iam::617147411452:role/RAM-AWS-Prod-TelcoDR-telcodrnexuspresales1-Admin
+# AWS_ROLE_ARN=arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-Nexus AIPS-Admin
+# AWS_ROLE_ARN=arn:aws:iam::914357406961:role/RAM-AWS-Prod-Nexus AI-zainsudanbssmagic-Admin
 
 # AWS CLI Profile Name (default: default)
 AWS_PROFILE=default

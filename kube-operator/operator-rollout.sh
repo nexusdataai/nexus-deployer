@@ -1,8 +1,8 @@
 #!/bin/sh
 # Operator Rollout Update + Diagnostics
 #
-# Performs versioned rolling upgrade of the totogi-operator Deployment in
-# the totogi-system namespace, waits for full readiness, then runs minimal
+# Performs versioned rolling upgrade of the nexus-operator Deployment in
+# the nexus-system namespace, waits for full readiness, then runs minimal
 # operator-side diagnostics (pod status, recent log tail, managed CRs).
 # Supports rollback on failure (automatic or manual).
 #
@@ -31,10 +31,10 @@ DIM="\033[2m"
 RESET="\033[0m"
 
 # ── Defaults ───────────────────────────────────────────────────────
-NAMESPACE="totogi-system"
-DEPLOYMENT="totogi-operator"
+NAMESPACE="nexus-system"
+DEPLOYMENT="nexus-operator"
 CONTAINER="operator"
-ECR_REPO="totogi-operator"
+ECR_REPO="nexus-operator"
 TIMEOUT=300
 REGION="us-east-1"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
@@ -88,8 +88,8 @@ Version Options:
   --no-auto-rollback      Disable automatic rollback on failure
 
 Options:
-  --namespace NS      Override namespace (default: totogi-system)
-  --deployment NAME   Override deployment name (default: totogi-operator)
+  --namespace NS      Override namespace (default: nexus-system)
+  --deployment NAME   Override deployment name (default: nexus-operator)
   --timeout SECS      Rollout timeout (default: 300)
   --log-tail N        Lines of operator log to tail in diagnostics (default: 50)
   --skip-diagnostics  Only rollout + wait, skip diagnostics
@@ -153,12 +153,12 @@ get_current_image() {
 
 get_current_version_annotation() {
     kubectl get "deployment/${DEPLOYMENT}" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.annotations.totogi\.com/app-version}' 2>/dev/null || echo ""
+        -o jsonpath='{.metadata.annotations.nexus\.com/app-version}' 2>/dev/null || echo ""
 }
 
 get_previous_version_annotation() {
     kubectl get "deployment/${DEPLOYMENT}" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.annotations.totogi\.com/previous-version}' 2>/dev/null || echo ""
+        -o jsonpath='{.metadata.annotations.nexus\.com/previous-version}' 2>/dev/null || echo ""
 }
 
 get_ecr_registry() {
@@ -259,10 +259,10 @@ annotate_version() {
     _prev_version="$2"
     _now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     kubectl annotate "deployment/${DEPLOYMENT}" -n "$NAMESPACE" --overwrite \
-        "totogi.com/app-version=${_version}" \
-        "totogi.com/previous-version=${_prev_version}" \
-        "totogi.com/deployed-at=${_now}" \
-        "totogi.com/deployed-by=operator-rollout.sh" 2>/dev/null || true
+        "nexus.ai/app-version=${_version}" \
+        "nexus.ai/previous-version=${_prev_version}" \
+        "nexus.ai/deployed-at=${_now}" \
+        "nexus.ai/deployed-by=operator-rollout.sh" 2>/dev/null || true
 }
 
 OVERALL_EXIT=0
@@ -480,7 +480,7 @@ if [ "$DIAGNOSTICS_ONLY" = "0" ]; then
         fi
         [ "$DRY_RUN" = "0" ] && log_ok "Rollout restart triggered for deployment/${DEPLOYMENT}"
 
-        # Backfill totogi.com/app-version annotation if missing, so the
+        # Backfill nexus.ai/app-version annotation if missing, so the
         # Summary block (and the operator's own About-style introspection)
         # show the real image tag instead of "(unknown)".
         if [ "$DRY_RUN" = "0" ] && [ -z "$_existing_ann" ] && [ -n "$_annot_version" ]; then
@@ -604,7 +604,7 @@ if [ "$SKIP_DIAGNOSTICS" = "0" ] && [ "$DRY_RUN" = "0" ]; then
 
         # Managed Capability CRs (operator's primary workload)
         printf "\n  ${DIM}Managed Capability CRs:${RESET}\n"
-        _cr_out=$(kubectl get capabilities.totogi.com -A 2>/dev/null | sed 's/^/    /')
+        _cr_out=$(kubectl get capabilities.nexus.ai -A 2>/dev/null | sed 's/^/    /')
         if [ -n "$_cr_out" ]; then
             echo "$_cr_out"
         else

@@ -288,7 +288,7 @@ const LandingZoneSelector: React.FC<LandingZoneSelectorProps> = ({
                   type="text"
                   value={newZoneAlias}
                   onChange={(e) => setNewZoneAlias(e.target.value)}
-                  placeholder="e.g., totogi-prod"
+                  placeholder="e.g., nexus-prod"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>

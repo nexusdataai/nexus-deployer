@@ -1,3 +1,4 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Implementation Plan: ADFS Pure Python Authentication
 
 ## Overview
@@ -100,7 +101,7 @@ This plan converts the ADFS authentication from subprocess-based aws-adfs.exe to
 
 - [ ] 8. **CRITICAL: Rebuild backend executable**
   - The source code is fully converted to pure Python
-  - However, the compiled `totogi-backend.exe` in `backend/dist/` is outdated
+  - However, the compiled `nexus-installer-backend.exe` in `backend/dist/` is outdated
   - **If running Electron app**: Rebuild the backend executable:
     ```powershell
     cd C:\mycode\nexus\nexus-deployer\backend

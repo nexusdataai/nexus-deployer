@@ -1,12 +1,12 @@
 # cleanup-registry.ps1
-# Cleans up Totogi Installer registry entries
+# Cleans up Nexus AI Installer registry entries
 #
 # Usage:
 #   .\cleanup-registry.ps1
 #   .\cleanup-registry.ps1 -LogFile "C:\temp\uninstall.log"
 
 param(
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 function Write-UninstallLog {
@@ -57,7 +57,7 @@ function Remove-RegistryKey {
 
 # Main execution
 Write-UninstallLog "=========================================="
-Write-UninstallLog "Totogi Installer Registry Cleanup"
+Write-UninstallLog "Nexus AI Installer Registry Cleanup"
 Write-UninstallLog "=========================================="
 
 $results = @()
@@ -67,9 +67,9 @@ Write-UninstallLog ""
 Write-UninstallLog "--- Cleaning HKCU Registry Keys ---"
 
 $hkcuKeys = @(
-    @{ Path = "HKCU:\Software\totogi-installer"; Description = "Main application settings" },
-    @{ Path = "HKCU:\Software\Totogi Installer"; Description = "Application settings (alternate)" },
-    @{ Path = "HKCU:\Software\totogi"; Description = "Totogi parent key" }
+    @{ Path = "HKCU:\Software\nexus-installer"; Description = "Main application settings" },
+    @{ Path = "HKCU:\Software\Nexus AI Installer"; Description = "Application settings (alternate)" },
+    @{ Path = "HKCU:\Software\nexus"; Description = "Nexus AI parent key" }
 )
 
 foreach ($key in $hkcuKeys) {
@@ -85,8 +85,8 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIde
 
 if ($isAdmin) {
     $hklmKeys = @(
-        @{ Path = "HKLM:\Software\totogi-installer"; Description = "Machine-wide settings" },
-        @{ Path = "HKLM:\Software\Totogi Installer"; Description = "Machine-wide settings (alternate)" }
+        @{ Path = "HKLM:\Software\nexus-installer"; Description = "Machine-wide settings" },
+        @{ Path = "HKLM:\Software\Nexus AI Installer"; Description = "Machine-wide settings (alternate)" }
     )
     
     foreach ($key in $hklmKeys) {
@@ -103,7 +103,7 @@ Write-UninstallLog ""
 Write-UninstallLog "--- Cleaning Electron Registry Keys ---"
 
 $electronKeys = @(
-    @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Totogi Installer.exe"; Description = "App path registration" }
+    @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Nexus AI Installer.exe"; Description = "App path registration" }
 )
 
 foreach ($key in $electronKeys) {

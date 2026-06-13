@@ -173,15 +173,21 @@ VALID_AWS_ACCESS_MODES = ("higher-cost", "moderate", "lowest-cost", "public-node
 
 
 def _resolve_aws_access_mode(crd_api: Any = None) -> str:
-    """Return the cluster-wide awsAccessMode from the singleton NexusNetworkConfig.
+    """Return the cluster-wide awsAccessMode.
 
-    Falls back to ``AWS_ACCESS_MODE_DEFAULT`` env (or ``higher-cost``) when the
-    CR is missing — keeps brand-new clusters working before the operator has
-    seen NexusNetworkConfig.
+    Resolution priority:
+      1. ``spec.awsAccessMode`` on the singleton ``NexusNetworkConfig`` CR
+         named ``vpc-endpoints`` (the usual production path)
+      2. ``nexus:network-profile`` tag on the cluster's VPC (stamped by
+         ``aws-eks/create-hardened-eks-cluster.sh``) — lets brand-new
+         clusters work before any CR is applied
+      3. ``AWS_ACCESS_MODE_DEFAULT`` env (or hardcoded ``higher-cost``)
     """
     default = os.getenv("AWS_ACCESS_MODE_DEFAULT", "higher-cost")
     if default not in VALID_AWS_ACCESS_MODES:
         default = "higher-cost"
+
+    # 1. NexusNetworkConfig CR
     try:
         if crd_api is None:
             from .utils.k8s_client import authed_custom_objects_api
@@ -189,15 +195,33 @@ def _resolve_aws_access_mode(crd_api: Any = None) -> str:
         cr = crd_api.get_cluster_custom_object(
             "nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints",
         )
-        mode = cr.get("spec", {}).get("awsAccessMode", default)
-        if mode not in VALID_AWS_ACCESS_MODES:
-            return default
-        return mode
+        mode = cr.get("spec", {}).get("awsAccessMode")
+        if mode in VALID_AWS_ACCESS_MODES:
+            return mode
     except ApiException:
-        return default
+        # CR not present — fall through to VPC tag.
+        pass
     except Exception as e:
-        logger.warning(f"_resolve_aws_access_mode fallback to {default}: {e}")
-        return default
+        logger.warning(f"_resolve_aws_access_mode CR read failed: {e}")
+
+    # 2. VPC tag fallback
+    try:
+        region = os.getenv("AWS_REGION") or os.getenv("CLUSTER_REGION") or "us-east-1"
+        cluster_name = os.getenv("CLUSTER_NAME", "")
+        if cluster_name:
+            from .resources import read_vpc_profile_tag
+            tag = read_vpc_profile_tag(region, cluster_name)
+            if tag in VALID_AWS_ACCESS_MODES:
+                logger.info(
+                    f"_resolve_aws_access_mode: NexusNetworkConfig CR not found; "
+                    f"using VPC tag nexus:network-profile={tag}"
+                )
+                return tag
+    except Exception as e:
+        logger.debug(f"_resolve_aws_access_mode VPC tag fallback unavailable: {e}")
+
+    # 3. Hardcoded default
+    return default
 
 
 async def _reconcile_network_config(spec: dict, name: str, patch: kopf.Patch, logger_: logging.Logger) -> None:

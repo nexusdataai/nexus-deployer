@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-This feature redesigns the Welcome Screen and Capability Selection screens in the Totogi Capability Installer. The Welcome Screen will be simplified to show a clean graphic/hero section instead of verbose text instructions. The Capability Selection screen will be reorganized to show Installed Capabilities and Available Capabilities in separate sections with appropriate actions (Update/Delete for installed, Install for available).
+This feature redesigns the Welcome Screen and Capability Selection screens in the Nexus AI Capability Installer. The Welcome Screen will be simplified to show a clean graphic/hero section instead of verbose text instructions. The Capability Selection screen will be reorganized to show Installed Capabilities and Available Capabilities in separate sections with appropriate actions (Update/Delete for installed, Install for available).
 
 ## Glossary
 
@@ -24,7 +25,7 @@ This feature redesigns the Welcome Screen and Capability Selection screens in th
 #### Acceptance Criteria
 
 1. WHEN a user opens the application THEN the Welcome_Screen SHALL display a prominent hero graphic/illustration representing Telco Business Capability deployment
-2. WHEN the Welcome_Screen loads THEN the system SHALL display the application title "Totogi Capability Installer" prominently
+2. WHEN the Welcome_Screen loads THEN the system SHALL display the application title "Nexus AI Capability Installer" prominently
 3. WHEN the Welcome_Screen loads THEN the system SHALL display a single "Get Started" button to proceed
 4. WHEN the Welcome_Screen loads THEN the system SHALL NOT display the detailed workflow steps or feature lists
 5. WHEN the Welcome_Screen loads THEN the system SHALL display the tagline "Deploy Business Capability in your Environment"

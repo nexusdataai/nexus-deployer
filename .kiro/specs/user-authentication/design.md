@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: User Authentication
 
 ## Overview
 
-This design document describes the implementation of a comprehensive user authentication system for the Totogi Customer Toolkit. The system provides three authentication mechanisms: username/password authentication with JWT session management, multi-factor authentication (MFA) using TOTP/SMS/email, and enterprise SSO integration supporting SAML 2.0, OAuth 2.0, and OpenID Connect.
+This design document describes the implementation of a comprehensive user authentication system for the Nexus AI Customer Toolkit. The system provides three authentication mechanisms: username/password authentication with JWT session management, multi-factor authentication (MFA) using TOTP/SMS/email, and enterprise SSO integration supporting SAML 2.0, OAuth 2.0, and OpenID Connect.
 
 The authentication system is designed as a layered architecture with clear separation between the API layer (FastAPI routers), service layer (authentication logic), and data layer (TinyDB for user storage). This design enables secure, scalable authentication while maintaining compatibility with the existing toolkit architecture.
 
@@ -269,7 +270,7 @@ class MFAService:
         self, 
         secret: str, 
         username: str, 
-        issuer: str = "Totogi Toolkit"
+        issuer: str = "Nexus AI Toolkit"
     ) -> str:
         """Generate QR code for TOTP enrollment."""
         totp = pyotp.TOTP(secret)
@@ -294,7 +295,7 @@ class MFAService:
         code = self._generate_numeric_code(6)
         await self.sms_provider.send(
             phone_number, 
-            f"Your Totogi verification code is: {code}"
+            f"Your Nexus AI verification code is: {code}"
         )
         return code
     
@@ -303,7 +304,7 @@ class MFAService:
         code = self._generate_numeric_code(6)
         await self.email_provider.send(
             email,
-            "Totogi Verification Code",
+            "Nexus AI Verification Code",
             f"Your verification code is: {code}"
         )
         return code

@@ -1,5 +1,5 @@
 ; installer.nsh
-; Custom NSIS installer hooks for Totogi Capability Installer
+; Custom NSIS installer hooks for Nexus AI Capability Installer
 ; This file is included by electron-builder during NSIS installer creation
 
 !include "LogicLib.nsh"
@@ -28,9 +28,9 @@ Var DeleteAppData
   File "${BUILD_RESOURCES_DIR}\scripts\uninstall-logger.ps1"
   
   ; Write installation info to registry
-  WriteRegStr HKCU "Software\totogi-installer" "InstallPath" "$INSTDIR"
-  WriteRegStr HKCU "Software\totogi-installer" "Version" "${VERSION}"
-  WriteRegStr HKCU "Software\totogi-installer" "InstallDate" "$INSTDIR"
+  WriteRegStr HKCU "Software\nexus-installer" "InstallPath" "$INSTDIR"
+  WriteRegStr HKCU "Software\nexus-installer" "Version" "${VERSION}"
+  WriteRegStr HKCU "Software\nexus-installer" "InstallDate" "$INSTDIR"
 !macroend
 
 ; ============================================
@@ -39,9 +39,9 @@ Var DeleteAppData
 
 !macro customUnInit
   ; Initialize log file
-  FileOpen $0 "$TEMP\totogi-uninstall.log" w
+  FileOpen $0 "$TEMP\nexus-uninstall.log" w
   FileWrite $0 "========================================$\r$\n"
-  FileWrite $0 "Totogi Installer Uninstall Log$\r$\n"
+  FileWrite $0 "Nexus AI Installer Uninstall Log$\r$\n"
   FileWrite $0 "========================================$\r$\n"
   FileClose $0
 !macroend
@@ -52,7 +52,7 @@ Var DeleteAppData
 
 !macro customUnInstall
   ; Log uninstall start
-  DetailPrint "Starting Totogi Installer cleanup..."
+  DetailPrint "Starting Nexus AI Installer cleanup..."
   
   ; ----------------------------------------
   ; Step 1: Terminate running processes
@@ -60,11 +60,11 @@ Var DeleteAppData
   DetailPrint "Terminating running processes..."
   
   ; Kill backend process
-  nsExec::ExecToLog 'taskkill /F /IM totogi-backend.exe /T'
+  nsExec::ExecToLog 'taskkill /F /IM nexus-installer-backend.exe /T'
   Pop $0
   
   ; Kill Electron app
-  nsExec::ExecToLog 'taskkill /F /IM "Totogi Installer.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "Nexus AI Installer.exe" /T'
   Pop $0
   
   ; Wait for processes to fully terminate
@@ -145,9 +145,9 @@ Var DeleteAppData
       Pop $0
     ${Else}
       ; Fallback: manual cleanup
-      RMDir /r "$APPDATA\totogi-installer"
-      RMDir /r "$LOCALAPPDATA\totogi-installer"
-      RMDir /r "$LOCALAPPDATA\Totogi Installer"
+      RMDir /r "$APPDATA\nexus-installer"
+      RMDir /r "$LOCALAPPDATA\nexus-installer"
+      RMDir /r "$LOCALAPPDATA\Nexus AI Installer"
     ${EndIf}
   ${Else}
     DetailPrint "Preserving application data..."
@@ -157,8 +157,8 @@ Var DeleteAppData
   ; Step 4: Clean registry (fallback if script failed)
   ; ----------------------------------------
   DetailPrint "Cleaning registry entries..."
-  DeleteRegKey HKCU "Software\totogi-installer"
-  DeleteRegKey HKCU "Software\Totogi Installer"
+  DeleteRegKey HKCU "Software\nexus-installer"
+  DeleteRegKey HKCU "Software\Nexus AI Installer"
   
   ; ----------------------------------------
   ; Step 5: Remove scripts directory
@@ -171,7 +171,7 @@ Var DeleteAppData
   DetailPrint "Cleanup complete!"
   
   ; Log completion
-  FileOpen $0 "$TEMP\totogi-uninstall.log" a
+  FileOpen $0 "$TEMP\nexus-uninstall.log" a
   FileWrite $0 "$\r$\n========================================$\r$\n"
   FileWrite $0 "Uninstall completed at: $INSTDIR$\r$\n"
   FileWrite $0 "Application data deleted: $DeleteAppData$\r$\n"

@@ -81,7 +81,7 @@ def kubectl_text(args):
 def find_capability():
     """Find NexusCapability to verify."""
     if TARGET_NS:
-        obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
+        obj = kubectl_json(["get", "nexuscapability", "--all-namespaces"])
         if obj and obj.get("items"):
             for item in obj["items"]:
                 if item["metadata"]["namespace"] == TARGET_NS:
@@ -89,11 +89,11 @@ def find_capability():
         # try as namespace/name
         if "/" in TARGET_NS:
             ns, name = TARGET_NS.split("/", 1)
-            item = kubectl_json(["get", "totogicapability", name, "-n", ns])
+            item = kubectl_json(["get", "nexuscapability", name, "-n", ns])
             if item:
                 return item
     
-    obj = kubectl_json(["get", "totogicapability", "--all-namespaces"])
+    obj = kubectl_json(["get", "nexuscapability", "--all-namespaces"])
     if not obj or not obj.get("items"):
         print("No NexusCapability resources found.")
         sys.exit(1)
@@ -350,7 +350,7 @@ def verify_app_health(namespace, ingress_obj, cap_name, env):
         try:
             import urllib.request
             req = urllib.request.Request(f"{alb_url}/", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
+            req.add_header("User-Agent", "nexus-verify/1.0")
             resp = urllib.request.urlopen(req, timeout=10)
             status_code = resp.getcode()
             check(f"GET {alb_url}/", status_code == 200, f"HTTP {status_code}")
@@ -373,7 +373,7 @@ def verify_app_health(namespace, ingress_obj, cap_name, env):
             try:
                 import urllib.request
                 req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")
-                req.add_header("User-Agent", "totogi-verify/1.0")
+                req.add_header("User-Agent", "nexus-verify/1.0")
                 resp = urllib.request.urlopen(req, timeout=10)
                 status_code = resp.getcode()
                 check(f"GET {alb_url}{endpoint}", status_code == 200, f"HTTP {status_code}")
@@ -427,7 +427,7 @@ def verify_app_health(namespace, ingress_obj, cap_name, env):
             try:
                 import urllib.request
                 req = urllib.request.Request(f"{alb_url}{endpoint}", method="GET")
-                req.add_header("User-Agent", "totogi-verify/1.0")
+                req.add_header("User-Agent", "nexus-verify/1.0")
                 resp = urllib.request.urlopen(req, timeout=10)
                 status_code = resp.getcode()
                 check(f"GET {endpoint}", status_code == 200, f"HTTP {status_code}")
@@ -646,7 +646,7 @@ def verify_cognito(session, spec, cap_name, env, alb_url):
         try:
             import urllib.request
             req = urllib.request.Request(f"{alb_url}/api/v1/auth/health", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
+            req.add_header("User-Agent", "nexus-verify/1.0")
             resp = urllib.request.urlopen(req, timeout=10)
             body = resp.read().decode("utf-8")
             status_code = resp.getcode()
@@ -677,7 +677,7 @@ def verify_cognito(session, spec, cap_name, env, alb_url):
         try:
             import urllib.request
             req = urllib.request.Request(f"{alb_url}/api/v1/auth/login/init", method="GET")
-            req.add_header("User-Agent", "totogi-verify/1.0")
+            req.add_header("User-Agent", "nexus-verify/1.0")
             resp = urllib.request.urlopen(req, timeout=10)
             body = resp.read().decode("utf-8")
             

@@ -1,8 +1,9 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Design Document: Installer Uninstall Cleanup
 
 ## Overview
 
-This design addresses the issue where the backend process (`totogi-backend.exe`) remains running after the Totogi Capability Installer is uninstalled. The solution involves:
+This design addresses the issue where the backend process (`nexus-installer-backend.exe`) remains running after the Nexus AI Capability Installer is uninstalled. The solution involves:
 
 1. Custom NSIS uninstall scripts to terminate processes
 2. Graceful shutdown handling in the Python backend
@@ -46,23 +47,23 @@ The electron-builder NSIS configuration will be extended with custom uninstall h
 ; Custom uninstall script hooks
 !macro customUnInstall
   ; Terminate backend process
-  nsExec::ExecToLog 'taskkill /F /IM totogi-backend.exe'
+  nsExec::ExecToLog 'taskkill /F /IM nexus-installer-backend.exe'
   
   ; Terminate Electron app
-  nsExec::ExecToLog 'taskkill /F /IM "Totogi Installer.exe"'
+  nsExec::ExecToLog 'taskkill /F /IM "Nexus AI Installer.exe"'
   
   ; Clean application data (if user opted in)
   ${If} $DeleteAppData == "true"
-    RMDir /r "$APPDATA\totogi-installer"
-    RMDir /r "$LOCALAPPDATA\totogi-installer"
-    RMDir /r "$LOCALAPPDATA\Totogi Installer"
+    RMDir /r "$APPDATA\nexus-installer"
+    RMDir /r "$LOCALAPPDATA\nexus-installer"
+    RMDir /r "$LOCALAPPDATA\Nexus AI Installer"
   ${EndIf}
   
   ; Clean temp files
-  RMDir /r "$TEMP\totogi-*"
+  RMDir /r "$TEMP\nexus-*"
   
   ; Clean registry
-  DeleteRegKey HKCU "Software\totogi-installer"
+  DeleteRegKey HKCU "Software\nexus-installer"
 !macroend
 ```
 
@@ -74,7 +75,7 @@ A PowerShell script that handles graceful process termination with timeout.
 # terminate-processes.ps1
 param(
     [int]$GracefulTimeoutSeconds = 5,
-    [string]$LogFile = "$env:TEMP\totogi-uninstall.log"
+    [string]$LogFile = "$env:TEMP\nexus-uninstall.log"
 )
 
 function Terminate-Process {
@@ -162,7 +163,7 @@ class UninstallLogger:
     
     def __init__(self, log_path: Path = None):
         if log_path is None:
-            log_path = Path(os.environ.get('TEMP', '/tmp')) / 'totogi-uninstall.log'
+            log_path = Path(os.environ.get('TEMP', '/tmp')) / 'nexus-uninstall.log'
         
         self.log_path = log_path
         self._setup_logging()
@@ -224,7 +225,7 @@ class UninstallResult:
 
 ### Property 1: Process Termination Completeness
 
-*For any* running instance of `totogi-backend.exe` or `Totogi Installer.exe`, after the uninstaller completes, no processes with those names from this installation shall remain running.
+*For any* running instance of `nexus-installer-backend.exe` or `Nexus AI Installer.exe`, after the uninstaller completes, no processes with those names from this installation shall remain running.
 
 **Validates: Requirements 1.1, 1.4, 2.1, 2.3**
 
@@ -236,7 +237,7 @@ class UninstallResult:
 
 ### Property 3: Application Data Cleanup
 
-*For any* uninstall with `delete_app_data=True`, all files and directories under `%APPDATA%\totogi-installer`, `%LOCALAPPDATA%\totogi-installer`, and `%LOCALAPPDATA%\Totogi Installer` shall be removed.
+*For any* uninstall with `delete_app_data=True`, all files and directories under `%APPDATA%\nexus-installer`, `%LOCALAPPDATA%\nexus-installer`, and `%LOCALAPPDATA%\Nexus AI Installer` shall be removed.
 
 **Validates: Requirements 3.2, 3.3**
 
@@ -248,13 +249,13 @@ class UninstallResult:
 
 ### Property 5: Temp File Cleanup
 
-*For any* uninstall operation, all files matching `%TEMP%\totogi-*` and PyInstaller temp directories shall be removed.
+*For any* uninstall operation, all files matching `%TEMP%\nexus-*` and PyInstaller temp directories shall be removed.
 
 **Validates: Requirements 6.1, 6.2, 6.3**
 
 ### Property 6: Registry Cleanup
 
-*For any* uninstall operation, all registry keys under `HKCU\Software\totogi-installer` and `HKLM\Software\totogi-installer` shall be removed.
+*For any* uninstall operation, all registry keys under `HKCU\Software\nexus-installer` and `HKLM\Software\nexus-installer` shall be removed.
 
 **Validates: Requirements 4.1, 4.2**
 
@@ -266,7 +267,7 @@ class UninstallResult:
 
 ### Property 8: Uninstall Logging
 
-*For any* uninstall operation, a log file shall be created at `%TEMP%\totogi-uninstall.log` containing entries for each action performed and any errors encountered.
+*For any* uninstall operation, a log file shall be created at `%TEMP%\nexus-uninstall.log` containing entries for each action performed and any errors encountered.
 
 **Validates: Requirements 8.1, 8.2, 8.3, 8.4**
 

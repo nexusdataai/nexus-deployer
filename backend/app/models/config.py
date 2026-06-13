@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 
 class DomainConfig(BaseModel):
     """Domain configuration"""
-    base: str = Field(default="totogicore.com", description="Base domain")
+    base: str = Field(default="nexus.ai", description="Base domain")
     frontend_subdomain: str = Field(default="call", description="Frontend subdomain")
     backend_subdomain: str = Field(default="call-api", description="Backend API subdomain")
     hosted_zone_id: str = Field(default="Z084501638STQ2EKKSIA", description="Route53 Hosted Zone ID")
@@ -146,7 +146,7 @@ class EnvironmentConfig(BaseModel):
             "example": {
                 "infrastructure": {
                     "domain": {
-                        "base": "totogicore.com",
+                        "base": "nexus.ai",
                         "frontend_subdomain": "call",
                         "backend_subdomain": "call-api",
                         "hosted_zone_id": "Z084501638STQ2EKKSIA"

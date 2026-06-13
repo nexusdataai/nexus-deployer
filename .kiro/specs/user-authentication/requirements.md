@@ -1,12 +1,13 @@
+<!-- (renamed totogi-* -> nexus-* on 2026-06-13; original wording was design-snapshot) -->
 # Requirements Document
 
 ## Introduction
 
-The Totogi Customer Toolkit requires a comprehensive authentication system to secure access to the capability deployment platform. This feature implements username/password authentication with session management, multi-factor authentication (MFA) support, and enterprise SSO integration. The authentication system must protect against common attack vectors while providing a seamless user experience across both PWA and Electron desktop application delivery models.
+The Nexus AI Customer Toolkit requires a comprehensive authentication system to secure access to the capability deployment platform. This feature implements username/password authentication with session management, multi-factor authentication (MFA) support, and enterprise SSO integration. The authentication system must protect against common attack vectors while providing a seamless user experience across both PWA and Electron desktop application delivery models.
 
 ## Glossary
 
-- **Toolkit**: The Totogi Customer Toolkit application (PWA and Electron desktop app)
+- **Toolkit**: The Nexus AI Customer Toolkit application (PWA and Electron desktop app)
 - **User**: An individual who accesses the Toolkit with credentials
 - **Session**: An authenticated user context with a defined lifetime
 - **JWT**: JSON Web Token used for session management and authorization

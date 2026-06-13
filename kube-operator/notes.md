@@ -20,8 +20,8 @@ com.amazonaws.ap-southeast-1.cognito-idp	Interface	EKS subnets
 com.amazonaws.ap-southeast-1.logs	Interface	EKS subnets
 For Interface endpoints: enable Private DNS, use a security group that allows inbound TCP 443 from the VPC CIDR.
 
-Meanwhile, fix the operator crash -- delete the TotogiNetworkConfig so the operator stops trying to provision endpoints:
+Meanwhile, fix the operator crash -- delete the NexusNetworkConfig so the operator stops trying to provision endpoints:
 
 kubectl delete tnc vpc-endpoints 2>/dev/null || \
   kubectl patch tnc vpc-endpoints --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-kubectl delete pod -n totogi-system --all
+kubectl delete pod -n nexus-system --all

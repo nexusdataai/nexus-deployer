@@ -58,7 +58,7 @@ def _boto_client_kwargs():
 
 
 def _merge_vpc_endpoint_for_check(service_name: str, region_name: str, kwargs: dict) -> dict:
-    """Regional endpoints for VPC DNS (mirrors totogi_operator.utils.aws_vpc_endpoints)."""
+    """Regional endpoints for VPC DNS (mirrors nexus_operator.utils.aws_vpc_endpoints)."""
     merged = dict(kwargs)
     merged.setdefault("region_name", region_name)
     r = merged["region_name"]

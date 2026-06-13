@@ -81,7 +81,7 @@ async def test_step1_happy_path_returns_pass():
     })
     ops.check_operator_status = AsyncMock(return_value={
         "installed": True, "status": "installed",
-        "version": "1.0.0", "namespace": "totogi-system",
+        "version": "1.0.0", "namespace": "nexus-system",
         "ready_replicas": 1, "desired_replicas": 1,
         "detail": "Operator running",
     })
@@ -115,7 +115,7 @@ async def test_step1_missing_oidc_provider_fails_fast():
     }
     ops._get_k8s_clients = AsyncMock(return_value=(MagicMock(), MagicMock(), MagicMock()))
     ops.check_alb_controller_installed = AsyncMock(return_value={"installed": False, "message": ""})
-    ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "totogi-system"})
+    ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "nexus-system"})
 
     orch = _make_orchestrator(ops)
     report = await orch.step1_cluster_readiness("nexus-test1", iam_mode="managed")
@@ -149,7 +149,7 @@ async def test_step1_preprovisioned_missing_operator_role_is_fail():
     }
     ops._get_k8s_clients = AsyncMock(return_value=(MagicMock(), MagicMock(), MagicMock()))
     ops.check_alb_controller_installed = AsyncMock(return_value={"installed": True, "message": ""})
-    ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "totogi-system"})
+    ops.check_operator_status = AsyncMock(return_value={"installed": False, "status": "not_installed", "namespace": "nexus-system"})
 
     orch = _make_orchestrator(ops)
     report = await orch.step1_cluster_readiness("nexus-test1", iam_mode="preprovisioned")

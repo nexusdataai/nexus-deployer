@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Totogi Installer - Smart Startup Script
+# Nexus AI Installer - Smart Startup Script
 # This script will:
 # 1. Check and stop existing processes on ports 8001 and 5173
 # 2. Start backend with venv
@@ -18,7 +18,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}========================================"
-echo -e "  Totogi Installer - Smart Startup"
+echo -e "  Nexus AI Installer - Smart Startup"
 echo -e "========================================${NC}"
 echo ""
 

@@ -1,9 +1,9 @@
 @echo off
-REM Totogi Installer - Startup Script (Batch)
+REM Nexus AI Installer - Startup Script (Batch)
 REM This launches the PowerShell script
 
 echo ========================================
-echo   Totogi Installer - Startup
+echo   Nexus AI Installer - Startup
 echo ========================================
 echo.
 

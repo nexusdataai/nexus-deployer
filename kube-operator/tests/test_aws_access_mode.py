@@ -240,6 +240,199 @@ async def test_validator_public_nodes_requires_public_subnets():
     assert "subnets:not-all-public" in result["validation"]["missing"]
 
 
+# ── B4 additions: positive public-nodes, drift detection, VPC-tag fallback ──
+
+
+@pytest.mark.asyncio
+async def test_validator_public_nodes_ok_when_all_subnets_public():
+    """public-nodes profile: validator must accept absence of endpoints/NAT
+    as the expected configuration, requiring only public subnets."""
+    validator = _make_validator("public-nodes")
+    validator.eks.describe_cluster.return_value = {
+        "cluster": {"resourcesVpcConfig": {"vpcId": "vpc-1", "subnetIds": ["sn-1", "sn-2"]}}
+    }
+    validator.ec2.describe_vpcs.return_value = {
+        "Vpcs": [{"Tags": [{"Key": "nexus:network-profile", "Value": "public-nodes"}]}]
+    }
+    # No endpoints, no NAT — the expected public-nodes topology.
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{"VpcEndpoints": []}]
+    validator.ec2.get_paginator.return_value = paginator
+    validator.ec2.describe_subnets.return_value = {
+        "Subnets": [
+            {"SubnetId": "sn-1", "MapPublicIpOnLaunch": True},
+            {"SubnetId": "sn-2", "MapPublicIpOnLaunch": True},
+        ],
+    }
+
+    result = await validator.validate()
+    assert result["validation"]["ok"] is True
+    assert result["validation"]["missing"] == []
+    assert result["validation"]["expected"] == "public-nodes"
+    assert result["actualProfileTag"] == "public-nodes"
+
+
+@pytest.mark.asyncio
+async def test_validator_drift_spec_says_moderate_but_tag_says_lowest_cost():
+    """When the VPC tag disagrees with spec.awsAccessMode, the validator
+    must surface the actual tag so the reconciler can report drift."""
+    from nexus_operator.resources.vpc_endpoints import GATEWAY_SERVICES
+
+    # spec mode is 'moderate'; cluster was actually built as 'lowest-cost'.
+    validator = _make_validator("moderate")
+    validator.eks.describe_cluster.return_value = {
+        "cluster": {"resourcesVpcConfig": {"vpcId": "vpc-1", "subnetIds": ["sn-1"]}}
+    }
+    validator.ec2.describe_vpcs.return_value = {
+        "Vpcs": [{"Tags": [{"Key": "nexus:network-profile", "Value": "lowest-cost"}]}]
+    }
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{
+        "VpcEndpoints": [_ep(s, "Gateway") for s in GATEWAY_SERVICES],
+    }]
+    validator.ec2.get_paginator.return_value = paginator
+    # Only 1 NAT (matching lowest-cost), but spec says moderate -> drift.
+    validator.ec2.describe_instances.return_value = {
+        "Reservations": [{"Instances": [{"InstanceId": "i-nat-1"}]}],
+    }
+    validator.ec2.describe_route_tables.return_value = {
+        "RouteTables": [{
+            "Routes": [{
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NetworkInterfaceId": "eni-nat-1",
+            }],
+        }],
+    }
+    validator.ec2.describe_network_interfaces.return_value = {
+        "NetworkInterfaces": [{"TagSet": [{"Key": "nexus:nat-instance", "Value": "true"}]}],
+    }
+
+    result = await validator.validate()
+    # The validator surfaces the actual VPC tag so main.py can compare.
+    assert result["actualProfileTag"] == "lowest-cost"
+    # And it flags moderate's missing 2nd NAT.
+    assert any(m.startswith("nat-instance:expected=2") for m in result["validation"]["missing"])
+
+
+# ── read_vpc_profile_tag (the new B3 fallback helper) ────────────────────
+
+
+def test_read_vpc_profile_tag_returns_value_when_tag_present(monkeypatch):
+    from nexus_operator.resources.vpc_endpoints import read_vpc_profile_tag
+
+    eks_client = MagicMock()
+    eks_client.describe_cluster.return_value = {
+        "cluster": {"resourcesVpcConfig": {"vpcId": "vpc-1"}}
+    }
+    ec2_client = MagicMock()
+    ec2_client.describe_vpcs.return_value = {
+        "Vpcs": [{"Tags": [
+            {"Key": "Name", "Value": "nexus-vpc"},
+            {"Key": "nexus:network-profile", "Value": "moderate"},
+        ]}]
+    }
+
+    def fake_client(service, region_name=None):
+        return eks_client if service == "eks" else ec2_client
+
+    monkeypatch.setattr(
+        "nexus_operator.resources.vpc_endpoints.vpc_boto3_client", fake_client
+    )
+
+    assert read_vpc_profile_tag("us-east-1", "nexus-dev") == "moderate"
+
+
+def test_read_vpc_profile_tag_returns_none_when_tag_absent(monkeypatch):
+    from nexus_operator.resources.vpc_endpoints import read_vpc_profile_tag
+
+    eks_client = MagicMock()
+    eks_client.describe_cluster.return_value = {
+        "cluster": {"resourcesVpcConfig": {"vpcId": "vpc-1"}}
+    }
+    ec2_client = MagicMock()
+    ec2_client.describe_vpcs.return_value = {"Vpcs": [{"Tags": []}]}
+
+    def fake_client(service, region_name=None):
+        return eks_client if service == "eks" else ec2_client
+
+    monkeypatch.setattr(
+        "nexus_operator.resources.vpc_endpoints.vpc_boto3_client", fake_client
+    )
+
+    assert read_vpc_profile_tag("us-east-1", "nexus-dev") is None
+
+
+def test_read_vpc_profile_tag_rejects_unknown_value(monkeypatch):
+    """If the VPC tag is set to a non-recognised mode (e.g. user typo),
+    the helper returns None so callers fall through to their default."""
+    from nexus_operator.resources.vpc_endpoints import read_vpc_profile_tag
+
+    eks_client = MagicMock()
+    eks_client.describe_cluster.return_value = {
+        "cluster": {"resourcesVpcConfig": {"vpcId": "vpc-1"}}
+    }
+    ec2_client = MagicMock()
+    ec2_client.describe_vpcs.return_value = {
+        "Vpcs": [{"Tags": [{"Key": "nexus:network-profile", "Value": "bogus-mode"}]}]
+    }
+
+    def fake_client(service, region_name=None):
+        return eks_client if service == "eks" else ec2_client
+
+    monkeypatch.setattr(
+        "nexus_operator.resources.vpc_endpoints.vpc_boto3_client", fake_client
+    )
+
+    assert read_vpc_profile_tag("us-east-1", "nexus-dev") is None
+
+
+def test_read_vpc_profile_tag_empty_cluster_name_returns_none():
+    """Defensive: empty cluster name short-circuits without an AWS call."""
+    from nexus_operator.resources.vpc_endpoints import read_vpc_profile_tag
+
+    assert read_vpc_profile_tag("us-east-1", "") is None
+    assert read_vpc_profile_tag("us-east-1", None) is None  # type: ignore[arg-type]
+
+
+def test_resolve_aws_access_mode_falls_back_to_vpc_tag(monkeypatch):
+    """When the NexusNetworkConfig CR is missing, _resolve_aws_access_mode
+    must use the VPC tag (the B3 fallback) before falling back to env default."""
+    from kubernetes.client.rest import ApiException
+    from nexus_operator.main import _resolve_aws_access_mode
+
+    fake_api = MagicMock()
+    fake_api.get_cluster_custom_object.side_effect = ApiException(status=404)
+
+    monkeypatch.setenv("CLUSTER_NAME", "nexus-dev")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_ACCESS_MODE_DEFAULT", "higher-cost")
+    monkeypatch.setattr(
+        "nexus_operator.resources.read_vpc_profile_tag",
+        lambda region, cluster_name: "lowest-cost",
+    )
+
+    # CR missing + VPC tag says lowest-cost -> resolver returns lowest-cost.
+    assert _resolve_aws_access_mode(fake_api) == "lowest-cost"
+
+
+def test_resolve_aws_access_mode_falls_back_to_env_when_no_cr_and_no_tag(monkeypatch):
+    """Both CR and VPC tag missing -> use env default."""
+    from kubernetes.client.rest import ApiException
+    from nexus_operator.main import _resolve_aws_access_mode
+
+    fake_api = MagicMock()
+    fake_api.get_cluster_custom_object.side_effect = ApiException(status=404)
+
+    monkeypatch.setenv("CLUSTER_NAME", "nexus-dev")
+    monkeypatch.setenv("AWS_ACCESS_MODE_DEFAULT", "moderate")
+    monkeypatch.setattr(
+        "nexus_operator.resources.read_vpc_profile_tag",
+        lambda region, cluster_name: None,
+    )
+
+    assert _resolve_aws_access_mode(fake_api) == "moderate"
+
+
 # ── deploy_backend env var injection ────────────────────────────────────
 
 
