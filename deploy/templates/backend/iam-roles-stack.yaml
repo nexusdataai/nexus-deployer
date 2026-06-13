@@ -149,17 +149,9 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-reports'
                   - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-journey-reports/*'
-              # S3 access for call data/recordings bucket
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                  - s3:DeleteObject
-                  - s3:ListBucket
-                  - s3:GetBucketLocation
-                Resource:
-                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-call-data'
-                  - !Sub 'arn:aws:s3:::${CapabilityName}-${Environment}-call-data/*'
+              # NOTE: The call-data S3 bucket grant was removed when call
+              # processing was retired as a feature. The Glue Data Catalog
+              # access below is retained for non-call-records use cases.
               # DynamoDB access - Full CRUD operations for all capability tables
               - Effect: Allow
                 Action:
@@ -271,9 +263,11 @@ Resources:
                       - !Sub 's3.${AWS::Region}.amazonaws.com'
                       - !Sub 'dynamodb.${AWS::Region}.amazonaws.com'
               # =============================================================================
-              # WXCC Call Processing Permissions
+              # Data Catalog Permissions
               # =============================================================================
-              # AWS Glue - Data Catalog access for WXCC call data
+              # AWS Glue - Data Catalog access (the historical wxcc_calls
+              # table was retired with call processing; access is retained
+              # for future analytics tables in the same database)
               - Effect: Allow
                 Action:
                   - glue:GetDatabase

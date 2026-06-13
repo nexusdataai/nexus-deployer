@@ -65,9 +65,6 @@ class SSMProvisioner:
         )
         
         # S3 parameters
-        params[self.naming.ssm_parameter("s3", "recordings-bucket")] = (
-            self.naming.call_data_bucket(), "Call data bucket"
-        )
         params[self.naming.ssm_parameter("s3", "journey-logs-bucket")] = (
             self.naming.journey_logs_bucket(), "Journey logs bucket"
         )
@@ -78,9 +75,6 @@ class SSMProvisioner:
         # Glue parameters
         params[self.naming.ssm_parameter("glue", "database")] = (
             self.naming.glue_database(), "Glue database"
-        )
-        params[self.naming.ssm_parameter("glue", "table")] = (
-            self.naming.glue_table(), "Glue table"
         )
         
         # WXCC Simulator parameters

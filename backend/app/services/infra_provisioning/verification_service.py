@@ -168,7 +168,6 @@ class VerificationService:
         results = []
         
         bucket_names = [
-            self.naming.call_data_bucket(),
             self.naming.wxcc_simulator_bucket(),
             self.naming.journey_logs_bucket(),
             self.naming.journey_reports_bucket(),
@@ -304,17 +303,14 @@ class VerificationService:
             )
     
     def verify_glue_resources(self) -> List[VerificationResult]:
-        """Verify Glue database and table exist."""
+        """Verify the Glue database exists."""
         results = []
-        
-        # Verify database
+
+        # Verify database (the historical wxcc_calls table was retired
+        # along with call processing as a feature)
         database_name = self.naming.glue_database()
         results.append(self._verify_glue_database(database_name))
-        
-        # Verify table
-        table_name = self.naming.glue_table()
-        results.append(self._verify_glue_table(database_name, table_name))
-        
+
         return results
     
     def _verify_glue_database(self, database_name: str) -> VerificationResult:

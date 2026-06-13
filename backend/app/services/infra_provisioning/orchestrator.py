@@ -204,18 +204,12 @@ class ProvisioningOrchestrator:
                 message=f"[DRY RUN] Would create secret: {secret_name}",
             ))
         
-        # Glue database and table
+        # Glue database
         results.append(ResourceStatus(
             resource_type=self.glue.create_database.__annotations__.get('return', None) or ResourceStatus,
             resource_name=self.naming.glue_database(),
             status=ResourceStatusType.SKIPPED,
             message=f"[DRY RUN] Would create Glue database: {self.naming.glue_database()}",
-        ))
-        results.append(ResourceStatus(
-            resource_type=self.glue.create_wxcc_calls_table.__annotations__.get('return', None) or ResourceStatus,
-            resource_name=f"{self.naming.glue_database()}.{self.naming.glue_table()}",
-            status=ResourceStatusType.SKIPPED,
-            message=f"[DRY RUN] Would create Glue table: {self.naming.glue_table()}",
         ))
         
         # CloudWatch log group

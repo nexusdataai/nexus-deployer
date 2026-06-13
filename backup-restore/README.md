@@ -4,7 +4,7 @@ A single Python CLI that produces a portable tarball containing **everything**
 needed to clone a Nexus capability (`nexus-ai-dev`, etc.) into another AWS
 account and EKS cluster:
 
-- S3 buckets (simulator dumps, journey logs/reports, call-data, mimir blocks)
+- S3 buckets (simulator dumps, journey logs/reports, bssmagic-dumps, mimir blocks)
 - DynamoDB tables (transformation-system, foundry-workspace, license, …)
 - SSM Parameter Store (`/nexus-ai/dev/*`)
 - AWS Secrets Manager (`nexus-ai/dev/*`)
@@ -49,6 +49,71 @@ python3 backup_restore.py restore \
 
 ---
 
+## Logical entity backup
+
+For day-to-day business-data clones (e.g. dev → test, snapshotting your
+Solutions + Workflows + Connectors before a migration) you usually don't
+need bssmagic Postgres dumps, Mimir TSDB blocks, or Velero PVCs — those
+are either regenerable from source or operationally expensive. The
+`--entities` / `--preset` flags let you say *what business stuff to back
+up* instead of *which physical tables and buckets*.
+
+### Entity → storage map
+
+| Entity | What gets backed up |
+|---|---|
+| `virtual-data` | `mapping-rules` DDB + all 7 simulator S3 buckets |
+| `mapping-rules` | `mapping-rules` DDB |
+| `connectors` | `data-planes` + `connector-settings` DDB |
+| `policies` | `rbac` DDB (business policy docs live in repo YAML, not DR) |
+| `workflows` | `foundry-workspace` (`GSI1PK=JOURNEY`) + `transformation-system` (whole table) |
+| `react-tools` / `tools-registry` | `foundry-workspace` (`GSI1PK in TOOL, TOOL_VERSION`) |
+| `solutions` | `foundry-workspace` (`GSI1PK=SOLUTION`) |
+| `analytics` | `foundry-workspace` (`GSI1PK in DASHBOARD, VIEW`) + `solution-results` S3 |
+| `audit` | `control-plane-audit` DDB |
+| `integration-rules`, `ai-automations`, `connector-apis`, `business-policies`, `workflow-templates` | **noop** — source-of-truth is `enterprise-knowledge/*.yaml` in the container image; restored implicitly by deploying the same image |
+
+Preset `business` = `virtual-data, mapping-rules, connectors, policies, workflows, react-tools, tools-registry, solutions, analytics, audit`.
+
+### Examples
+
+```bash
+# Business data only (S3 + DDB; no bssmagic, no mimir, no Velero)
+python3 backup_restore.py backup --env dev --capability nexus-ai \
+    --profile ptr-tech --cluster nexus-dev \
+    --preset business \
+    -o business.tar.gz
+
+# Business data + infra (SSM/Secrets/Glue) for cross-account clone
+python3 backup_restore.py backup --env dev --preset business \
+    --include ssm,secrets,glue \
+    --profile ptr-tech -o full-business.tar.gz
+
+# Just workflows + solutions
+python3 backup_restore.py backup --env dev \
+    --entities workflows,solutions \
+    --profile ptr-tech -o subset.tar.gz
+
+# Restore only the workflows from a business backup
+python3 backup_restore.py restore -i business.tar.gz \
+    --target-env test --target-profile new-account \
+    --entities workflows
+```
+
+`--entities` and `--preset` are mutually exclusive with `--only` (the
+legacy storage-group filter). They compose additively with `--include`
+when you also need infra components.
+
+When `--entities`/`--preset` is set, the per-entity DDB filter writes
+JSONL to `dynamodb/{table}.{entity}.jsonl` so multiple entities pulled
+from the same physical table (e.g. `solutions` + `react-tools` from
+`foundry-workspace`) don't collide. Whole-table entities (no filter,
+e.g. `mapping-rules`) keep the legacy `dynamodb/{table}.jsonl` path. The
+manifest records each entity's filter so selective restore works
+without re-querying the source.
+
+---
+
 ## Tarball layout
 
 ```
@@ -59,7 +124,6 @@ nexus-backup-nexus-ai-dev-20260531T120000Z/
     sap-simulator/
     tpm-simulator/
     sourcing-simulator/
-    call-data/                       (knowledge prefixes only)
     journey-logs/
     journey-reports/
     solution-results/
@@ -123,7 +187,7 @@ env/capability/account so restore can do the correct renames.
 | Group | Members |
 |---|---|
 | `simulators`   | sfdc/oracle/sap/wxcc/external/tpm/sourcing simulator buckets |
-| `knowledge`    | call-data, bssmagic-dumps |
+| `knowledge`    | bssmagic-dumps |
 | `journeys`     | journey-logs, journey-reports, solution-results, transformation-system, foundry-workspace tables |
 | `config`       | license, rbac, sessions, audit-log, mapping-rules, … tables |
 | `observability`| mimir-blocks |

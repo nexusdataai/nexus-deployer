@@ -339,8 +339,8 @@ When you apply a TotogiCapability, the operator executes these steps (visible vi
 | Step | Phase | What Happens |
 |------|-------|-------------|
 | 1. DynamoDB | ProvisioningDataServices | Creates tables: `{cap}-{env}-transformation-system`, `-license`, `-wxcc-task-tracking` |
-| 2. S3 | ProvisioningDataServices | Creates buckets: `{cap}-{env}-call-data`, `-wxcc-simulator`, `-journey-logs`, `-journey-reports` |
-| 3. Glue | ProvisioningDataServices | Creates database `{cap}_{env}_db` and table `{cap}_{env}_call_records` |
+| 2. S3 | ProvisioningDataServices | Creates buckets: `{cap}-{env}-wxcc-simulator`, `-sfdc-simulator`, `-oracle-erp-simulator`, `-sap-simulator`, `-journey-logs`, `-journey-reports`, `-bssmagic-dumps`, `-mimir-blocks`, `-external-simulator`, `-solution-results` |
+| 3. Glue | ProvisioningDataServices | Creates database `{cap}_{env}_db` (the historical `call_records` table was retired with call processing) |
 | 4. SSM | ProvisioningSSM | Creates parameters under `/{cap}/{env}/` (region, env, table names, bucket names, etc.) |
 | 5. Secrets | ProvisioningSecrets | Creates secrets: `{cap}/{env}/api-keys`, `/wxcc`, `/openai`, `/license`, `/anthropic`, `/github` |
 | 6. IAM | ProvisioningIAM | Creates `{cap}-{env}-app-role` with IRSA trust policy |
@@ -783,7 +783,7 @@ All resources follow consistent naming patterns:
 | Resource | Pattern | Example |
 |----------|---------|---------|
 | DynamoDB Table | `{cap}-{env}-{purpose}` | `call-processing-prod-license` |
-| S3 Bucket | `{cap}-{env}-{purpose}` | `call-processing-prod-call-data` |
+| S3 Bucket | `{cap}-{env}-{purpose}` | `call-processing-prod-journey-logs` |
 | SSM Parameter | `/{cap}/{env}/{category}/{key}` | `/call-processing/prod/aws/region` |
 | Secret | `{cap}/{env}/{type}` | `call-processing/prod/api-keys` |
 | Glue Database | `{cap}_{env}_db` | `call_processing_prod_db` |

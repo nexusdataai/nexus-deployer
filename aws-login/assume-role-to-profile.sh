@@ -5,10 +5,12 @@ ENV_FILE="$SCRIPT_DIR/.env.roles.local"
 
 usage() {
   echo "Usage:"
-  echo "  $0 --<profile-name> [--console-url] [--duration N] [--region R] [--external-id ID]"
-  echo "  $0 <role-arn> <profile-name> [--console-url] [--duration N] [--region R] [--external-id ID]"
+  echo "  $0 --<profile-name> [--source-profile NAME] [--console-url] [--duration N] [--region R] [--external-id ID]"
+  echo "  $0 <role-arn> <profile-name> [--source-profile NAME] [--console-url] [--duration N] [--region R] [--external-id ID]"
   echo ""
   echo "Options:"
+  echo "  --source-profile NAME  Base AWS profile used to call sts:AssumeRole (default: \$AWS_SOURCE_PROFILE or ptr-tech)"
+  echo "                         Must have valid credentials — log in first with aws-sso-login.sh --profile NAME"
   echo "  --console-url    Generate AWS Console sign-in URL for the assumed role"
   echo "  --duration N     STS session duration in seconds (default: 3600, role MaxSessionDuration permitting)"
   echo "  --region R       Region for the console destination URL (default: \$AWS_REGION or us-east-1)"
@@ -37,7 +39,13 @@ PRINT_CONSOLE_URL=false
 DURATION_SECONDS=3600
 REGION="${AWS_REGION:-us-east-1}"
 
-if [[ "$1" == --* ]] && [[ "$1" != "--console-url" ]] && [[ "$1" != "--duration" ]] && [[ "$1" != "--region" ]] && [[ "$1" != "--external-id" ]]; then
+# Base / source profile used for the sts:AssumeRole API call itself. The
+# AWS CLI uses this profile's credentials to call AssumeRole; the resulting
+# temporary credentials are then written under $PROFILE_NAME. Default to
+# the user's SSO admin profile (ptr-tech); overridable via flag or env.
+SOURCE_PROFILE="${AWS_SOURCE_PROFILE:-ptr-tech}"
+
+if [[ "$1" == --* ]] && [[ "$1" != "--console-url" ]] && [[ "$1" != "--duration" ]] && [[ "$1" != "--region" ]] && [[ "$1" != "--external-id" ]] && [[ "$1" != "--source-profile" ]]; then
   PROFILE_NAME="${1#--}"
   shift
   if [ -z "$PROFILE_NAME" ]; then
@@ -81,10 +89,11 @@ fi
 
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-    --console-url) PRINT_CONSOLE_URL=true ;;
-    --duration)    DURATION_SECONDS="$2"; shift ;;
-    --region)      REGION="$2"; shift ;;
-    --external-id) EXTERNAL_ID_CLI="$2"; shift ;;
+    --console-url)    PRINT_CONSOLE_URL=true ;;
+    --duration)       DURATION_SECONDS="$2"; shift ;;
+    --region)         REGION="$2"; shift ;;
+    --external-id)    EXTERNAL_ID_CLI="$2"; shift ;;
+    --source-profile) SOURCE_PROFILE="$2"; shift ;;
     *) echo "❌ Unknown parameter: $1"; usage; exit 1 ;;
   esac
   shift
@@ -93,10 +102,22 @@ done
 # CLI flag wins over env-file value.
 EXTERNAL_ID="${EXTERNAL_ID_CLI:-$PROFILE_EXTERNAL_ID}"
 
+# Pre-flight: confirm the source profile actually has valid credentials,
+# so we surface "go log in" instead of a cryptic ExpiredToken from STS.
+if ! aws sts get-caller-identity --profile "$SOURCE_PROFILE" >/dev/null 2>&1; then
+  echo "❌ Source profile '$SOURCE_PROFILE' has no valid credentials."
+  echo "   Log in first:"
+  echo "     ./aws-sso-login.sh --profile $SOURCE_PROFILE"
+  echo "   Or pick a different source profile:"
+  echo "     $0 --$PROFILE_NAME --source-profile <other-profile>"
+  echo "     AWS_SOURCE_PROFILE=<other-profile> $0 --$PROFILE_NAME"
+  exit 1
+fi
+
 if [ -n "$EXTERNAL_ID" ]; then
-  echo "Assuming role: $ROLE_ARN (profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s, ExternalId: $EXTERNAL_ID)..."
+  echo "Assuming role: $ROLE_ARN (source: $SOURCE_PROFILE, target profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s, ExternalId: $EXTERNAL_ID)..."
 else
-  echo "Assuming role: $ROLE_ARN (profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s)..."
+  echo "Assuming role: $ROLE_ARN (source: $SOURCE_PROFILE, target profile: $PROFILE_NAME, duration: ${DURATION_SECONDS}s)..."
 fi
 
 ASSUME_ARGS=(
@@ -107,12 +128,17 @@ ASSUME_ARGS=(
 [ -n "$EXTERNAL_ID" ] && ASSUME_ARGS+=(--external-id "$EXTERNAL_ID")
 
 CREDS=$(aws sts assume-role \
+  --profile "$SOURCE_PROFILE" \
   "${ASSUME_ARGS[@]}" \
   --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
   --output text)
 
 if [ $? -ne 0 ]; then
   echo "❌ Failed to assume role."
+  echo "   Common causes:"
+  echo "   - Source profile '$SOURCE_PROFILE' lacks sts:AssumeRole permission on $ROLE_ARN"
+  echo "   - Role trust policy does not allow this principal"
+  echo "   - ExternalId mismatch (set --external-id or fix the env file entry)"
   exit 1
 fi
 

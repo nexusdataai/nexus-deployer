@@ -2,8 +2,10 @@
 S3 Provisioner for call-processing capability.
 
 Creates and manages S3 buckets with proper folder structures:
-- call-data: Processed call data for Glue tables
 - wxcc-simulator: WXCC simulator data
+- sfdc-simulator: Salesforce simulator data
+- oracle-erp-simulator: Oracle ERP simulator data
+- sap-simulator: SAP simulator data
 - journey-logs: Journey execution logs
 - journey-reports: Journey reports and artifacts
 """
@@ -83,37 +85,20 @@ class S3Provisioner:
             List of ResourceStatus for each bucket
         """
         results = []
-        self._log_progress(f"  Creating 7 S3 buckets...")
-        self._log_progress(f"  [1/7] call-data bucket")
-        results.append(self.create_call_data_bucket())
-        self._log_progress(f"  [2/7] wxcc-simulator bucket")
+        self._log_progress(f"  Creating 6 S3 buckets...")
+        self._log_progress(f"  [1/6] wxcc-simulator bucket")
         results.append(self.create_wxcc_simulator_bucket())
-        self._log_progress(f"  [3/7] sfdc-simulator bucket")
+        self._log_progress(f"  [2/6] sfdc-simulator bucket")
         results.append(self.create_sfdc_simulator_bucket())
-        self._log_progress(f"  [4/7] oracle-erp-simulator bucket")
+        self._log_progress(f"  [3/6] oracle-erp-simulator bucket")
         results.append(self.create_oracle_erp_simulator_bucket())
-        self._log_progress(f"  [5/7] sap-simulator bucket")
+        self._log_progress(f"  [4/6] sap-simulator bucket")
         results.append(self.create_sap_simulator_bucket())
-        self._log_progress(f"  [6/7] journey-logs bucket")
+        self._log_progress(f"  [5/6] journey-logs bucket")
         results.append(self.create_journey_logs_bucket())
-        self._log_progress(f"  [7/7] journey-reports bucket")
+        self._log_progress(f"  [6/6] journey-reports bucket")
         results.append(self.create_journey_reports_bucket())
         return results
-    
-    def create_call_data_bucket(self) -> ResourceStatus:
-        """
-        Create the call-data bucket with folder structure.
-        
-        Bucket: call-processing-{env}-call-data
-        Folders: call-data/, call-detail/, recordings/, transcripts/, athena-results/
-        
-        Returns:
-            ResourceStatus indicating success or failure
-        """
-        bucket_name = self.naming.call_data_bucket()
-        folders = self.naming.call_data_folders()
-        
-        return self._create_bucket_with_folders(bucket_name, folders)
     
     def create_wxcc_simulator_bucket(self) -> ResourceStatus:
         """

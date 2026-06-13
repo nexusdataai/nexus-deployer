@@ -151,7 +151,6 @@ def verify_aws_resources(session, cap_name, env):
     else:
         s3 = _aws_client(session, "s3", region_name=REGION)
         expected_buckets = [
-            f"{prefix}-call-data-{account_id}",
             f"{prefix}-wxcc-simulator-{account_id}",
             f"{prefix}-sfdc-simulator-{account_id}",
             f"{prefix}-journey-logs-{account_id}",
@@ -223,60 +222,8 @@ def verify_aws_resources(session, cap_name, env):
         else:
             check(f"Database: {db_name}", False, str(e))
     
-    table_name = f"{cap_name.replace('-','_')}_{env.replace('-','_')}_call_records"
-    try:
-        glue.get_table(DatabaseName=db_name, Name=table_name)
-        check(f"Table: {table_name}", True)
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "EntityNotFoundException":
-            check(f"Table: {table_name}", False, "NOT FOUND")
-        else:
-            check(f"Table: {table_name}", False, str(e))
-    
-    # --- Athena ---
-    print("")
-    print("  Athena Query:")
-    athena = _aws_client(session, "athena", region_name=REGION)
-    try:
-        if not account_id:
-            raise RuntimeError("no account id")
-        # Find an S3 bucket for Athena results (account-specific)
-        s3_bucket = f"{cap_name}-{env}-call-data-{account_id}"
-        output_location = f"s3://{s3_bucket}/athena-results/"
-        
-        # Run a simple query to verify Athena access
-        response = athena.start_query_execution(
-            QueryString=f"SELECT 1",
-            QueryExecutionContext={"Database": db_name},
-            ResultConfiguration={"OutputLocation": output_location}
-        )
-        query_id = response["QueryExecutionId"]
-        
-        # Poll until terminal state (fast path when Athena is quick)
-        state = "QUEUED"
-        for _ in range(40):
-            status = athena.get_query_execution(QueryExecutionId=query_id)
-            state = status["QueryExecution"]["Status"]["State"]
-            if state not in ("QUEUED", "RUNNING"):
-                break
-            time.sleep(0.5)
-        
-        if state in ("SUCCEEDED", "RUNNING", "QUEUED"):
-            check(f"Athena query execution", True, f"State: {state}, QueryId: {query_id[:20]}...")
-        else:
-            reason = status["QueryExecution"]["Status"].get("StateChangeReason", "")
-            check(f"Athena query execution", False, f"State: {state}, Reason: {reason[:60]}")
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if "AccessDenied" in str(e):
-            check(f"Athena query execution", False, "AccessDenied - check IAM permissions for athena:StartQueryExecution")
-        else:
-            check(f"Athena query execution", False, f"{error_code}: {str(e)[:60]}")
-    except Exception as e:
-        if str(e) == "no account id":
-            warn("Athena query execution", "Skipped (no account id from STS)")
-        else:
-            warn(f"Athena query execution", f"Could not test: {str(e)[:60]}")
+    # Note: the historical `call_records` Glue table + Athena query smoke
+    # test were removed when call processing was retired as a feature.
     
     # --- IAM ---
     print("")

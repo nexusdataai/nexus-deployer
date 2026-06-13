@@ -118,7 +118,7 @@ spec:
   ingress:
     enabled: true
     scheme: internet-facing
-    certificateArn: "arn:aws:acm:us-east-1:654654554404:certificate/de35467f-eac6-40dd-86d9-4c7cdfbeedd6"
+    certificateArn: "arn:aws:acm:us-east-1:040740747817:certificate/a2b28347-d882-4453-abb6-894738125bfc"
     healthCheckPath: "/health"
 
   # Internal ALB Ingress (VPC-only access) — works independently of ingress.enabled above.

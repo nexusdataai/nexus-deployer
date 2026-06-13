@@ -6,9 +6,9 @@ Creates and manages SSM parameters across categories:
 - server: Server configuration (environment, log-level, workers, timeout)
 - cognito: Cognito authentication (region, user-pool-id, app-client-id)
 - wxcc: WXCC simulator (enabled, bucket, prefix, org-id)
-- s3: S3 buckets (recordings-bucket, journey-logs-bucket, journey-reports-bucket)
+- s3: S3 buckets (journey-logs-bucket, journey-reports-bucket)
 - dynamodb: DynamoDB tables (transformation-table, license-table, wxcc-task-table)
-- glue: Glue configuration (database, table)
+- glue: Glue configuration (database)
 - cloudwatch: CloudWatch logging (log-group, stream-prefix)
 """
 
@@ -385,10 +385,6 @@ class SSMProvisioner:
             Dictionary mapping parameter path to (value, description) tuple
         """
         return {
-            self.naming.ssm_parameter("s3", "recordings-bucket"): (
-                self.naming.call_data_bucket(),
-                "S3 bucket for call data and Glue tables",
-            ),
             self.naming.ssm_parameter("s3", "journey-logs-bucket"): (
                 self.naming.journey_logs_bucket(),
                 "S3 bucket for journey logs",
@@ -436,10 +432,6 @@ class SSMProvisioner:
             self.naming.ssm_parameter("glue", "database"): (
                 self.naming.glue_database(),
                 "AWS Glue database name",
-            ),
-            self.naming.ssm_parameter("glue", "table"): (
-                self.naming.glue_table(),
-                "AWS Glue table name",
             ),
         }
     

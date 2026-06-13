@@ -1114,10 +1114,12 @@ class CloudFormationDeploymentService:
         Check for and clean up orphaned S3 buckets from backend-storage stack
         
         Cleans up (based on INFRASTRUCTURE_REQUIREMENTS.md):
-        - call-data bucket: {capability}-{environment}-call-data
         - wxcc-simulator bucket: {capability}-{environment}-wxcc-simulator
         - journey-logs bucket: {capability}-{environment}-journey-logs
         - journey-reports bucket: {capability}-{environment}-journey-reports
+        - LEGACY call-data bucket: {capability}-{environment}-call-data
+          (no longer provisioned but still cleaned up if present from
+          older deployments that pre-date call-processing retirement)
         
         Args:
             capability_name: Capability name (will be sanitized to lowercase with hyphens)

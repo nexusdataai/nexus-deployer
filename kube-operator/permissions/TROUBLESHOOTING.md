@@ -462,7 +462,7 @@ aws dynamodb list-tables --max-items 1
 aws dynamodb describe-table --table-name "${PREFIX}-transformation-system" 2>&1 | head -5
 
 aws s3 ls
-aws s3api get-bucket-location --bucket "${PREFIX}-call-data-000000000000" 2>&1 | head -3
+aws s3api get-bucket-location --bucket "${PREFIX}-journey-logs-000000000000" 2>&1 | head -3
 
 aws ssm get-parameters-by-path --path "/${CAP}/${ENV}/" --max-results 1 2>&1 | head -5
 aws ssm get-parameter --name "/${CAP}/${ENV}/test-nonexistent" 2>&1 | head -3

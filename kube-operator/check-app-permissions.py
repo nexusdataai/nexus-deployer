@@ -154,7 +154,7 @@ PERMISSION_CHECKS = [
     # S3Access
     ("S3Access", "s3", "list_buckets", {},
      "s3:ListAllMyBuckets"),
-    ("S3Access", "s3", "get_bucket_location", {"Bucket": f"{PREFIX}-call-data-000000000000"},
+    ("S3Access", "s3", "get_bucket_location", {"Bucket": f"{PREFIX}-journey-logs-000000000000"},
      "s3:GetBucketLocation"),
 
     # SSMAccess

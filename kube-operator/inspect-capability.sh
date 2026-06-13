@@ -436,7 +436,7 @@ done
 # ── S3 Buckets ──
 header "S3 Buckets"
 
-for BUCKET_SUFFIX in call-data wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
+for BUCKET_SUFFIX in wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
     BUCKET="${CAP}-${DEPLOY_ENV}-${BUCKET_SUFFIX}-${ACCOUNT_ID}"
     if taws s3api head-bucket --bucket "${BUCKET}" --region "${REGION}" > /dev/null 2>&1; then
         STATUS="Active"
@@ -461,25 +461,9 @@ else
     row "Database: ${GLUE_DB}" "NOT FOUND" ""
 fi
 
-GLUE_TABLE="${CAP_US}_call_records"
-TBL_EXISTS=$(taws glue get-table --database-name "${GLUE_DB}" --name "${GLUE_TABLE}" --region "${REGION}" --query 'Table.Name' --output text 2>/dev/null || echo "NOT FOUND")
-if [ "$TBL_EXISTS" != "NOT FOUND" ]; then
-    TBL_ARN="arn:aws:glue:${REGION}:${ACCOUNT_ID}:table/${GLUE_DB}/${GLUE_TABLE}"
-    TBL_TAGS=$(taws glue get-tags --resource-arn "${TBL_ARN}" --region "${REGION}" --query 'Tags' --output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(', '.join(f'{k}={v}' for k,v in d.items()))" 2>/dev/null || echo "No tags")
-    row "Table: ${GLUE_TABLE}" "Active" "${TBL_TAGS}"
-else
-    row "Table: ${GLUE_TABLE}" "NOT FOUND" ""
-fi
-
-# ── Athena (operator configures primary workgroup output → call-data bucket) ──
-header "Athena Workgroup (primary)"
-
-ATH_OUT=$(taws athena get-work-group --work-group primary --region "${REGION}" --query 'WorkGroup.Configuration.ResultConfiguration.OutputLocation' --output text 2>/dev/null || echo "NOT FOUND")
-if [ "$ATH_OUT" != "NOT FOUND" ] && [ -n "$ATH_OUT" ] && [ "$ATH_OUT" != "None" ]; then
-    row "WorkGroup: primary" "configured" "OutputLocation=${ATH_OUT}"
-else
-    row "WorkGroup: primary" "NOT SET or N/A" "(Glue provisioner sets s3://.../athena-results/ when possible)"
-fi
+# Glue table inspection + Athena workgroup section removed when call
+# processing was retired as a feature. The Glue database above remains
+# in case future features add tables to it.
 
 # ── Athena Deep Diagnostics ──
 header "Athena Deep Diagnostics (end-to-end)"
@@ -1559,9 +1543,8 @@ try:
     PREFIX = f'{CAP}-{ENV}'
     SSM_PATH = f'/{CAP}/{ENV}/'
     GLUE_DB = f\"{CAP.replace('-','_')}_{ENV.replace('-','_')}_db\"
-    GLUE_TBL = f\"{CAP.replace('-','_')}_{ENV.replace('-','_')}_call_records\"
-
-    # Get account ID first (needed for S3 bucket and Athena output)
+    # Pick a non-call-data bucket for the S3 permission probe since
+    # call processing has been retired as a feature.
     try:
         _sts = _client('sts')
         _acct = safe_call(_sts, 'get_caller_identity', {}).get('Account', '000000000000')
@@ -1570,7 +1553,7 @@ try:
         _acct = '000000000000'
         print(f'STS|sts:GetCallerIdentity|ERROR|{str(e)[:120]}')
 
-    S3_BUCKET = f'{PREFIX}-call-data-{_acct}'
+    S3_BUCKET = f'{PREFIX}-journey-logs-{_acct}'
 
     CHECKS = [
         ('DynamoDB',          'dynamodb',        'describe_table',        {'TableName':f'{PREFIX}-transformation-system'},    'dynamodb:DescribeTable'),
@@ -1581,10 +1564,6 @@ try:
         ('SSM',               'ssm',             'get_parameters_by_path',{'Path':SSM_PATH,'MaxResults':1},                  'ssm:GetParametersByPath'),
         ('SecretsManager',    'secretsmanager',  'describe_secret',       {'SecretId':f'{CAP}/{ENV}/api-keys'},              'secretsmanager:DescribeSecret'),
         ('Glue',              'glue',            'get_database',          {'Name':GLUE_DB},                                  'glue:GetDatabase'),
-        ('Glue',              'glue',            'get_table',             {'DatabaseName':GLUE_DB,'Name':GLUE_TBL},          'glue:GetTable'),
-        ('Glue',              'glue',            'get_partitions',        {'DatabaseName':GLUE_DB,'TableName':GLUE_TBL,'MaxResults':1}, 'glue:GetPartitions'),
-        ('Glue',              'glue',            'batch_delete_partition', {'DatabaseName':GLUE_DB,'TableName':GLUE_TBL,'PartitionsToDelete':[]}, 'glue:BatchDeletePartition'),
-        ('Athena',            'athena',          'start_query_execution', {'QueryString':'SELECT 1','QueryExecutionContext':{'Database':GLUE_DB},'ResultConfiguration':{'OutputLocation':f's3://{S3_BUCKET}/athena-results/'}}, 'athena:StartQueryExecution'),
         ('Cognito',           'cognito-idp',     'describe_user_pool',    {'UserPoolId':'us-east-1_nonexistent'},       'cognito-idp:DescribeUserPool'),
         ('Cognito',           'cognito-idp',     'admin_update_user_attributes', {'UserPoolId':'us-east-1_nonexistent','Username':'_iam_check','UserAttributes':[]}, 'cognito-idp:AdminUpdateUserAttributes'),
         ('Cognito',           'cognito-idp',     'admin_disable_user',    {'UserPoolId':'us-east-1_nonexistent','Username':'_iam_check'}, 'cognito-idp:AdminDisableUser'),
@@ -2017,7 +1996,7 @@ done
 echo "  DynamoDB tables ACTIVE: ${DDB_OK}/6"
 
 S3_OK=0
-for _bsfx in call-data wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
+for _bsfx in wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
     _bn="${CAP}-${DEPLOY_ENV}-${_bsfx}-${ACCOUNT_ID}"
     taws s3api head-bucket --bucket "${_bn}" --region "${REGION}" > /dev/null 2>&1 && S3_OK=$((S3_OK + 1)) || true
 done

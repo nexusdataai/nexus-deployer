@@ -22,7 +22,7 @@ nexus-deployer/kube-operator/src/nexus_operator/utils/naming.py):
 from typing import Dict, List, Optional, Set
 
 CAPABILITY = "nexus-ai"
-MANIFEST_SCHEMA_VERSION = "2.0"
+MANIFEST_SCHEMA_VERSION = "2.1"
 
 # ----------------------------------------------------------------------------
 # "Groups" = logical groupings of S3 + DynamoDB sources (--only flag)
@@ -109,20 +109,10 @@ S3_SOURCES: List[Dict] = [
         "default_prefix": "sourcing-simulator",
         "group": "simulators",
     },
-    # ── Knowledge / call-data ────────────────────────────────────────────
-    {
-        "name": "call-data",
-        "bucket_env": "S3_RECORDINGS_BUCKET",
-        "default_suffix": "call-data",
-        "default_prefix": "",
-        "include_prefixes": [
-            "onto-data/",
-            "onto-bundles/",
-            "o2c-kpis/",
-            "app-data/",
-        ],
-        "group": "knowledge",
-    },
+    # NOTE: The historical `call-data` bucket source was removed when
+    # call processing was retired as a feature. Its `include_prefixes`
+    # subdirectories (onto-data/, onto-bundles/, o2c-kpis/, app-data/)
+    # are not preserved by this DR tool.
     # ── Journey artifacts ────────────────────────────────────────────────
     {
         "name": "journey-logs",
@@ -189,7 +179,98 @@ DYNAMODB_SOURCES: List[Dict] = [
     {"name": "mapping-rules", "table_env": "MAPPING_RULES_TABLE_NAME",
      "default_name": "mapping-rules", "group": "config"},
     {"name": "data-planes", "default_name": "data-planes", "group": "config"},
+    # ── Control-plane audit log (added with the logical-entity model) ────
+    {"name": "control-plane-audit", "table_env": "CONTROL_PLANE_AUDIT_TABLE",
+     "default_suffix": "control-plane-audit", "group": "config"},
 ]
+
+# ----------------------------------------------------------------------------
+# Logical entity model
+# ----------------------------------------------------------------------------
+#
+# Lets the operator say "back up workflows / solutions / connectors / ..."
+# instead of "back up these specific tables and S3 buckets". Each logical
+# entity expands to a list of (table, filter_spec) pairs and/or S3 bucket
+# source names from the structures above.
+#
+# Filter-spec dict shapes accepted by backup_ddb_filtered:
+#   None                          -> full table scan (legacy behaviour)
+#   {"gsi1pk": "<value>"}         -> Query(IndexName="GSI1",
+#                                          KeyConditionExpression=GSI1PK eq <value>)
+#   {"gsi1pk_in": [<value>, ...]} -> one Query per value, results concatenated
+#
+# If the table has no GSI1, the runtime falls back to a Scan with an
+# in-process filter on the GSI1PK attribute, so the entity model still
+# works on older operator-provisioned tables.
+#
+# Tables referenced here are looked up by "name" against DYNAMODB_SOURCES;
+# buckets are looked up by "name" against S3_SOURCES.
+
+LOGICAL_ENTITIES: Dict[str, Dict] = {
+    "virtual-data": {
+        "tables": [("mapping-rules", None)],
+        "buckets": ["sfdc-simulator", "oracle-erp-simulator", "sap-simulator",
+                    "wxcc-simulator", "external-sources", "tpm-simulator",
+                    "sourcing-simulator"],
+    },
+    "mapping-rules": {
+        "tables": [("mapping-rules", None)],
+    },
+    "connectors": {
+        "tables": [("data-planes", None), ("connector-settings", None)],
+    },
+    "policies": {
+        # Business policy docs live in repo YAML (enterprise-knowledge/policies/*.md)
+        # and are not DR-backed. Only RBAC config is on the DDB side.
+        "tables": [("rbac", None)],
+    },
+    "workflows": {
+        # Saved/builder defs in foundry-workspace (GSI1PK=JOURNEY) +
+        # runtime execution state in transformation-system. The latter is
+        # a whole-table scan; expect this to be slow on busy clusters.
+        "tables": [
+            ("foundry-workspace", {"gsi1pk": "JOURNEY"}),
+            ("transformation-system", None),
+        ],
+    },
+    "react-tools": {
+        "tables": [("foundry-workspace", {"gsi1pk_in": ["TOOL", "TOOL_VERSION"]})],
+    },
+    "tools-registry": {
+        # Alias of react-tools — same DDB rows.
+        "tables": [("foundry-workspace", {"gsi1pk_in": ["TOOL", "TOOL_VERSION"]})],
+    },
+    "solutions": {
+        "tables": [("foundry-workspace", {"gsi1pk": "SOLUTION"})],
+    },
+    "analytics": {
+        "tables": [("foundry-workspace", {"gsi1pk_in": ["DASHBOARD", "VIEW"]})],
+        "buckets": ["solution-results"],
+    },
+    "audit": {
+        "tables": [("control-plane-audit", None)],
+    },
+}
+
+# Entities whose source-of-truth is the git repo / container image rather
+# than DynamoDB or S3. Accepted on the CLI but logged-and-skipped at
+# runtime — restore happens implicitly by deploying the same image.
+NOOP_ENTITIES: Set[str] = {
+    "integration-rules",
+    "ai-automations",
+    "connector-apis",
+    "business-policies",
+    "workflow-templates",
+}
+
+# Curated bundles for the --preset flag.
+PRESETS: Dict[str, List[str]] = {
+    "business": [
+        "virtual-data", "mapping-rules", "connectors", "policies",
+        "workflows", "react-tools", "tools-registry", "solutions",
+        "analytics", "audit",
+    ],
+}
 
 # ----------------------------------------------------------------------------
 # SSM Parameter Store

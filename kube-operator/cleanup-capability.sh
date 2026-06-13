@@ -341,7 +341,7 @@ fi
 echo ""
 echo -e "${CYAN}── Step 8: S3 Buckets ──${NC}"
 
-for BUCKET_SUFFIX in call-data wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
+for BUCKET_SUFFIX in wxcc-simulator sfdc-simulator journey-logs journey-reports bssmagic-dumps; do
     BUCKET="${CAP}-${DEPLOY_ENV}-${BUCKET_SUFFIX}-${ACCOUNT_ID}"
     if taws s3api head-bucket --bucket "${BUCKET}" --region "${REGION}" > /dev/null 2>&1; then
         if [ "$CONFIRM" = true ]; then

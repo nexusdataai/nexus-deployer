@@ -168,10 +168,6 @@ class ResourceNaming:
             return f"{base_name}-{self.account_id}"
         return base_name
     
-    def call_data_bucket(self) -> str:
-        """Get the call data bucket name."""
-        return self.s3_bucket("call-data")
-    
     def wxcc_simulator_bucket(self) -> str:
         """Get the WXCC simulator bucket name."""
         return self.s3_bucket("wxcc-simulator")
@@ -219,17 +215,6 @@ class ResourceNaming:
         cap = self._sanitize_for_glue(self.capability_name)
         env = self._sanitize_for_glue(self.environment)
         return f"{cap}_{env}_db"
-    
-    def glue_table(self, table_name: str = "call_records") -> str:
-        """
-        Generate Glue table name.
-        
-        Pattern: {capability}_{env}_{table_name}
-        """
-        cap = self._sanitize_for_glue(self.capability_name)
-        env = self._sanitize_for_glue(self.environment)
-        table = self._sanitize_for_glue(table_name)
-        return f"{cap}_{env}_{table}"
     
     # ==================== IAM ====================
     

@@ -526,9 +526,8 @@ Resources:
             - Name: AWS_REGION
               Value: !Ref AWS::Region
             # S3 Buckets - using actual storage-stack export names
-            - Name: S3_RECORDINGS_BUCKET
-              Value:
-                Fn::ImportValue: !Sub '${StorageStackName}-CallDataBucketName'
+            # NOTE: S3_RECORDINGS_BUCKET env var removed when call
+            # processing was retired as a feature.
             - Name: WXCC_SIMULATOR_BUCKET
               Value:
                 Fn::ImportValue: !Sub '${StorageStackName}-WxccSimulatorBucketName'

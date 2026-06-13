@@ -60,10 +60,6 @@ class ResourceNaming:
     
     # ==================== S3 Buckets ====================
     
-    def call_data_bucket(self) -> str:
-        """Get the call-data bucket name."""
-        return f"{self.capability}-{self.env}-call-data"
-    
     def wxcc_simulator_bucket(self) -> str:
         """Get the WXCC simulator bucket name."""
         return f"{self.capability}-{self.env}-wxcc-simulator"
@@ -91,7 +87,6 @@ class ResourceNaming:
     def all_s3_buckets(self) -> List[str]:
         """Get all S3 bucket names."""
         return [
-            self.call_data_bucket(),
             self.wxcc_simulator_bucket(),
             self.sfdc_simulator_bucket(),
             self.oracle_erp_simulator_bucket(),
@@ -101,16 +96,6 @@ class ResourceNaming:
         ]
     
     # ==================== S3 Folder Structures ====================
-    
-    def call_data_folders(self) -> List[str]:
-        """Get folder structure for call-data bucket."""
-        return [
-            "call-data/",
-            "call-detail/",
-            "recordings/",
-            "transcripts/",
-            "athena-results/",
-        ]
     
     def wxcc_simulator_folders(self) -> List[str]:
         """Get folder structure for wxcc-simulator bucket."""
@@ -179,14 +164,6 @@ class ResourceNaming:
     def glue_database(self) -> str:
         """Get the Glue analytics database name."""
         return f"{self.capability}-{self.env}-analytics"
-    
-    def glue_table(self) -> str:
-        """Get the Glue wxcc_calls table name."""
-        return "wxcc_calls"
-    
-    def glue_table_location(self) -> str:
-        """Get the S3 location for the Glue table."""
-        return f"s3://{self.call_data_bucket()}/call-data/"
     
     # ==================== CloudWatch ====================
     

@@ -785,10 +785,12 @@ class CleanupService:
         
         This includes:
         - DynamoDB tables (transformation-system, license, wxcc-task-tracking)
-        - S3 buckets (call-data, wxcc-simulator, journey-logs, journey-reports)
+        - S3 buckets (wxcc-simulator, journey-logs, journey-reports) and the
+          legacy call-data bucket if present (no longer provisioned but
+          tear-downs of older deployments still need to delete it)
         - SSM parameters (/call-processing/{env}/*)
         - Secrets Manager secrets (call-processing/{env}/*)
-        - Glue database and tables
+        - Glue database (the legacy wxcc_calls table is dropped along with it)
         - CloudWatch log groups (/aws/call-processing/{env})
         
         Args:

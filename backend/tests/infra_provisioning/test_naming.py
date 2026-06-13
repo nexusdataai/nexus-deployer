@@ -270,7 +270,7 @@ class TestNamingSpecificResources:
         naming = ResourceNaming(env)
         buckets = naming.all_s3_buckets()
         
-        expected_suffixes = ["call-data", "wxcc-simulator", "journey-logs", "journey-reports"]
+        expected_suffixes = ["wxcc-simulator", "journey-logs", "journey-reports"]
         for suffix in expected_suffixes:
             expected_name = f"call-processing-{env}-{suffix}"
             assert expected_name in buckets, (

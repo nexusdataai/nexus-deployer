@@ -33,6 +33,7 @@ import os
 import sys
 import tarfile
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -40,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 
 from config import (
@@ -48,7 +50,10 @@ from config import (
     DEFAULT_COMPONENTS,
     DYNAMODB_SOURCES,
     GROUPS,
+    LOGICAL_ENTITIES,
     MANIFEST_SCHEMA_VERSION,
+    NOOP_ENTITIES,
+    PRESETS,
     S3_SOURCES,
     resolve_bucket_name,
     resolve_prefix,
@@ -121,10 +126,81 @@ def _parse_csv(value: Optional[str], valid: Set[str], label: str) -> Optional[Se
 
 
 # ---------------------------------------------------------------------------
+# Logical entity helpers
+# ---------------------------------------------------------------------------
+
+def _filter_key(filter_spec: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Stable, hashable identity for a filter_spec (used as dict key for de-dup)."""
+    if filter_spec is None:
+        return None
+    if "gsi1pk" in filter_spec:
+        return f"gsi1pk={filter_spec['gsi1pk']}"
+    if "gsi1pk_in" in filter_spec:
+        return "gsi1pk_in=" + ",".join(sorted(filter_spec["gsi1pk_in"]))
+    return repr(sorted(filter_spec.items()))
+
+
+def _resolve_entities(entities_arg: Optional[str],
+                      preset_arg: Optional[str]) -> List[str]:
+    """Normalise --entities / --preset to a flat list of entity names.
+
+    Returns [] if neither flag was provided. Validates against
+    LOGICAL_ENTITIES + NOOP_ENTITIES; exits the process on unknown values.
+    """
+    if not entities_arg and not preset_arg:
+        return []
+
+    valid = set(LOGICAL_ENTITIES.keys()) | NOOP_ENTITIES
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    if preset_arg:
+        if preset_arg not in PRESETS:
+            _log(f"ERROR: unknown preset '{preset_arg}'. Valid: {sorted(PRESETS)}")
+            sys.exit(1)
+        for ent in PRESETS[preset_arg]:
+            if ent not in seen:
+                out.append(ent)
+                seen.add(ent)
+
+    if entities_arg:
+        req = {v.strip() for v in entities_arg.split(",") if v.strip()}
+        if "all" in req:
+            req = (req - {"all"}) | set(LOGICAL_ENTITIES.keys())
+        bad = req - valid
+        if bad:
+            _log(f"ERROR: unknown entities {sorted(bad)}. "
+                 f"Valid: {sorted(valid)}")
+            sys.exit(1)
+        for ent in sorted(req):
+            if ent not in seen:
+                out.append(ent)
+                seen.add(ent)
+
+    return out
+
+
+def _s3_src_by_name(name: str) -> Optional[Dict[str, Any]]:
+    return next((s for s in S3_SOURCES if s["name"] == name), None)
+
+
+def _ddb_src_by_name(name: str) -> Optional[Dict[str, Any]]:
+    return next((s for s in DYNAMODB_SOURCES if s["name"] == name), None)
+
+
+# ---------------------------------------------------------------------------
 # S3 Backup
 # ---------------------------------------------------------------------------
 
-def backup_s3_source(s3, src, capability, env, account_id, output_dir):
+def backup_s3_source(s3, src, capability, env, account_id, output_dir, workers: int = 32):
+    """Bulk-parallel download of an S3 prefix into ``output_dir/s3/<name>/``.
+
+    Mirrors the restore-side pattern (ThreadPoolExecutor). Each worker
+    issues a single ``GetObject`` per file; concurrency is at the file
+    level, not via multipart. The S3 client passed in should already be
+    configured with ``max_pool_connections >= workers`` so the HTTPS
+    connection pool isn't the bottleneck.
+    """
     bucket = resolve_bucket_name(src, capability, env, account_id, s3)
     prefix = resolve_prefix(src)
     name = src["name"]
@@ -132,43 +208,63 @@ def backup_s3_source(s3, src, capability, env, account_id, output_dir):
     dest.mkdir(parents=True, exist_ok=True)
     include_prefixes = src.get("include_prefixes")
 
-    _log(f"  S3 [{name}] bucket={bucket} prefix={prefix or '(root)'}")
+    _log(f"  S3 [{name}] bucket={bucket} prefix={prefix or '(root)'} workers={workers}")
 
-    total_objects = 0
-    total_bytes = 0
     paginator = s3.get_paginator("list_objects_v2")
     kw: Dict[str, Any] = {"Bucket": bucket}
     if prefix:
         kw["Prefix"] = prefix
 
+    counters_lock = threading.Lock()
+    total_objects = 0
+    total_bytes = 0
     errors = 0
+    warn_emitted = 0
+
+    def _download_one(key: str, size: int):
+        nonlocal total_objects, total_bytes, errors, warn_emitted
+        rel = key[len(prefix):].lstrip("/") if prefix else key
+        if not rel:
+            return
+        local = dest / rel
+        local.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            resp = s3.get_object(Bucket=bucket, Key=key)
+            with open(local, "wb") as f:
+                for chunk in resp["Body"].iter_chunks(65536):
+                    f.write(chunk)
+        except Exception as dl_err:  # noqa: BLE001
+            with counters_lock:
+                errors += 1
+                if warn_emitted < 5:
+                    _log(f"    WARN: skip {key}: {dl_err}")
+                    warn_emitted += 1
+                elif warn_emitted == 5:
+                    _log(f"    WARN: suppressing further per-object warnings...")
+                    warn_emitted += 1
+            return
+        with counters_lock:
+            total_objects += 1
+            total_bytes += size
+            if total_objects % 500 == 0:
+                _log(f"    ... {total_objects} objects, {total_bytes:,} bytes")
+
     try:
-        for page in paginator.paginate(**kw):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if include_prefixes and not any(key.startswith(p) for p in include_prefixes):
-                    continue
-                rel = key[len(prefix):].lstrip("/") if prefix else key
-                if not rel:
-                    continue
-                local = dest / rel
-                local.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    resp = s3.get_object(Bucket=bucket, Key=key)
-                    with open(local, "wb") as f:
-                        for chunk in resp["Body"].iter_chunks(65536):
-                            f.write(chunk)
-                except Exception as dl_err:
-                    errors += 1
-                    if errors <= 5:
-                        _log(f"    WARN: skip {key}: {dl_err}")
-                    elif errors == 6:
-                        _log(f"    WARN: suppressing further per-object warnings...")
-                    continue
-                total_objects += 1
-                total_bytes += obj.get("Size", 0)
-                if total_objects % 50 == 0:
-                    _log(f"    ... {total_objects} objects")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            inflight: List = []
+            for page in paginator.paginate(**kw):
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    if include_prefixes and not any(key.startswith(p) for p in include_prefixes):
+                        continue
+                    inflight.append(pool.submit(_download_one, key, obj.get("Size", 0)))
+                # Drain periodically so memory doesn't blow up for huge buckets
+                if len(inflight) >= 10_000:
+                    for fut in as_completed(inflight):
+                        fut.result()
+                    inflight = []
+            for fut in as_completed(inflight):
+                fut.result()
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
         if code in ("NoSuchBucket", "AccessDenied", "404"):
@@ -189,38 +285,132 @@ def backup_s3_source(s3, src, capability, env, account_id, output_dir):
 # ---------------------------------------------------------------------------
 
 def backup_ddb_source(dynamodb, src, capability, env, output_dir):
+    """Legacy entry-point: full-table scan, no entity tag.
+
+    Kept so existing cmd_backup paths (when --entities is not set) keep
+    using their current behaviour and manifest shape. New code paths go
+    through backup_ddb_filtered() directly.
+    """
+    return backup_ddb_filtered(dynamodb, src, capability, env, output_dir,
+                               entity=None, filter_spec=None)
+
+
+def backup_ddb_filtered(dynamodb, src, capability, env, output_dir, *,
+                        entity: Optional[str] = None,
+                        filter_spec: Optional[Dict[str, Any]] = None):
+    """Backup a DynamoDB table, optionally filtered by GSI1 partition key.
+
+    filter_spec shapes:
+      None                          -> full table scan (legacy behaviour)
+      {"gsi1pk": "<value>"}         -> Query(IndexName="GSI1", GSI1PK eq <value>)
+      {"gsi1pk_in": [<v>, ...]}     -> one Query per value, results concatenated
+
+    If GSI1 is not present on the table, falls back to Scan + in-process
+    filter on the GSI1PK attribute. JSONL filename:
+      filter_spec is None              -> dynamodb/{name}.jsonl  (legacy)
+      filter_spec is non-None + entity -> dynamodb/{name}.{entity}.jsonl
+    """
+    from boto3.dynamodb.conditions import Key
+
     table_name = resolve_table_name(src, capability, env)
     name = src["name"]
     dest = output_dir / "dynamodb"
     dest.mkdir(parents=True, exist_ok=True)
-    jsonl_path = dest / f"{name}.jsonl"
 
-    _log(f"  DDB [{name}] table={table_name}")
-    count = 0
+    if filter_spec is not None and entity:
+        rel_file = f"{name}.{entity}.jsonl"
+    else:
+        rel_file = f"{name}.jsonl"
+    jsonl_path = dest / rel_file
+
+    if filter_spec and "gsi1pk" in filter_spec:
+        filter_desc = f" gsi1pk={filter_spec['gsi1pk']}"
+    elif filter_spec and "gsi1pk_in" in filter_spec:
+        filter_desc = f" gsi1pk_in={filter_spec['gsi1pk_in']}"
+    else:
+        filter_desc = ""
+
+    label = f"[{entity}/{name}]" if (entity and filter_spec is not None) else f"[{name}]"
+    _log(f"  DDB {label} table={table_name}{filter_desc}")
 
     try:
         table = dynamodb.Table(table_name)
         table.load()
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
-        _log(f"  DDB [{name}] SKIP ({code}): {table_name}")
-        return {"name": name, "table": table_name, "items": 0, "skipped": True}
+        _log(f"  DDB {label} SKIP ({code}): {table_name}")
+        result: Dict[str, Any] = {"name": name, "table": table_name,
+                                  "items": 0, "skipped": True}
+        if entity:
+            result["entity"] = entity
+            if filter_spec is not None:
+                result["filter"] = filter_spec
+            result["file"] = f"dynamodb/{rel_file}"
+        return result
 
-    with open(jsonl_path, "w") as fh:
+    def _scan_all():
         scan_kw: Dict[str, Any] = {}
         while True:
             resp = table.scan(**scan_kw)
             for item in resp.get("Items", []):
-                fh.write(json.dumps(item, cls=DecimalEncoder, ensure_ascii=False) + "\n")
-                count += 1
+                yield item
             if "LastEvaluatedKey" not in resp:
                 break
             scan_kw["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+    def _gsi1_query(values: List[str]):
+        try:
+            gsis = table.global_secondary_indexes or []
+        except Exception:
+            gsis = []
+        gsi1_available = any(idx.get("IndexName") == "GSI1" for idx in gsis)
+
+        if gsi1_available:
+            for v in values:
+                query_kw: Dict[str, Any] = {
+                    "IndexName": "GSI1",
+                    "KeyConditionExpression": Key("GSI1PK").eq(v),
+                }
+                while True:
+                    resp = table.query(**query_kw)
+                    for item in resp.get("Items", []):
+                        yield item
+                    if "LastEvaluatedKey" not in resp:
+                        break
+                    query_kw["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        else:
+            _log(f"    GSI1 not present on {table_name}; "
+                 f"falling back to Scan + filter on GSI1PK in {values}")
+            value_set = set(values)
+            for item in _scan_all():
+                if item.get("GSI1PK") in value_set:
+                    yield item
+
+    if filter_spec is None:
+        item_iter = _scan_all()
+    elif "gsi1pk" in filter_spec:
+        item_iter = _gsi1_query([filter_spec["gsi1pk"]])
+    elif "gsi1pk_in" in filter_spec:
+        item_iter = _gsi1_query(list(filter_spec["gsi1pk_in"]))
+    else:
+        raise ValueError(f"Unknown filter_spec shape: {filter_spec!r}")
+
+    count = 0
+    with open(jsonl_path, "w") as fh:
+        for item in item_iter:
+            fh.write(json.dumps(item, cls=DecimalEncoder, ensure_ascii=False) + "\n")
+            count += 1
             if count % 200 == 0:
                 _log(f"    ... {count} items")
 
-    _log(f"  DDB [{name}] done: {count} items")
-    return {"name": name, "table": table_name, "items": count}
+    _log(f"  DDB {label} done: {count} items")
+    result = {"name": name, "table": table_name, "items": count}
+    if entity:
+        result["entity"] = entity
+        if filter_spec is not None:
+            result["filter"] = filter_spec
+        result["file"] = f"dynamodb/{rel_file}"
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -312,9 +502,15 @@ def restore_ddb_source(
     src_cap, src_env, src_acct, tgt_acct,
 ):
     name = meta["name"]
-    jsonl = local_dir / "dynamodb" / f"{name}.jsonl"
+    # Manifest 2.1 entity-tagged entries carry an explicit "file" path;
+    # 2.0 entries default to dynamodb/{name}.jsonl.
+    rel_file = meta.get("file", f"dynamodb/{name}.jsonl")
+    jsonl = local_dir / rel_file
+    entity = meta.get("entity")
+    label = f"[{entity}/{name}]" if entity else f"[{name}]"
+
     if not jsonl.exists():
-        _log(f"  DDB [{name}] SKIP: not in backup")
+        _log(f"  DDB {label} SKIP: not in backup ({rel_file})")
         return {"name": name, "written": 0, "skipped": True}
 
     src_def = next((s for s in DYNAMODB_SOURCES if s["name"] == name), None)
@@ -322,13 +518,13 @@ def restore_ddb_source(
         return {"name": name, "written": 0, "skipped": True}
 
     target_table = resolve_table_name(src_def, target_cap, target_env)
-    _log(f"  DDB [{name}] -> {target_table}")
+    _log(f"  DDB {label} -> {target_table}")
 
     try:
         table = dynamodb.Table(target_table)
         table.load()
     except ClientError as e:
-        _log(f"  DDB [{name}] SKIP ({e.response['Error']['Code']}): {target_table}")
+        _log(f"  DDB {label} SKIP ({e.response['Error']['Code']}): {target_table}")
         return {"name": name, "target_table": target_table, "written": 0, "skipped": True}
 
     written = 0
@@ -366,8 +562,11 @@ def restore_ddb_source(
                     _log(f"    ... {written} items")
     _flush()
 
-    _log(f"  DDB [{name}] done: {written} items")
-    return {"name": name, "target_table": target_table, "written": written}
+    _log(f"  DDB {label} done: {written} items")
+    result = {"name": name, "target_table": target_table, "written": written}
+    if entity:
+        result["entity"] = entity
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -376,22 +575,86 @@ def restore_ddb_source(
 
 def cmd_backup(args):
     cap, env, region = args.capability, args.env, args.region
+
+    # --entities/--preset is mutually exclusive with --only (group filter);
+    # the logical-entity model already picks specific tables+filters.
+    entities = _resolve_entities(args.entities, args.preset)
+    if entities and args.only:
+        _log("ERROR: --only cannot be combined with --entities or --preset")
+        sys.exit(1)
+
     groups = _parse_csv(args.only, GROUPS, "group")
-    components = _parse_csv(args.include, COMPONENTS, "component") or DEFAULT_COMPONENTS.copy()
+    # When --entities is set the s3/dynamodb components are the implicit
+    # base (so the entity recipes actually run); --include then composes
+    # *additively* on top of that base for opt-in infra components
+    # (ssm/secrets/glue/cognito/k8s/postgres). Without --entities,
+    # behaviour is unchanged: --include either replaces or, if absent,
+    # falls back to DEFAULT_COMPONENTS.
+    user_include = _parse_csv(args.include, COMPONENTS, "component")
+    if entities:
+        components: Set[str] = {"s3", "dynamodb"} | (user_include or set())
+    else:
+        components = user_include if user_include is not None else DEFAULT_COMPONENTS.copy()
     excluded = _parse_csv(args.exclude, COMPONENTS, "component") or set()
     components = components - excluded
 
     session = _make_session(profile=args.profile, region=region, role_arn=args.role_arn)
     account_id = _get_account_id(session)
-    s3 = session.client("s3")
+    # Connection pool must be >= worker count, otherwise threads contend
+    # for HTTPS connections and the parallelism is wasted.
+    s3_cfg = BotoConfig(max_pool_connections=max(args.s3_workers, 10),
+                        retries={"max_attempts": 10, "mode": "adaptive"})
+    s3 = session.client("s3", config=s3_cfg)
     ddb = session.resource("dynamodb")
 
-    s3_srcs = _filter_sources(S3_SOURCES, groups)
-    ddb_srcs = _filter_sources(DYNAMODB_SOURCES, groups)
+    # Build the per-component source lists. With --entities the lists are
+    # derived from the logical-entity recipes; otherwise from groups.
+    ddb_jobs: List[Dict[str, Any]] = []  # [{src, entity, filter}, ...] de-duped
+    s3_srcs: List[Dict[str, Any]] = []
+
+    if entities:
+        # Skip noop entities at runtime, log them so users know they were
+        # accepted but not backed up here.
+        noops = [e for e in entities if e in NOOP_ENTITIES]
+        active = [e for e in entities if e not in NOOP_ENTITIES]
+        for e in noops:
+            _log(f"  (noop) entity '{e}' source-of-truth is repo YAML / image; "
+                 f"skipping DR-level backup")
+
+        ddb_seen: Dict[tuple, Dict[str, Any]] = {}
+        s3_seen: Set[str] = set()
+        for ent in active:
+            spec = LOGICAL_ENTITIES[ent]
+            for tbl_name, flt in spec.get("tables", []):
+                src = _ddb_src_by_name(tbl_name)
+                if not src:
+                    _log(f"  WARN: entity '{ent}' references unknown DDB "
+                         f"source '{tbl_name}'; skipping")
+                    continue
+                key = (tbl_name, _filter_key(flt))
+                if key not in ddb_seen:
+                    ddb_seen[key] = {"src": src, "entity": ent, "filter": flt}
+            for bkt_name in spec.get("buckets", []):
+                if bkt_name in s3_seen:
+                    continue
+                src = _s3_src_by_name(bkt_name)
+                if not src:
+                    _log(f"  WARN: entity '{ent}' references unknown S3 "
+                         f"source '{bkt_name}'; skipping")
+                    continue
+                s3_seen.add(bkt_name)
+                s3_srcs.append(src)
+        ddb_jobs = list(ddb_seen.values())
+    else:
+        s3_srcs = _filter_sources(S3_SOURCES, groups)
+        ddb_srcs = _filter_sources(DYNAMODB_SOURCES, groups)
+        ddb_jobs = [{"src": s, "entity": None, "filter": None} for s in ddb_srcs]
 
     _log(f"Backup: env={env} cap={cap} region={region} account={account_id}")
     _log(f"  Components: {sorted(components)}")
-    _log(f"  S3 sources: {len(s3_srcs)}, DDB sources: {len(ddb_srcs)}")
+    if entities:
+        _log(f"  Logical entities: {entities}")
+    _log(f"  S3 sources: {len(s3_srcs)}, DDB jobs: {len(ddb_jobs)}")
 
     if args.dry_run:
         _log("DRY RUN:")
@@ -400,8 +663,13 @@ def cmd_backup(args):
                 bkt = resolve_bucket_name(src, cap, env, account_id, s3)
                 _log(f"  S3: {src['name']} -> {bkt}")
         if "dynamodb" in components:
-            for src in ddb_srcs:
-                _log(f"  DDB: {src['name']} -> {resolve_table_name(src, cap, env)}")
+            for job in ddb_jobs:
+                fdesc = ""
+                if job["filter"]:
+                    fdesc = f" filter={job['filter']}"
+                tag = f"{job['entity']}/" if job["entity"] else ""
+                _log(f"  DDB: {tag}{job['src']['name']} -> "
+                     f"{resolve_table_name(job['src'], cap, env)}{fdesc}")
         for c in ("ssm", "secrets", "glue", "cognito", "kubernetes", "postgres"):
             if c in components:
                 _log(f"  {c.upper()}: planned")
@@ -415,11 +683,18 @@ def cmd_backup(args):
 
         if "s3" in components:
             _log("--- S3 Backup ---")
-            results["s3"] = [backup_s3_source(s3, src, cap, env, account_id, root) for src in s3_srcs]
+            results["s3"] = [
+                backup_s3_source(s3, src, cap, env, account_id, root, workers=args.s3_workers)
+                for src in s3_srcs
+            ]
 
         if "dynamodb" in components:
             _log("--- DynamoDB Backup ---")
-            results["dynamodb"] = [backup_ddb_source(ddb, src, cap, env, root) for src in ddb_srcs]
+            results["dynamodb"] = [
+                backup_ddb_filtered(ddb, job["src"], cap, env, root,
+                                    entity=job["entity"], filter_spec=job["filter"])
+                for job in ddb_jobs
+            ]
 
         if "ssm" in components:
             _log("--- SSM Backup ---")
@@ -461,6 +736,7 @@ def cmd_backup(args):
             },
             "components_included": sorted(components),
             "groups_included": sorted(groups) if groups else ["all"],
+            "logical_entities": entities if entities else [],
             **results,
         }
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2, cls=DecimalEncoder))
@@ -499,10 +775,41 @@ def cmd_backup(args):
 def cmd_restore(args):
     target_env = args.target_env
     target_cap = args.target_capability
+
+    entities = _resolve_entities(args.entities, args.preset)
+    if entities and args.only:
+        _log("ERROR: --only cannot be combined with --entities or --preset")
+        sys.exit(1)
+
     groups = _parse_csv(args.only, GROUPS, "group")
-    components = _parse_csv(args.include, COMPONENTS, "component") or DEFAULT_COMPONENTS.copy()
+    # Additive --include composition when --entities/--preset is set;
+    # see matching block in cmd_backup for rationale.
+    user_include = _parse_csv(args.include, COMPONENTS, "component")
+    if entities:
+        components: Set[str] = {"s3", "dynamodb"} | (user_include or set())
+    else:
+        components = user_include if user_include is not None else DEFAULT_COMPONENTS.copy()
     excluded = _parse_csv(args.exclude, COMPONENTS, "component") or set()
     components = components - excluded
+
+    # When --entities/--preset is set, derive the allow-lists used to
+    # filter the manifest's dynamodb[] and s3[] entries. Each entity
+    # contributes (table_name, filter_key) pairs and bucket names.
+    entity_ddb_keys: Optional[Set[tuple]] = None
+    entity_bucket_names: Optional[Set[str]] = None
+    if entities:
+        entity_ddb_keys = set()
+        entity_bucket_names = set()
+        for ent in entities:
+            if ent in NOOP_ENTITIES:
+                _log(f"  (noop) entity '{ent}' is repo YAML / image-baked; "
+                     f"no DR-level restore performed")
+                continue
+            spec = LOGICAL_ENTITIES[ent]
+            for tbl_name, flt in spec.get("tables", []):
+                entity_ddb_keys.add((tbl_name, _filter_key(flt)))
+            for bkt in spec.get("buckets", []):
+                entity_bucket_names.add(bkt)
 
     session = _make_session(
         profile=args.target_profile, region=args.target_region,
@@ -512,6 +819,8 @@ def cmd_restore(args):
 
     _log(f"Restore: target_env={target_env} cap={target_cap} account={target_account_id}")
     _log(f"  Components: {sorted(components)}")
+    if entities:
+        _log(f"  Logical entities: {entities}")
 
     with tempfile.TemporaryDirectory(prefix="nexus-restore-") as tmpdir:
         _log("Extracting tarball...")
@@ -559,13 +868,19 @@ def cmd_restore(args):
             if groups:
                 ddb_names = {s["name"] for s in _filter_sources(DYNAMODB_SOURCES, groups)}
                 ddb_metas = [m for m in ddb_metas if m["name"] in ddb_names]
+            if entity_ddb_keys is not None:
+                ddb_metas = [
+                    m for m in ddb_metas
+                    if (m["name"], _filter_key(m.get("filter"))) in entity_ddb_keys
+                ]
             for m in ddb_metas:
                 if m.get("skipped"):
                     continue
                 if args.dry_run:
                     sd = next((s for s in DYNAMODB_SOURCES if s["name"] == m["name"]), None)
                     if sd:
-                        _log(f"  DRY DDB: {m['name']} ({m.get('items','?')} items) "
+                        tag = f"{m['entity']}/" if m.get("entity") else ""
+                        _log(f"  DRY DDB: {tag}{m['name']} ({m.get('items','?')} items) "
                              f"-> {resolve_table_name(sd, target_cap, target_env)}")
                 else:
                     restore_ddb_source(
@@ -581,6 +896,8 @@ def cmd_restore(args):
             if groups:
                 s3_names = {s["name"] for s in _filter_sources(S3_SOURCES, groups)}
                 s3_metas = [m for m in s3_metas if m["name"] in s3_names]
+            if entity_bucket_names is not None:
+                s3_metas = [m for m in s3_metas if m["name"] in entity_bucket_names]
             for m in s3_metas:
                 if m.get("skipped"):
                     continue
@@ -669,6 +986,20 @@ Examples:
   python3 backup_restore.py backup --env dev --include s3,dynamodb \\
       --only simulators -o sims.tar.gz --profile ptr-tech
 
+  # Logical-entity backup: business data only (S3 + DDB, no bssmagic/mimir)
+  python3 backup_restore.py backup --env dev --preset business \\
+      -o business.tar.gz --profile ptr-tech
+
+  # Logical-entity backup: just workflows + solutions
+  python3 backup_restore.py backup --env dev \\
+      --entities workflows,solutions \\
+      -o subset.tar.gz --profile ptr-tech
+
+  # Restore only the workflows out of a business backup
+  python3 backup_restore.py restore -i business.tar.gz \\
+      --target-env test --target-profile new-account \\
+      --entities workflows
+
   # Cross-account restore, env rename dev -> test
   python3 backup_restore.py restore -i backup.tar.gz \\
       --target-env test --target-profile new-account \\
@@ -686,10 +1017,19 @@ Examples:
     bp.add_argument("--include", help="Components: " + ",".join(sorted(COMPONENTS)))
     bp.add_argument("--exclude", help="Components to skip")
     bp.add_argument("--only", help=f"S3/DDB groups: {','.join(sorted(GROUPS))},all")
+    bp.add_argument("--entities",
+                    help="Logical entities (CSV): "
+                         + ",".join(sorted(set(LOGICAL_ENTITIES) | NOOP_ENTITIES))
+                         + ",all. Mutually exclusive with --only.")
+    bp.add_argument("--preset",
+                    help=f"Curated entity bundle: {','.join(sorted(PRESETS))}")
     bp.add_argument("--profile", help="AWS profile")
     bp.add_argument("--role-arn", help="IAM role ARN to assume")
     bp.add_argument("--cluster", help="EKS cluster name (recorded in manifest)")
     bp.add_argument("--velero-bucket", help="Source velero S3 bucket (e.g. nexus-velero-backups-ACCTID)")
+    bp.add_argument("--s3-workers", type=int, default=32,
+                    help="Parallel GetObject workers per S3 source (default: 32). "
+                         "Crank to 64-128 for buckets with millions of small objects.")
     bp.add_argument("--dry-run", action="store_true")
 
     rp = sub.add_parser("restore", help="Restore tarball into target account/cluster")
@@ -700,6 +1040,10 @@ Examples:
     rp.add_argument("--include", help="Components: " + ",".join(sorted(COMPONENTS)))
     rp.add_argument("--exclude", help="Components to skip")
     rp.add_argument("--only", help=f"S3/DDB groups: {','.join(sorted(GROUPS))},all")
+    rp.add_argument("--entities",
+                    help="Logical entities (CSV) to restore. Mutually exclusive with --only.")
+    rp.add_argument("--preset",
+                    help=f"Curated entity bundle: {','.join(sorted(PRESETS))}")
     rp.add_argument("--target-profile", help="AWS profile for target")
     rp.add_argument("--target-role-arn", help="IAM role ARN for target")
     rp.add_argument("--target-cluster", help="Target EKS cluster name (informational)")

@@ -139,7 +139,6 @@ The operator will create:
      - `call-processing-dev-license`
      - `call-processing-dev-wxcc-task-tracking`
    - S3 Buckets:
-     - `call-processing-dev-call-data-{account-id}`
      - `call-processing-dev-wxcc-simulator-{account-id}`
      - `call-processing-dev-journey-logs-{account-id}`
      - `call-processing-dev-journey-reports-{account-id}`

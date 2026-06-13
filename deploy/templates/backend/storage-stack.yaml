@@ -93,63 +93,12 @@ Conditions:
 Resources:
   # ===== S3 BUCKETS =====
   # Based on INFRASTRUCTURE_REQUIREMENTS.md
-
-  # S3 Bucket for call data & Glue tables
-  CallDataBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BucketName: !Sub '${CapabilityName}-${Environment}-call-data'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      VersioningConfiguration:
-        Status: Enabled
-      LifecycleConfiguration:
-        Rules:
-          - Id: TransitionOldVersions
-            Status: Enabled
-            NoncurrentVersionTransitions:
-              - TransitionInDays: 30
-                StorageClass: STANDARD_IA
-              - TransitionInDays: 90
-                StorageClass: GLACIER
-            # Expiration must be > last transition (90 days to GLACIER)
-            # Prod: 365 days, Non-prod: 120 days
-            NoncurrentVersionExpirationInDays: !If [IsProd, 365, 120]
-          - Id: DeleteIncompleteMultipartUploads
-            Status: Enabled
-            AbortIncompleteMultipartUpload:
-              DaysAfterInitiation: 7
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders:
-              - '*'
-            AllowedMethods:
-              - GET
-              - PUT
-              - POST
-              - DELETE
-              - HEAD
-            AllowedOrigins:
-              - '*'
-            MaxAge: 3600
-      Tags:
-        - Key: Name
-          Value: !Sub '${CapabilityName}-${Environment}-call-data'
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Capability
-          Value: !Ref CapabilityName
-        - Key: Purpose
-          Value: call-data-glue-tables
+  #
+  # NOTE: A historical `CallDataBucket` (`${CapabilityName}-${Environment}-call-data`)
+  # was removed along with the call-processing feature. Existing
+  # deployments that have the bucket can either keep it (DeletionPolicy
+  # was Retain) or delete it via the orphan-cleanup path in
+  # backend/app/services/cloudformation_service.py.
 
   # S3 Bucket for WXCC simulator data
   WxccSimulatorBucket:
@@ -563,18 +512,10 @@ Resources:
 
 Outputs:
   # S3 Bucket Outputs
-  CallDataBucketName:
-    Description: Name of the call data S3 bucket
-    Value: !Ref CallDataBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-CallDataBucketName'
-  
-  CallDataBucketArn:
-    Description: ARN of the call data S3 bucket
-    Value: !GetAtt CallDataBucket.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-CallDataBucketArn'
-  
+  # NOTE: CallDataBucketName / CallDataBucketArn exports removed when call
+  # processing was retired as a feature. If older stacks consumed these
+  # via cross-stack !ImportValue, those references need updating too.
+
   WxccSimulatorBucketName:
     Description: Name of the WXCC simulator S3 bucket
     Value: !Ref WxccSimulatorBucket

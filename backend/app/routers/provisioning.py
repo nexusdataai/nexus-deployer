@@ -226,10 +226,10 @@ async def start_provisioning(
     
     This endpoint triggers the ProvisioningOrchestrator to create:
     - DynamoDB tables (transformation-system, license, wxcc-task-tracking)
-    - S3 buckets (call-data, wxcc-simulator, journey-logs, journey-reports)
+    - S3 buckets (wxcc-simulator, journey-logs, journey-reports)
     - SSM parameters (aws, server, cognito, wxcc, s3, dynamodb, glue, cloudwatch)
     - Secrets Manager secrets (api-keys, wxcc, openai, license, anthropic, github)
-    - Glue database and tables (analytics database, wxcc_calls table)
+    - Glue analytics database
     - CloudWatch log groups
     
     Returns a provisioning_id that can be used to poll for status.
