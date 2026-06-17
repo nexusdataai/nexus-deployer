@@ -36,26 +36,26 @@ class ResourceNaming:
         """Get the license table name."""
         return f"{self.capability}-{self.env}-license"
     
-    def wxcc_task_tracking_table(self) -> str:
-        """Get the WXCC task tracking table name."""
-        return f"{self.capability}-{self.env}-wxcc-task-tracking"
-    
-    def lead_opportunity_tracking_table(self) -> str:
-        """Get the lead/opportunity tracking table name."""
-        return f"{self.capability}-{self.env}-lead-opportunity-tracking"
-    
     def foundry_workspace_table(self) -> str:
-        """Get the foundry workspace table name (Solutions, Views, Dashboards)."""
+        """Get the foundry workspace table name (Solutions, Views, Dashboards, Tools, Data Planes, Connectors, Mapping Rules, VDL Entities)."""
         return f"{self.capability}-{self.env}-foundry-workspace"
-    
+
+    def control_plane_audit_table(self) -> str:
+        """Get the control-plane audit table name (agent tool-call audit trail)."""
+        return f"{self.capability}-{self.env}-control-plane-audit"
+
+    def rbac_table(self) -> str:
+        """Get the RBAC config table name."""
+        return f"{self.capability}-{self.env}-rbac"
+
     def all_dynamodb_tables(self) -> List[str]:
         """Get all DynamoDB table names."""
         return [
             self.transformation_system_table(),
             self.license_table(),
-            self.wxcc_task_tracking_table(),
-            self.lead_opportunity_tracking_table(),
             self.foundry_workspace_table(),
+            self.control_plane_audit_table(),
+            self.rbac_table(),
         ]
     
     # ==================== S3 Buckets ====================

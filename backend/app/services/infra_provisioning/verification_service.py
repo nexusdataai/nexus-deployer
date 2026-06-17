@@ -113,8 +113,9 @@ class VerificationService:
         table_names = [
             self.naming.transformation_system_table(),
             self.naming.license_table(),
-            self.naming.wxcc_task_tracking_table(),
-            self.naming.lead_opportunity_tracking_table(),
+            self.naming.foundry_workspace_table(),
+            self.naming.control_plane_audit_table(),
+            self.naming.rbac_table(),
         ]
         
         for table_name in table_names:

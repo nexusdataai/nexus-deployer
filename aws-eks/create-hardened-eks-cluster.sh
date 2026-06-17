@@ -1203,7 +1203,11 @@ create_irsa_role() {
     echo "   ✓ $role_name (created)"
 }
 
-OPERATOR_ROLE_NAME="${CAPABILITY}-${APP_ENV}-operator-role"
+# Operator IAM role is a per-cluster singleton. Naming is canonical (not
+# capability/env-templated) to match the kube-operator manifests which deploy
+# the operator with ServiceAccount "nexus-operator" in namespace "nexus-system".
+# Trust policy at permissions/operator-trust-policy.json binds to this exact SA.
+OPERATOR_ROLE_NAME="nexus-operator-role"
 create_irsa_role "$OPERATOR_ROLE_NAME" \
     "$PERMISSIONS_DIR/operator-trust-policy.json" \
     "$PERMISSIONS_DIR/operator-policy.json" \

@@ -25,20 +25,7 @@ class KubernetesResourceCreator:
         api_client = authed_api_client()
         self.core_api = client.CoreV1Api(api_client=api_client)
         self.apps_api = client.AppsV1Api(api_client=api_client)
-
-    def _read_backend_api_key(self, naming: ResourceNaming) -> str:
-        """Read API_KEY from the existing backend deployment's env vars."""
-        deploy_name = naming.kubernetes_deployment("backend")
-        try:
-            deploy = self.apps_api.read_namespaced_deployment(deploy_name, self.namespace)
-            for container in deploy.spec.template.spec.containers:
-                for env in (container.env or []):
-                    if env.name == "API_KEY" and env.value:
-                        logger.info(f"Read API_KEY from existing deployment {deploy_name}")
-                        return env.value
-        except Exception as e:
-            logger.warning(f"Could not read API_KEY from {deploy_name}: {e}")
-        return ''
+        self.networking_api = client.NetworkingV1Api(api_client=api_client)
 
     async def create_namespace_if_needed(self, naming: ResourceNaming) -> Dict[str, Any]:
         """Create namespace if it doesn't exist."""
@@ -168,10 +155,8 @@ class KubernetesResourceCreator:
         # Generate a stable API key for gateway authentication
         import secrets as secrets_module
         api_key = secrets_module.token_urlsafe(24)
-        
-        # Store API key on the instance so frontend config can use it
-        self._api_key = api_key
-        
+
+
         # Environment variables for SSM/Secrets access
         env_vars = [
             client.V1EnvVar(name="ENVIRONMENT", value=environment),
@@ -185,6 +170,18 @@ class KubernetesResourceCreator:
             client.V1EnvVar(name="SSM_PARAMETER_PREFIX", value=naming.ssm_parameter_prefix()),
             client.V1EnvVar(name="SECRETS_PREFIX", value=naming.secret_name_prefix()),
             client.V1EnvVar(name="API_KEY", value=api_key),
+            client.V1EnvVar(
+                name="DYNAMODB_FOUNDRY_WORKSPACE_TABLE",
+                value=naming.dynamodb_table("foundry-workspace"),
+            ),
+            client.V1EnvVar(
+                name="CONTROL_PLANE_AUDIT_TABLE",
+                value=naming.dynamodb_table("control-plane-audit"),
+            ),
+            client.V1EnvVar(
+                name="RBAC_TABLE",
+                value=naming.dynamodb_table("rbac"),
+            ),
             # WXCC Simulator - base URL points to self (backend serves simulator API)
             client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
             client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
@@ -791,25 +788,17 @@ class KubernetesResourceCreator:
         cpu_limit = resources.get("cpuLimit", "500m")
         memory_limit = resources.get("memoryLimit", "512Mi")
         
-        # Create ConfigMap with config.json and nginx.conf for frontend
-        # api.baseUrl is empty so all calls use nginx proxy (same origin)
-        # nginx proxies /api/* and /health,/stats,/tools to the backend
-        import json as json_module
-        api_key = getattr(self, '_api_key', '')
-        if not api_key:
-            api_key = self._read_backend_api_key(naming)
-        config_json = json_module.dumps({
-            "version": "1.0.0",
-            "deploymentMode": "eks",
-            "api": {"baseUrl": "", "timeout": 30000},
-            "gateway": {"apiKey": api_key},
-            "dataSource": "api",
-            "enableFallback": True
-        }, indent=2)
-        
+        # Create ConfigMap with nginx.conf for the frontend nginx sidecar.
+        #
+        # The previous-generation runtime config.json (with api.baseUrl,
+        # gateway.apiKey, cognito settings, etc.) has been removed: all
+        # authentication and API routing is now managed by the backend
+        # service, called same-origin via nginx (/api/* proxied to the
+        # backend-internal service below). The frontend SPA no longer
+        # fetches /config.json at boot.
         backend_internal_svc = f"{naming.kubernetes_service('backend')}-internal"
         nginx_conf = self._generate_nginx_conf(backend_internal_svc)
-        
+
         configmap_name = f"{deployment_name}-config"
         configmap = client.V1ConfigMap(
             metadata=client.V1ObjectMeta(
@@ -817,13 +806,13 @@ class KubernetesResourceCreator:
                 namespace=self.namespace,
                 labels=self._common_labels(naming, "frontend"),
             ),
-            data={"config.json": config_json, "nginx.conf": nginx_conf}
+            data={"nginx.conf": nginx_conf}
         )
         try:
             self.core_api.create_namespaced_config_map(self.namespace, configmap)
         except Exception:
             self.core_api.replace_namespaced_config_map(configmap_name, self.namespace, configmap)
-        logger.info(f"Created ConfigMap {configmap_name} with config.json for frontend")
+        logger.info(f"Created ConfigMap {configmap_name} with nginx.conf for frontend")
         
         # Create Deployment
         deployment = client.V1Deployment(
@@ -855,11 +844,6 @@ class KubernetesResourceCreator:
                                 image=image,
                                 ports=[client.V1ContainerPort(container_port=8080)],
                                 volume_mounts=[
-                                    client.V1VolumeMount(
-                                        name="config-volume",
-                                        mount_path="/usr/share/nginx/html/config.json",
-                                        sub_path="config.json"
-                                    ),
                                     client.V1VolumeMount(
                                         name="config-volume",
                                         mount_path="/etc/nginx/nginx.conf",
@@ -1188,7 +1172,7 @@ http {{
         Returns:
             ALB URL (or placeholder if not yet provisioned)
         """
-        networking_api = client.NetworkingV1Api()
+        networking_api = self.networking_api
         ingress_name = naming.kubernetes_ingress(component)
         
         # Build ALB annotations
@@ -1355,7 +1339,7 @@ http {{
     
     async def _delete_ingress(self, naming: ResourceNaming) -> Dict[str, Any]:
         """Delete ALB Ingress resource."""
-        networking_api = client.NetworkingV1Api()
+        networking_api = self.networking_api
         ingress_name = naming.kubernetes_ingress("app")
         
         try:

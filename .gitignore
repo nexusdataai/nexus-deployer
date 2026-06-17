@@ -330,3 +330,4 @@ kube-operator/.env.local.prod
 
 # Port-review markdown reports (transient)
 scratch/
+backup-restore/sim-backup-dev-20260614.tar.gz

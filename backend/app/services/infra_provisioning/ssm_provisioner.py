@@ -411,13 +411,17 @@ class SSMProvisioner:
                 self.naming.license_table(),
                 "DynamoDB license table",
             ),
-            self.naming.ssm_parameter("dynamodb", "wxcc-task-table"): (
-                self.naming.wxcc_task_tracking_table(),
-                "DynamoDB WXCC task tracking table",
+            self.naming.ssm_parameter("dynamodb", "foundry-workspace-table"): (
+                self.naming.foundry_workspace_table(),
+                "DynamoDB foundry workspace table (Solutions, Tools, Data Planes, Connectors, Mapping Rules, VDL Entities)",
             ),
-            self.naming.ssm_parameter("dynamodb", "lead-tracking-table"): (
-                self.naming.lead_opportunity_tracking_table(),
-                "DynamoDB lead/opportunity tracking table",
+            self.naming.ssm_parameter("dynamodb", "control-plane-audit-table"): (
+                self.naming.control_plane_audit_table(),
+                "DynamoDB control plane audit table",
+            ),
+            self.naming.ssm_parameter("dynamodb", "rbac-table"): (
+                self.naming.rbac_table(),
+                "DynamoDB RBAC config table",
             ),
         }
     

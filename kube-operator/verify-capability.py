@@ -127,10 +127,11 @@ def verify_aws_resources(session, cap_name, env):
     expected_tables = [
         f"{prefix}-transformation-system",
         f"{prefix}-license",
-        f"{prefix}-wxcc-task-tracking",
         f"{prefix}-sessions",
         f"{prefix}-audit-log",
-        f"{prefix}-lead-opportunity-tracking",
+        f"{prefix}-foundry-workspace",
+        f"{prefix}-control-plane-audit",
+        f"{prefix}-rbac",
     ]
     for table_name in expected_tables:
         try:
@@ -727,7 +728,7 @@ def main():
         print("")
         print(f"  NexusCapability must be in phase Running (current: '{phase}').")
         print("  Wait for deployment to finish, then retry.")
-        print(f"  Tip: ./operator-nexus.sh monitor   (namespace: {namespace})")
+        print(f"  Tip: ./operator.sh monitor   (namespace: {namespace})")
         print("")
         sys.exit(1)
     

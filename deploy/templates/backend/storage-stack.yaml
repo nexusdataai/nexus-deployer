@@ -331,35 +331,6 @@ Resources:
         - Key: Purpose
           Value: license-management
 
-  # WXCC Task Tracking table
-  WxccTaskTrackingTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: task_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: task_id
-          KeyType: HASH
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
-      SSESpecification:
-        SSEEnabled: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${CapabilityName}-${Environment}-wxcc-task-tracking'
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Capability
-          Value: !Ref CapabilityName
-        - Key: Purpose
-          Value: wxcc-task-tracking
-
-
   # Foundry Workspace table - Solutions, Views, Dashboards (single-table design)
   FoundryWorkspaceTable:
     Type: AWS::DynamoDB::Table
@@ -414,51 +385,6 @@ Resources:
           Value: !Ref CapabilityName
         - Key: Purpose
           Value: foundry-workspace
-
-  # Lead & Opportunity Tracking table
-  LeadOpportunityTrackingTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Sub '${CapabilityName}-${Environment}-lead-opportunity-tracking'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: task_id
-          AttributeType: S
-        - AttributeName: tracking_status
-          AttributeType: S
-        - AttributeName: created_at
-          AttributeType: S
-      KeySchema:
-        - AttributeName: task_id
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: tracking_status-index
-          KeySchema:
-            - AttributeName: tracking_status
-              KeyType: HASH
-            - AttributeName: created_at
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-      TimeToLiveSpecification:
-        Enabled: true
-        AttributeName: ttl
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: !If [EnablePITR, true, false]
-      SSESpecification:
-        SSEEnabled: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${CapabilityName}-${Environment}-lead-opportunity-tracking'
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Capability
-          Value: !Ref CapabilityName
-        - Key: Purpose
-          Value: lead-opportunity-tracking
-
 
   # ===== ECR REPOSITORY =====
   
@@ -564,30 +490,6 @@ Outputs:
     Value: !GetAtt LicenseTable.Arn
     Export:
       Name: !Sub '${AWS::StackName}-LicenseTableArn'
-  
-  WxccTaskTrackingTableName:
-    Description: Name of the WXCC task tracking DynamoDB table
-    Value: !Ref WxccTaskTrackingTable
-    Export:
-      Name: !Sub '${AWS::StackName}-WxccTaskTrackingTableName'
-  
-  WxccTaskTrackingTableArn:
-    Description: ARN of the WXCC task tracking DynamoDB table
-    Value: !GetAtt WxccTaskTrackingTable.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-WxccTaskTrackingTableArn'
-  
-  LeadOpportunityTrackingTableName:
-    Description: Name of the lead/opportunity tracking DynamoDB table
-    Value: !Ref LeadOpportunityTrackingTable
-    Export:
-      Name: !Sub '${AWS::StackName}-LeadOpportunityTrackingTableName'
-  
-  LeadOpportunityTrackingTableArn:
-    Description: ARN of the lead/opportunity tracking DynamoDB table
-    Value: !GetAtt LeadOpportunityTrackingTable.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-LeadOpportunityTrackingTableArn'
   
   FoundryWorkspaceTableName:
     Description: Name of the foundry workspace DynamoDB table

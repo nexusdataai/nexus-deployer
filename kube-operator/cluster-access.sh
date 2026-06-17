@@ -1,8 +1,14 @@
 #!/bin/bash
 #
-# EKS Cluster Access Management Script
+# EKS Cluster Access Management Script (Nexus AI)
 # Diagnoses and fixes kubectl access: auth mode, access entries, OIDC, and connectivity.
 # Reads cluster defaults from .env.local.
+#
+# Prerequisites — refresh AWS credentials first using the SSO + assume-role workflow:
+#   1. ./aws-login/aws-sso-login.sh                       # SSO login (refreshes the source profile, e.g. ptr-tech)
+#   2. ./aws-login/assume-role-to-profile.sh --<profile>  # Assume role into target account (e.g. --promode2)
+#                                                         # Skip this step if you're operating on the source account itself.
+#   3. ./aws-login/aws-eks-context.sh --profile <profile> # Point kubectl at this cluster
 #
 # Usage:
 #   ./cluster-access.sh check                          # Diagnose cluster access (read-only)
@@ -66,6 +72,9 @@ Environment variables (or set in .env.local):
   CLUSTER_NAME    EKS cluster name   (default: from .env.local or nexus-dev)
   REGION          AWS region         (default: us-east-1)
   AWS_PROFILE     AWS CLI profile    (default: ptr-tech)
+                  For member-account clusters (e.g. nexus-prod-<account-id>), set this
+                  to your assumed-role profile (e.g. promode2) created by
+                  ./aws-login/assume-role-to-profile.sh
 
 EOF
 }
@@ -111,8 +120,10 @@ check_aws_credentials() {
 
     if [ -z "$CALLER_ARN" ] || [[ "$CALLER_ARN" == *"ExpiredToken"* ]] || [[ "$CALLER_ARN" == *"error"* ]]; then
         log_fail "AWS credentials expired or invalid (profile: $AWS_PROFILE)"
-        echo -e "      Run your AWS login script to refresh, e.g.:"
-        echo -e "        ${BOLD}cd nexus-deployer/deploy && bash aws-login.sh${NC}"
+        echo -e "      Refresh credentials with the SSO + assume-role workflow:"
+        echo -e "        ${BOLD}1. ./aws-login/aws-sso-login.sh${NC}                          # SSO login (refreshes ptr-tech)"
+        echo -e "        ${BOLD}2. ./aws-login/assume-role-to-profile.sh --${AWS_PROFILE}${NC}   # Assume into target account (skip if profile is ptr-tech)"
+        echo -e "        ${BOLD}3. ./aws-login/aws-eks-context.sh --profile ${AWS_PROFILE}${NC}  # Set kubectl context for this cluster"
         CREDS_OK=false
         return 1
     fi
@@ -495,10 +506,15 @@ check_ecr_images() {
     ACCOUNT_ID=$(get_account_id)
     local REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-    for img in nexus-operator ai-job-engine nexus-ui; do
+    for img in nexus-operator ai-job-engine nexus-ui bssmagic-nexus-k8s; do
+        # NOTE: filter to TAGGED images so orphaned untagged manifests (left behind
+        # when :latest is reassigned to a newer push) don't shadow the real current
+        # image. sort_by(imagePushedAt)[-1] picks the most recently pushed tagged image.
         local EXISTS
         EXISTS=$(aws ecr describe-images --repository-name "$img" --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'imageDetails[0].imageTags[0]' --output text 2>/dev/null || echo "")
+            --filter tagStatus=TAGGED \
+            --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' \
+            --output text 2>/dev/null || echo "")
         if [ -n "$EXISTS" ] && [ "$EXISTS" != "None" ]; then
             log_ok "${img}:${EXISTS} in ${REGISTRY}"
         else

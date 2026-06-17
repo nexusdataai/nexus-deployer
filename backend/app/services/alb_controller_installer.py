@@ -2,7 +2,7 @@
 AWS Load Balancer Controller installer for the Pure-EKS pipeline (step 2).
 
 In `managed` IAM mode, attempts to install the controller via `helm`
-(matching kube-operator/operator-nexus.sh:1150-1187 behavior).
+(matching kube-operator/operator.sh:1150-1187 behavior).
 In `preprovisioned` IAM mode, only verifies presence and returns clear
 remediation when missing.
 

@@ -129,7 +129,7 @@ kubectl get nodes >/dev/null 2>&1 || fail "kubectl cannot connect to cluster (Un
 # Verify operator is running
 OPERATOR_READY=$(kubectl get deployment nexus-operator -n nexus-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
 if [ "$OPERATOR_READY" = "" ] || [ "$OPERATOR_READY" = "0" ]; then
-    fail "Nexus operator is not running. Deploy operator first with: ./operator-nexus.sh deploy"
+    fail "Nexus operator is not running. Deploy operator first with: ./operator.sh deploy"
 fi
 success "Operator is running (${OPERATOR_READY} replica(s))"
 
@@ -341,7 +341,7 @@ success "Capability applied"
 # ──────────────────────────────────────────────────────────────
 step "Monitor deployment and wait for readiness"
 
-timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator-nexus.sh monitor 2>&1" || true
+timeout 300 bash -c "AWS_PROFILE='${AWS_PROFILE}' ./operator.sh monitor 2>&1" || true
 echo ""
 
 echo "  Waiting for all pods to be ready..."
@@ -488,7 +488,7 @@ fi
 step "Verify all resources"
 
 # verify-capability runs a Job in nexus-system as the operator SA (IRSA); needs kubectl + verify-capability.py
-AWS_PROFILE="${AWS_PROFILE}" ./operator-nexus.sh verify-capability "${NAMESPACE}" 2>&1
+AWS_PROFILE="${AWS_PROFILE}" ./operator.sh verify-capability "${NAMESPACE}" 2>&1
 verify_exit=$?
 
 # ──────────────────────────────────────────────────────────────

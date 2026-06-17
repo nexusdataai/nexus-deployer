@@ -159,27 +159,21 @@ DYNAMODB_SOURCES: List[Dict] = [
     # ── Core journey + foundry state ─────────────────────────────────────
     {"name": "transformation-system", "table_env": "DYNAMODB_TABLE",
      "default_suffix": "transformation-system", "group": "journeys"},
-    {"name": "foundry-workspace", "table_env": "FOUNDRY_WORKSPACE_TABLE",
+    # foundry-workspace is now the single home for Solutions / Views /
+    # Dashboards / Tools / Data Planes / Connectors / Connector APIs /
+    # Connector Settings / Mapping Rules / VDL Entities. Logical-entity
+    # filters below carve it up by PK prefix.
+    {"name": "foundry-workspace", "table_env": "DYNAMODB_FOUNDRY_WORKSPACE_TABLE",
      "default_suffix": "foundry-workspace", "group": "journeys"},
     # ── Configuration / control plane ────────────────────────────────────
     {"name": "license", "table_env": "LICENSE_TABLE",
      "default_suffix": "license", "group": "config"},
-    {"name": "wxcc-task-tracking", "table_env": "WXCC_TASK_TABLE",
-     "default_suffix": "wxcc-task-tracking", "group": "config"},
     {"name": "sessions", "table_env": "SESSIONS_TABLE",
      "default_suffix": "sessions", "group": "config"},
     {"name": "audit-log", "table_env": "AUDIT_LOG_TABLE",
      "default_suffix": "audit-log", "group": "config"},
-    {"name": "lead-opportunity-tracking", "table_env": "LEAD_TRACKING_TABLE",
-     "default_suffix": "lead-opportunity-tracking", "group": "config"},
-    {"name": "rbac", "default_suffix": "rbac", "group": "config"},
-    {"name": "connector-settings", "default_suffix": "connector-settings",
+    {"name": "rbac", "table_env": "RBAC_TABLE", "default_suffix": "rbac",
      "group": "config"},
-    # ── Tables that historically used unprefixed default names ───────────
-    {"name": "mapping-rules", "table_env": "MAPPING_RULES_TABLE_NAME",
-     "default_name": "mapping-rules", "group": "config"},
-    {"name": "data-planes", "default_name": "data-planes", "group": "config"},
-    # ── Control-plane audit log (added with the logical-entity model) ────
     {"name": "control-plane-audit", "table_env": "CONTROL_PLANE_AUDIT_TABLE",
      "default_suffix": "control-plane-audit", "group": "config"},
 ]
@@ -207,17 +201,38 @@ DYNAMODB_SOURCES: List[Dict] = [
 # buckets are looked up by "name" against S3_SOURCES.
 
 LOGICAL_ENTITIES: Dict[str, Dict] = {
+    # Virtual Data Layer — semantic-layer entity definitions live in
+    # foundry-workspace under VDLENTITY#... Source data sits in the per-system
+    # simulator buckets; mapping rules connect the two.
     "virtual-data": {
-        "tables": [("mapping-rules", None)],
+        "tables": [
+            ("foundry-workspace", {"gsi1pk": "VDLENTITY"}),
+            ("foundry-workspace", {"gsi1pk": "MAPPINGRULE"}),
+        ],
         "buckets": ["sfdc-simulator", "oracle-erp-simulator", "sap-simulator",
                     "wxcc-simulator", "external-sources", "tpm-simulator",
                     "sourcing-simulator"],
     },
+    "vdl-entities": {
+        "tables": [("foundry-workspace", {"gsi1pk": "VDLENTITY"})],
+    },
     "mapping-rules": {
-        "tables": [("mapping-rules", None)],
+        # Canonical META rows are queryable by GSI1PK=MAPPINGRULE; the
+        # denormalized link rows under DATAPLANE#/VDLENTITY# are rebuilt
+        # by FoundryWorkspaceRepository.put_mapping_rule on restore.
+        "tables": [("foundry-workspace", {"gsi1pk": "MAPPINGRULE"})],
+    },
+    "data-planes": {
+        "tables": [("foundry-workspace", {"gsi1pk": "DATAPLANE"})],
     },
     "connectors": {
-        "tables": [("data-planes", None), ("connector-settings", None)],
+        # CONNECTOR rows + CONNECTORSETTING per-provider configs. Connector
+        # APIs are SK-nested under each CONNECTOR# PK so they're picked up by
+        # the same query when the manifest walks both rows.
+        "tables": [
+            ("foundry-workspace", {"gsi1pk": "CONNECTOR"}),
+            ("foundry-workspace", {"gsi1pk": "CONNECTORSETTING"}),
+        ],
     },
     "policies": {
         # Business policy docs live in repo YAML (enterprise-knowledge/policies/*.md)
@@ -258,7 +273,6 @@ LOGICAL_ENTITIES: Dict[str, Dict] = {
 NOOP_ENTITIES: Set[str] = {
     "integration-rules",
     "ai-automations",
-    "connector-apis",
     "business-policies",
     "workflow-templates",
 }
@@ -266,9 +280,9 @@ NOOP_ENTITIES: Set[str] = {
 # Curated bundles for the --preset flag.
 PRESETS: Dict[str, List[str]] = {
     "business": [
-        "virtual-data", "mapping-rules", "connectors", "policies",
-        "workflows", "react-tools", "tools-registry", "solutions",
-        "analytics", "audit",
+        "virtual-data", "vdl-entities", "mapping-rules", "data-planes",
+        "connectors", "policies", "workflows", "react-tools",
+        "tools-registry", "solutions", "analytics", "audit",
     ],
 }
 

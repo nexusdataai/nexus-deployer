@@ -23,7 +23,7 @@ The Pure-EKS path is implemented across four components:
 ## 10-step deployment pipeline
 
 The Pure-EKS path is structured as a 10-step pipeline mirroring
-`kube-operator/operator-nexus.sh` and `kube-operator/inspect-capability.sh`:
+`kube-operator/operator.sh` and `kube-operator/inspect-capability.sh`:
 
 1. **Cluster readiness** - 10-check scan via the `EksPipelineOrchestrator`
    (see [docs/cluster-preflight.md](cluster-preflight.md)).

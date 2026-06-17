@@ -141,14 +141,6 @@ class ResourceNaming:
         """Get the license table name."""
         return self.dynamodb_table("license")
     
-    def wxcc_task_tracking_table(self) -> str:
-        """Get the WXCC task tracking table name."""
-        return self.dynamodb_table("wxcc-task-tracking")
-    
-    def lead_opportunity_tracking_table(self) -> str:
-        """Get the lead/opportunity tracking table name."""
-        return self.dynamodb_table("lead-opportunity-tracking")
-    
     # ==================== S3 Buckets ====================
     
     def s3_bucket(self, bucket_purpose: str) -> str:

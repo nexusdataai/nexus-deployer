@@ -28,8 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
-    _ENV_LOCAL_ENV=$(grep '^ENV=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-)
-    _ENV_LOCAL_CLUSTER=$(grep '^Cluster=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-)
+    _ENV_LOCAL_ENV=$(grep '^ENV[[:space:]]*=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)
+    _ENV_LOCAL_CLUSTER=$(grep '^Cluster[[:space:]]*=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)
 fi
 
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
@@ -387,12 +387,23 @@ done
 echo ""
 echo -e "${CYAN}── Step 9: DynamoDB Tables ──${NC}"
 
-for TABLE_SUFFIX in transformation-system license wxcc-task-tracking sessions audit-log lead-opportunity-tracking; do
+for TABLE_SUFFIX in transformation-system license sessions audit-log foundry-workspace control-plane-audit rbac wxcc-task-tracking lead-opportunity-tracking; do
     TABLE_NAME="${CAP}-${DEPLOY_ENV}-${TABLE_SUFFIX}"
     if taws dynamodb describe-table --table-name "${TABLE_NAME}" --region "${REGION}" > /dev/null 2>&1; then
         do_delete "DynamoDB Table: ${TABLE_NAME}" taws dynamodb delete-table --table-name "${TABLE_NAME}" --region "${REGION}"
     else
         log_info "Table ${TABLE_NAME} already deleted"
+    fi
+done
+
+# Legacy un-prefixed DynamoDB tables (pre-foundry-consolidation). These were
+# created by older versions of DataPlaneService / MappingRuleService /
+# GDriveSettingsService and are now superseded by foundry-workspace PK
+# namespaces (DATAPLANE#, MAPPINGRULE#, CONNECTORSETTING#). Clean them up
+# on teardown if they still exist; no-op on fresh deployments.
+for LEGACY_NAME in data-planes mapping-rules "${CAP}-${DEPLOY_ENV}-connector-settings"; do
+    if taws dynamodb describe-table --table-name "${LEGACY_NAME}" --region "${REGION}" > /dev/null 2>&1; then
+        do_delete "Legacy DynamoDB Table: ${LEGACY_NAME}" taws dynamodb delete-table --table-name "${LEGACY_NAME}" --region "${REGION}"
     fi
 done
 

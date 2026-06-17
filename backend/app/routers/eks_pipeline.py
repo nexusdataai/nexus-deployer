@@ -42,7 +42,7 @@ async def cluster_readiness(
     Step 1 of the pipeline: scan the target cluster for readiness.
 
     Ports the 10 useful checks from
-    kube-operator/operator-nexus.sh:1559-2287:
+    kube-operator/operator.sh:1559-2287:
     cluster ACTIVE + version, OIDC provider, operator IAM role
     (preprovisioned mode), authentication mode, EKS Access Entry,
     node groups + node IAM policies, ECR operator image, K8s API access,

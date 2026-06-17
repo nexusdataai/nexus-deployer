@@ -410,7 +410,7 @@ fi
 # ── DynamoDB Tables ──
 header "DynamoDB Tables"
 
-for TABLE_SUFFIX in transformation-system license wxcc-task-tracking sessions audit-log lead-opportunity-tracking; do
+for TABLE_SUFFIX in transformation-system license sessions audit-log foundry-workspace control-plane-audit rbac; do
     TABLE_NAME="${CAP}-${DEPLOY_ENV}-${TABLE_SUFFIX}"
     if [ "${USE_AWS_PROFILE}" = "1" ]; then
         STATUS=$(taws dynamodb describe-table --table-name "${TABLE_NAME}" --region "${REGION}" --query 'Table.TableStatus' --output text 2>/dev/null || echo "NOT FOUND")

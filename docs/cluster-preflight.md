@@ -1,7 +1,7 @@
 # Pre-deployment Verification (Pure-EKS)
 
 The wizard's **Pre-deployment Verification** step is the single screen between
-EKS cluster selection and deploy. It mirrors `kube-operator/operator-nexus.sh`
+EKS cluster selection and deploy. It mirrors `kube-operator/operator.sh`
 in Python and folds in container-image verification + existing-capability
 detection that previously lived in the legacy ECS-era PermissionVerification
 screen. Each check returns `pass`, `warn`, `fail`, or `skipped` with a

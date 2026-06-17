@@ -257,7 +257,17 @@ class TestNamingSpecificResources:
         naming = ResourceNaming(env)
         tables = naming.all_dynamodb_tables()
         
-        expected_suffixes = ["transformation-system", "license", "wxcc-task-tracking", "lead-opportunity-tracking"]
+        # Post-foundry-consolidation tables. wxcc-task-tracking and
+        # lead-opportunity-tracking were removed alongside the call-processing
+        # decommissioning. foundry-workspace, control-plane-audit, rbac are
+        # the new operator-provisioned tables.
+        expected_suffixes = [
+            "transformation-system",
+            "license",
+            "foundry-workspace",
+            "control-plane-audit",
+            "rbac",
+        ]
         for suffix in expected_suffixes:
             expected_name = f"call-processing-{env}-{suffix}"
             assert expected_name in tables, (

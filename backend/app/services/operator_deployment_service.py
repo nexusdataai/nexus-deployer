@@ -26,13 +26,20 @@ from app.utils.aws_vpc_endpoints import merge_vpc_boto3_kwargs
 
 logger = logging.getLogger(__name__)
 
-# Operator configuration
+# Operator configuration.
+#
+# The operator is a per-cluster singleton; its ServiceAccount + IAM role names
+# are canonical (NOT capability/env-templated) so the trust policy at
+# aws-eks/permissions/operator-trust-policy.json and the kube-operator manifests
+# at kube-operator/manifests/{rbac,deployment}.yaml all agree without templating.
+# Capability and env are still referenced for App role naming (which IS templated
+# elsewhere) but no longer for operator naming.
 OPERATOR_CAPABILITY = os.environ.get("OPERATOR_CAPABILITY", "nexus-ai")
 OPERATOR_ENV = os.environ.get("OPERATOR_ENV", "dev")
 OPERATOR_NAMESPACE = "nexus-system"
 OPERATOR_DEPLOYMENT_NAME = "nexus-operator"
-OPERATOR_SERVICE_ACCOUNT = f"{OPERATOR_CAPABILITY}-{OPERATOR_ENV}-operator-role-sa"
-OPERATOR_ROLE_NAME = f"{OPERATOR_CAPABILITY}-{OPERATOR_ENV}-operator-role"
+OPERATOR_SERVICE_ACCOUNT = "nexus-operator"
+OPERATOR_ROLE_NAME = "nexus-operator-role"
 OPERATOR_IMAGE_NAME = os.environ.get("OPERATOR_IMAGE_NAME", "nexus-operator")
 CRD_GROUP = "nexus.ai"
 CRD_VERSION = "v1"

@@ -1,7 +1,7 @@
 """
 Orchestrator for the 10-step Pure-EKS deployment pipeline.
 
-The pipeline mirrors what kube-operator/operator-nexus.sh and
+The pipeline mirrors what kube-operator/operator.sh and
 kube-operator/inspect-capability.sh do via bash, exposed as Python services
 the wizard can drive.
 
@@ -9,7 +9,7 @@ Phase 1 implements:
   - The orchestrator skeleton with one method per step.
   - Step 1: cluster readiness scan (11 checks - 10 after dropping the
     redundant kubectl-CLI probe), ported from
-    kube-operator/operator-nexus.sh:1559-2287.
+    kube-operator/operator.sh:1559-2287.
 
 Subsequent phases fill in steps 2-7 and 10. Steps 5, 8, 9 are operator-
 driven (existing OperatorDeploymentService + DeploymentOrchestrator
@@ -39,7 +39,7 @@ from app.services.operator_deployment_service import (
 logger = logging.getLogger(__name__)
 
 
-# Minimum supported EKS control-plane version (matches operator-nexus.sh)
+# Minimum supported EKS control-plane version (matches operator.sh)
 MIN_EKS_VERSION = "1.23"
 
 
@@ -84,7 +84,7 @@ class EksPipelineOrchestrator:
     ) -> ClusterReadinessReport:
         """
         Cluster readiness scan. Ports the 10 useful checks from
-        operator-nexus.sh:1559-2287. Each check appends a
+        operator.sh:1559-2287. Each check appends a
         `PipelineCheck` row; the overall verdict is the worst severity.
         """
         ops = self.operator_service

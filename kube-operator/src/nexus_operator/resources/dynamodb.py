@@ -84,15 +84,6 @@ class DynamoDBProvisioner:
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },
-        "wxcc-task-tracking": {
-            "KeySchema": [
-                {"AttributeName": "task_id", "KeyType": "HASH"},
-            ],
-            "AttributeDefinitions": [
-                {"AttributeName": "task_id", "AttributeType": "S"},
-            ],
-            "BillingMode": "PAY_PER_REQUEST",
-        },
         "sessions": {
             "KeySchema": [
                 {"AttributeName": "session_id", "KeyType": "HASH"},
@@ -110,27 +101,6 @@ class DynamoDBProvisioner:
             "AttributeDefinitions": [
                 {"AttributeName": "audit_id", "AttributeType": "S"},
                 {"AttributeName": "timestamp", "AttributeType": "S"},
-            ],
-            "BillingMode": "PAY_PER_REQUEST",
-        },
-        "lead-opportunity-tracking": {
-            "KeySchema": [
-                {"AttributeName": "task_id", "KeyType": "HASH"},
-            ],
-            "AttributeDefinitions": [
-                {"AttributeName": "task_id", "AttributeType": "S"},
-                {"AttributeName": "tracking_status", "AttributeType": "S"},
-                {"AttributeName": "created_at", "AttributeType": "S"},
-            ],
-            "GlobalSecondaryIndexes": [
-                {
-                    "IndexName": "tracking_status-index",
-                    "KeySchema": [
-                        {"AttributeName": "tracking_status", "KeyType": "HASH"},
-                        {"AttributeName": "created_at", "KeyType": "RANGE"},
-                    ],
-                    "Projection": {"ProjectionType": "ALL"},
-                }
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },
@@ -154,6 +124,29 @@ class DynamoDBProvisioner:
                     ],
                     "Projection": {"ProjectionType": "ALL"},
                 }
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
+        "control-plane-audit": {
+            # Keys must match AuditLogger._log_item in
+            # nexus-backend/src/services/control_plane/audit_logger.py which
+            # writes `session_id` (str) and `step` (zero-padded str e.g. "0001").
+            "KeySchema": [
+                {"AttributeName": "session_id", "KeyType": "HASH"},
+                {"AttributeName": "step", "KeyType": "RANGE"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "session_id", "AttributeType": "S"},
+                {"AttributeName": "step", "AttributeType": "S"},
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
+        "rbac": {
+            "KeySchema": [
+                {"AttributeName": "config_key", "KeyType": "HASH"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "config_key", "AttributeType": "S"},
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },

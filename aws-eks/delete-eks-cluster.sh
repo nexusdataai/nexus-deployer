@@ -306,10 +306,19 @@ if [ "$DELETE_ROLES" == "true" ]; then
         echo -e "   ${GREEN}✓ $role_name deleted${NC}"
     }
 
-    OPERATOR_ROLE_NAME="${CAPABILITY}-${APP_ENV}-operator-role"
+    # Operator role is canonical (per-cluster singleton); app role stays
+    # capability/env-templated since multiple capabilities can coexist.
+    OPERATOR_ROLE_NAME="nexus-operator-role"
     APP_ROLE_NAME="${CAPABILITY}-${APP_ENV}-app-role"
     delete_role "$OPERATOR_ROLE_NAME"
     delete_role "$APP_ROLE_NAME"
+    # Also clean up legacy templated operator role names left by prior runs of
+    # create-hardened-eks-cluster.sh (so re-installation on existing accounts
+    # doesn't leak orphaned IAM roles).
+    LEGACY_OPERATOR_ROLE_NAME="${CAPABILITY}-${APP_ENV}-operator-role"
+    if [ "$LEGACY_OPERATOR_ROLE_NAME" != "$OPERATOR_ROLE_NAME" ]; then
+        delete_role "$LEGACY_OPERATOR_ROLE_NAME"
+    fi
     delete_role "AmazonEKS_EBS_CSI_DriverRole"
     delete_role "aws-load-balancer-controller-role"
 

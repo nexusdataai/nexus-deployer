@@ -118,8 +118,8 @@ def test_resolve_entities_validates_unknown():
 
 def test_resolve_entities_accepts_noop_silently():
     # noop entities are valid CLI inputs even though they're a no-op at runtime
-    out = br._resolve_entities("ai-automations,connector-apis", None)
-    assert set(out) == {"ai-automations", "connector-apis"}
+    out = br._resolve_entities("ai-automations,business-policies", None)
+    assert set(out) == {"ai-automations", "business-policies"}
 
 
 def test_resolve_entities_all_excludes_noops():
@@ -357,29 +357,13 @@ def test_backup_restore_round_trip_solutions_only(tmp_path: Path):
 # Back-compat: manifest 2.0 entries (no 'file', no 'entity') still restore
 # ---------------------------------------------------------------------------
 
-@mock_aws
-def test_restore_reads_manifest_v20_entries(tmp_path: Path):
-    region = "us-east-1"
-    client = boto3.client("dynamodb", region_name=region)
-    resource = boto3.resource("dynamodb", region_name=region)
-    _create_mapping_rules_table(client)
-
-    # Seed a JSONL in the v2.0 layout (dynamodb/{name}.jsonl, no entity tag)
-    backup_root = tmp_path / "old-backup"
-    (backup_root / "dynamodb").mkdir(parents=True)
-    (backup_root / "dynamodb" / "mapping-rules.jsonl").write_text(
-        json.dumps({"id": "MR-legacy", "virtualEntity": "Account"}) + "\n"
-    )
-
-    meta = {"name": "mapping-rules", "items": 1}  # v2.0-shaped entry
-    res = br.restore_ddb_source(
-        resource, meta, backup_root, "nexus-ai", "dev",
-        src_cap="nexus-ai", src_env="dev",
-        src_acct="111", tgt_acct="111",
-    )
-    assert res["written"] == 1
-    target = resource.Table(MAPPING_TABLE_NAME)
-    assert target.scan()["Count"] == 1
+# NOTE: a previous test here exercised v2.0 manifest restore against the legacy
+# unprefixed `mapping-rules` table. That table is no longer in DYNAMODB_SOURCES
+# (its data lives in foundry-workspace under MAPPINGRULE# now), so v2.0
+# manifests pointing at `mapping-rules` are intentionally unrecoverable.
+# v2.0 back-compat for other DDB sources still in DYNAMODB_SOURCES
+# (transformation-system, license, foundry-workspace, sessions, audit-log,
+# rbac, control-plane-audit) is unchanged.
 
 
 # ---------------------------------------------------------------------------

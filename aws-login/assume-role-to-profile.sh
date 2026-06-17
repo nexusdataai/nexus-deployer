@@ -11,7 +11,7 @@ usage() {
   echo "Options:"
   echo "  --source-profile NAME  Base AWS profile used to call sts:AssumeRole (default: \$AWS_SOURCE_PROFILE or ptr-tech)"
   echo "                         Must have valid credentials — log in first with aws-sso-login.sh --profile NAME"
-  echo "  --console-url    Generate AWS Console sign-in URL for the assumed role"
+  echo "  --no-console-url Suppress the AWS Console sign-in URL (printed by default)"
   echo "  --duration N     STS session duration in seconds (default: 3600, role MaxSessionDuration permitting)"
   echo "  --region R       Region for the console destination URL (default: \$AWS_REGION or us-east-1)"
   echo "  --external-id ID Pass sts:ExternalId on the assume-role call (overrides any value in the env file)"
@@ -35,7 +35,7 @@ ROLE_ARN=""
 PROFILE_NAME=""
 PROFILE_EXTERNAL_ID=""    # from env file (key=arn|external-id)
 EXTERNAL_ID_CLI=""        # from --external-id flag
-PRINT_CONSOLE_URL=false
+PRINT_CONSOLE_URL=true
 DURATION_SECONDS=3600
 REGION="${AWS_REGION:-us-east-1}"
 
@@ -90,6 +90,7 @@ fi
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     --console-url)    PRINT_CONSOLE_URL=true ;;
+    --no-console-url) PRINT_CONSOLE_URL=false ;;
     --duration)       DURATION_SECONDS="$2"; shift ;;
     --region)         REGION="$2"; shift ;;
     --external-id)    EXTERNAL_ID_CLI="$2"; shift ;;
@@ -157,9 +158,12 @@ if [ "$PRINT_CONSOLE_URL" = "true" ]; then
   echo "🌐 Generating AWS Console sign-in URL..."
 
   CONSOLE_URL=$(AK="$AWS_ACCESS_KEY_ID" SK="$AWS_SECRET_ACCESS_KEY" ST="$AWS_SESSION_TOKEN" \
-    DUR="$DURATION_SECONDS" REG="$REGION" python3 -c "
-import json, os, urllib.request, urllib.parse, sys
+    REG="$REGION" python3 -c "
+import json, os, urllib.request, urllib.error, urllib.parse, sys
 
+# NOTE: when the credentials come from sts:AssumeRole (this script's case),
+# the federation endpoint rejects SessionDuration. The console session length
+# is implicitly the assumed-role session length.
 creds = json.dumps({
     'sessionId':    os.environ['AK'],
     'sessionKey':   os.environ['SK'],
@@ -168,7 +172,6 @@ creds = json.dumps({
 signin = 'https://signin.aws.amazon.com/federation'
 get_url = signin + '?' + urllib.parse.urlencode({
     'Action': 'getSigninToken',
-    'SessionDuration': os.environ['DUR'],
     'Session': creds,
 })
 try:
@@ -179,9 +182,12 @@ try:
         'Destination': 'https://' + os.environ['REG'] + '.console.aws.amazon.com/',
         'SigninToken': token,
     }))
+except urllib.error.HTTPError as e:
+    body = e.read().decode('utf-8', 'replace').strip()
+    print('ERROR: HTTP ' + str(e.code) + ' from federation endpoint: ' + (body or '<empty body>'), file=sys.stderr)
 except Exception as e:
     print('ERROR: ' + str(e), file=sys.stderr)
-")
+" 2>&1)
 
   if [ -n "$CONSOLE_URL" ] && [[ "$CONSOLE_URL" != ERROR:* ]]; then
     echo ""

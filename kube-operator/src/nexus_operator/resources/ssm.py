@@ -51,17 +51,20 @@ class SSMProvisioner:
         params[self.naming.ssm_parameter("dynamodb", "license-table")] = (
             self.naming.license_table(), "License table"
         )
-        params[self.naming.ssm_parameter("dynamodb", "wxcc-task-table")] = (
-            self.naming.wxcc_task_tracking_table(), "WXCC task table"
-        )
         params[self.naming.ssm_parameter("dynamodb", "sessions-table")] = (
             self.naming.dynamodb_table("sessions"), "Sessions table"
         )
         params[self.naming.ssm_parameter("dynamodb", "audit-log-table")] = (
             self.naming.dynamodb_table("audit-log"), "Audit log table"
         )
-        params[self.naming.ssm_parameter("dynamodb", "lead-tracking-table")] = (
-            self.naming.lead_opportunity_tracking_table(), "Lead/opportunity tracking table"
+        params[self.naming.ssm_parameter("dynamodb", "foundry-workspace-table")] = (
+            self.naming.dynamodb_table("foundry-workspace"), "Foundry workspace table"
+        )
+        params[self.naming.ssm_parameter("dynamodb", "control-plane-audit-table")] = (
+            self.naming.dynamodb_table("control-plane-audit"), "Control plane audit table"
+        )
+        params[self.naming.ssm_parameter("dynamodb", "rbac-table")] = (
+            self.naming.dynamodb_table("rbac"), "RBAC table"
         )
         
         # S3 parameters
