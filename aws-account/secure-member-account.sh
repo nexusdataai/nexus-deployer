@@ -1,9 +1,20 @@
 #!/bin/bash
 #
 # Member Account Hardening Script
-# Applies security baseline to a member account via cross-account role assumption.
+# Applies security baseline to an AWS account.
 #
-# Actions:
+# Two modes:
+#   (A) Cross-account assume-role mode (default).
+#       Run from the management account; the script assumes
+#       OrganizationAccountAccessRole (or --cross-account-role) into the
+#       target member and applies the baseline there.
+#   (B) In-place mode (--no-assume).
+#       The given --profile already belongs to the target account; the
+#       script applies the baseline against that profile directly without
+#       any sts:AssumeRole call. Used by aws-iam-bootstrap.sh for
+#       standalone accounts that are not part of an Organization.
+#
+# Actions (identical in both modes):
 #   - Set IAM password policy
 #   - Enable S3 Block Public Access (account-level)
 #   - Enable default EBS encryption
@@ -14,6 +25,8 @@
 # Usage:
 #   ./secure-member-account.sh --account-id 123456789012
 #   ./secure-member-account.sh --all-accounts
+#   ./secure-member-account.sh --no-assume --profile <local-admin> \
+#                              --account-id <self-account-id>
 #
 
 set -e
@@ -28,6 +41,7 @@ ALL_ACCOUNTS=false
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
 CROSS_ACCOUNT_ROLE="${CROSS_ACCOUNT_ROLE:-OrganizationAccountAccessRole}"
 ALLOWED_REGION="us-east-1"
+NO_ASSUME="${NO_ASSUME:-no}"
 
 ALL_AWS_REGIONS=(
     us-east-1 us-east-2 us-west-1 us-west-2
@@ -47,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --account-id)         ACCOUNT_ID="$2"; shift 2 ;;
         --all-accounts)       ALL_ACCOUNTS=true; shift ;;
         --cross-account-role) CROSS_ACCOUNT_ROLE="$2"; shift 2 ;;
+        --no-assume)          NO_ASSUME=yes; shift ;;
         --auto-approve)       AUTO_APPROVE=yes; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
@@ -56,9 +71,10 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --account-id ID              Target member account ID"
             echo "  --all-accounts               Apply to all member accounts in org"
-            echo "  --cross-account-role ROLE     Role name to assume (default: OrganizationAccountAccessRole)"
-            echo "  --profile PROFILE             AWS CLI profile (default: default)"
-            echo "  --auto-approve                Skip confirmation prompts"
+            echo "  --cross-account-role ROLE    Role name to assume (default: OrganizationAccountAccessRole)"
+            echo "  --no-assume                  Skip sts:AssumeRole; --profile already belongs to the target account"
+            echo "  --profile PROFILE            AWS CLI profile (default: default)"
+            echo "  --auto-approve               Skip confirmation prompts"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -104,7 +120,12 @@ clear_assumed_role() {
     unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 }
 
-# When running in the target account context, use plain aws (no --profile)
+# When running in the target account context:
+#   - assume-role mode: env-var creds are set by assume_role(); use plain `aws`
+#     (no --profile) so it picks them up.
+#   - --no-assume mode: --profile already belongs to the target; use it.
+# harden_account() rewrites TARGET_CMD just before invoking the action
+# helpers, so the value below is only a safe default.
 TARGET_CMD="aws --region ${REGION}"
 
 # ── Hardening Functions ─────────────────────────────────────────────────────
@@ -234,18 +255,30 @@ harden_account() {
     info ""
     info "── Hardening account ${target_account} ──"
 
-    if [[ "${target_account}" == "${MASTER_ACCOUNT_ID}" ]]; then
-        warn "Skipping master account ${target_account}."
-        return
-    fi
+    if [[ "${NO_ASSUME}" == "yes" ]]; then
+        # In-place: caller's --profile already belongs to the target.
+        # No assume-role; no master-account guard (caller IS the target).
+        TARGET_CMD="aws --profile ${AWS_PROFILE} --region ${REGION}"
+    else
+        # Cross-account: refuse to harden the management account by accident.
+        if [[ "${target_account}" == "${MASTER_ACCOUNT_ID}" ]]; then
+            warn "Skipping master account ${target_account}."
+            return
+        fi
 
-    assume_role "${target_account}"
+        assume_role "${target_account}"
+        TARGET_CMD="aws --region ${REGION}"
+    fi
 
     local verified_id
     verified_id=$(${TARGET_CMD} sts get-caller-identity --query 'Account' --output text 2>/dev/null)
     if [[ "${verified_id}" != "${target_account}" ]]; then
-        warn "Role assumption verification failed for ${target_account}. Skipping."
-        clear_assumed_role
+        if [[ "${NO_ASSUME}" == "yes" ]]; then
+            warn "Profile ${AWS_PROFILE} resolves to '${verified_id}', expected '${target_account}'. Skipping."
+        else
+            warn "Role assumption verification failed for ${target_account}. Skipping."
+            clear_assumed_role
+        fi
         return
     fi
 
@@ -256,7 +289,7 @@ harden_account() {
     delete_default_vpcs
     opt_out_unused_regions
 
-    clear_assumed_role
+    [[ "${NO_ASSUME}" != "yes" ]] && clear_assumed_role
     info "── Account ${target_account} hardened ──"
 }
 

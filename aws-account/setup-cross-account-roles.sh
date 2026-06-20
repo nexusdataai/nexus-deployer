@@ -1,14 +1,31 @@
 #!/bin/bash
 #
 # Cross-Account Provisioner Role Setup
-# Creates a NexusClusterProvisioner role in each member account that only
-# the master account can assume, with a permission boundary to prevent
-# privilege escalation.
+# Creates a NexusClusterProvisioner role + permission boundary in a target
+# account. The trust policy allows assumption only from a designated
+# principal (default: the caller's own account root), gated by an
+# sts:ExternalId condition.
+#
+# Two modes:
+#   (A) Cross-account assume-role mode (default).
+#       Run from the management account; the script assumes
+#       OrganizationAccountAccessRole into the target member, then creates
+#       the role with trust principal = arn:aws:iam::<master>:root.
+#   (B) In-place mode (--no-assume).
+#       The given --profile already belongs to the target account; no
+#       sts:AssumeRole is performed. The trust principal becomes
+#       arn:aws:iam::<target>:root — meaning any IAM identity in the
+#       target account with sts:AssumeRole permission plus the
+#       correct external-id can assume NexusClusterProvisioner. Used by
+#       aws-iam-bootstrap.sh for standalone (non-Org-member) accounts.
 #
 # Usage:
 #   ./setup-cross-account-roles.sh --account-id 123456789012
 #   ./setup-cross-account-roles.sh --all-accounts
 #   ./setup-cross-account-roles.sh --all-accounts --external-id my-secret-id
+#   ./setup-cross-account-roles.sh --no-assume --profile <local-admin> \
+#                                  --account-id <self-account-id> \
+#                                  --external-id <secret>
 #
 
 set -e
@@ -27,6 +44,13 @@ POLICY_NAME="NexusClusterProvisionerPolicy"
 BOUNDARY_NAME="NexusProvisionerBoundary"
 EXTERNAL_ID="${EXTERNAL_ID:-nexus-provision-$(date +%Y)}"
 BOOTSTRAP_ROLE="${BOOTSTRAP_ROLE:-OrganizationAccountAccessRole}"
+NO_ASSUME="${NO_ASSUME:-no}"
+# When set, overrides the trust principal account ID used in the
+# NexusClusterProvisioner trust policy. When unset, defaults to the
+# master account in assume-role mode and to the target account itself
+# in --no-assume mode (useful only for truly isolated accounts; pass
+# --trust-account-id <mgmt> if the role will be assumed from elsewhere).
+TRUST_ACCOUNT_ID="${TRUST_ACCOUNT_ID:-}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -36,6 +60,8 @@ while [[ $# -gt 0 ]]; do
         --all-accounts)    ALL_ACCOUNTS=true; shift ;;
         --external-id)     EXTERNAL_ID="$2"; shift 2 ;;
         --bootstrap-role)  BOOTSTRAP_ROLE="$2"; shift 2 ;;
+        --trust-account-id) TRUST_ACCOUNT_ID="$2"; shift 2 ;;
+        --no-assume)       NO_ASSUME=yes; shift ;;
         --auto-approve)    AUTO_APPROVE=yes; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
@@ -47,6 +73,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --all-accounts            Create in all member accounts"
             echo "  --external-id ID          External ID for role assumption (default: auto-generated)"
             echo "  --bootstrap-role ROLE     Role to assume for initial setup (default: OrganizationAccountAccessRole)"
+            echo "  --no-assume               Skip sts:AssumeRole; --profile already belongs to the target account"
+            echo "  --trust-account-id ID     Account ID whose root is trusted by the new role's"
+            echo "                            assume-role policy. Default: master account in assume-role"
+            echo "                            mode, target account in --no-assume mode. Set this to the"
+            echo "                            management account ID when bootstrapping a standalone child"
+            echo "                            that will be driven centrally."
             echo "  --profile PROFILE         AWS CLI profile (default: default)"
             echo "  --auto-approve            Skip confirmation prompts"
             exit 0
@@ -102,27 +134,45 @@ clear_assumed_role() {
 create_provisioner_role() {
     local target_account="$1"
 
-    if [[ "${target_account}" == "${MASTER_ACCOUNT_ID}" ]]; then
-        warn "Skipping master account."
-        return
-    fi
-
     info ""
     info "── Setting up ${ROLE_NAME} in account ${target_account} ──"
 
-    assume_bootstrap_role "${target_account}"
+    # Resolve trust principal + execution context based on mode.
+    # Explicit --trust-account-id always wins. Otherwise:
+    #   - assume-role mode: trust the master account (the caller).
+    #   - --no-assume mode: trust the target itself. Correct only for a
+    #     truly isolated account; if the role will be assumed from a
+    #     management account, pass --trust-account-id <mgmt>.
+    local trust_principal_account
+    if [[ "${NO_ASSUME}" == "yes" ]]; then
+        trust_principal_account="${TRUST_ACCOUNT_ID:-${target_account}}"
+        TARGET_CMD="aws --profile ${AWS_PROFILE} --region ${REGION}"
+    else
+        if [[ "${target_account}" == "${MASTER_ACCOUNT_ID}" ]]; then
+            warn "Skipping master account."
+            return
+        fi
+        trust_principal_account="${TRUST_ACCOUNT_ID:-${MASTER_ACCOUNT_ID}}"
+        assume_bootstrap_role "${target_account}"
+        TARGET_CMD="aws --region ${REGION}"
+    fi
+    info "  trust principal: arn:aws:iam::${trust_principal_account}:root"
 
     local verified_id
     verified_id=$(${TARGET_CMD} sts get-caller-identity --query 'Account' --output text 2>/dev/null)
     if [[ "${verified_id}" != "${target_account}" ]]; then
-        warn "Could not verify role assumption for ${target_account}. Skipping."
-        clear_assumed_role
+        if [[ "${NO_ASSUME}" == "yes" ]]; then
+            warn "Profile ${AWS_PROFILE} resolves to '${verified_id}', expected '${target_account}'. Skipping."
+        else
+            warn "Could not verify role assumption for ${target_account}. Skipping."
+            clear_assumed_role
+        fi
         return
     fi
 
     local trust_policy
     trust_policy=$(cat "${POLICIES_DIR}/cross-account-provisioner-role.json" \
-        | sed "s/\${MASTER_ACCOUNT_ID}/${MASTER_ACCOUNT_ID}/g" \
+        | sed "s/\${MASTER_ACCOUNT_ID}/${trust_principal_account}/g" \
         | sed "s/\${EXTERNAL_ID}/${EXTERNAL_ID}/g")
 
     local provisioner_policy
@@ -209,7 +259,7 @@ create_provisioner_role() {
         --role-name "${ROLE_NAME}" \
         --permissions-boundary "${boundary_arn}" 2>/dev/null || true
 
-    clear_assumed_role
+    [[ "${NO_ASSUME}" != "yes" ]] && clear_assumed_role
     info "── ${ROLE_NAME} configured in account ${target_account} ──"
 }
 

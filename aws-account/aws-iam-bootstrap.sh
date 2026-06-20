@@ -2,16 +2,26 @@
 #
 # AWS Standalone-Account IAM Bootstrap
 #
-# One-shot setup for a non-federated, non-org-member AWS account. Takes the
-# root access key + secret, creates an IAM admin user with programmatic
-# access, writes a local AWS CLI profile, and revokes the bootstrap root
-# key. After this runs you can use the new profile with any AWS tool
-# (terraform, eksctl, kubectl, the EKS scripts under
-# nexus-deployer/deploy/eks/, etc.).
+# One-shot setup for a non-federated, non-org-member AWS account. From the
+# supplied root access key + secret it:
+#   1. Creates an IAM admin user with programmatic access.
+#   2. Writes a local AWS CLI profile pointing at the new key.
+#   3. Applies the SAME hardening that secure-member-account.sh applies to
+#      Org-member accounts (password policy, S3 BPA, EBS encryption,
+#      IMDSv2, default-VPC cleanup, opt-in region disable).
+#   4. Creates the SAME NexusClusterProvisioner role (and permission
+#      boundary) that setup-cross-account-roles.sh creates in Org-member
+#      accounts. Trust principal in standalone mode is the target account
+#      itself (i.e. any local IAM identity with sts:AssumeRole + the
+#      correct external-id can assume).
+#   5. Revokes the bootstrap root access key.
 #
-# This is the standalone-account analogue of aws-sso-login.sh. SSO is not
-# applicable here because the account is not a member of any AWS
-# Organization with IAM Identity Center enabled.
+# After this runs you can use the new profile with any AWS tool (terraform,
+# eksctl, kubectl, the EKS scripts under nexus-deployer/deploy/eks/, etc.).
+#
+# This is the standalone-account analogue of aws-sso-login.sh and produces
+# a child account that is hardened identically to one onboarded by
+# onboard-account.sh — only difference is Org membership.
 #
 # Usage:
 #   ./aws-iam-bootstrap.sh \
@@ -19,12 +29,24 @@
 #       --root-access-key-id    "$ROOT_AK" \
 #       --root-secret-access-key "$ROOT_SK" \
 #       --profile-name          promode-official \
-#       [--iam-user-name papu]          # default: papu
-#       [--region us-east-1]             # default: us-east-1
-#       [--apply-baseline]               # S3 BPA + EBS encryption + password policy
-#       [--keep-root-key]                # do not delete the bootstrap root AK
-#       [--auto-approve]                 # skip confirmation prompts
-#       [--dry-run]                      # print all aws calls without executing
+#       [--iam-user-name papu]                  # default: papu
+#       [--region us-east-1]                     # default: us-east-1
+#       [--external-id <secret>]                 # NexusClusterProvisioner external-id
+#                                                # (default: nexus-provision-<YYYY>)
+#       [--management-account-id <12-digit-id>]  # Account whose root will be trusted
+#                                                # by NexusClusterProvisioner. Default:
+#                                                # the target account itself (i.e. trust
+#                                                # is local) -- correct only for an
+#                                                # isolated account that will not be
+#                                                # driven from a separate management
+#                                                # account. Set this to your management
+#                                                # account ID when you intend to assume
+#                                                # the role via assume-role-to-profile.sh.
+#       [--skip-hardening]                       # do NOT run secure-member-account.sh
+#       [--skip-provisioner-role]                # do NOT create NexusClusterProvisioner
+#       [--keep-root-key]                        # do NOT delete the bootstrap root AK
+#       [--auto-approve]                         # skip confirmation prompts
+#       [--dry-run]                              # print all aws calls without executing
 #
 # Env-var alternative for root keys (preferred; keeps secrets off the
 # command line and out of shell history):
@@ -44,7 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   - ROOT_AK / ROOT_SK              (this script's internal names)
 #   - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY  (AWS-standard env names)
 # Plus optional ACCOUNT_ID, PROFILE_NAME, IAM_USER_NAME, REGION,
-#               APPLY_BASELINE, KEEP_ROOT_KEY.
+#               EXTERNAL_ID, MANAGEMENT_ACCOUNT_ID, SKIP_HARDENING,
+#               SKIP_PROVISIONER_ROLE, KEEP_ROOT_KEY, AUTO_APPROVE, DRY_RUN.
 #
 # Precedence (highest wins): CLI flag > pre-set parent-shell env var > file.
 #
@@ -87,7 +110,10 @@ ROOT_TOKEN="${ROOT_TOKEN:-}"
 PROFILE_NAME="${PROFILE_NAME:-}"
 IAM_USER_NAME="${IAM_USER_NAME:-papu}"
 REGION="${REGION:-us-east-1}"
-APPLY_BASELINE="${APPLY_BASELINE:-no}"
+EXTERNAL_ID="${EXTERNAL_ID:-nexus-provision-$(date +%Y)}"
+MANAGEMENT_ACCOUNT_ID="${MANAGEMENT_ACCOUNT_ID:-}"
+SKIP_HARDENING="${SKIP_HARDENING:-no}"
+SKIP_PROVISIONER_ROLE="${SKIP_PROVISIONER_ROLE:-no}"
 KEEP_ROOT_KEY="${KEEP_ROOT_KEY:-no}"
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
 DRY_RUN="${DRY_RUN:-no}"
@@ -101,17 +127,30 @@ while [[ $# -gt 0 ]]; do
         --profile-name)            PROFILE_NAME="$2"; shift 2 ;;
         --iam-user-name)           IAM_USER_NAME="$2"; shift 2 ;;
         --region)                  REGION="$2"; shift 2 ;;
-        --apply-baseline)          APPLY_BASELINE=yes; shift ;;
+        --external-id)             EXTERNAL_ID="$2"; shift 2 ;;
+        --management-account-id)   MANAGEMENT_ACCOUNT_ID="$2"; shift 2 ;;
+        --skip-hardening)          SKIP_HARDENING=yes; shift ;;
+        --skip-provisioner-role)   SKIP_PROVISIONER_ROLE=yes; shift ;;
         --keep-root-key)           KEEP_ROOT_KEY=yes; shift ;;
         --auto-approve)            AUTO_APPROVE=yes; shift ;;
         --dry-run)                 DRY_RUN=yes; shift ;;
         --help|-h)
-            sed -n '2,38p' "$0"
+            sed -n '2,60p' "$0"
             exit 0
             ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
+
+# Validate --management-account-id format if set.
+if [[ -n "${MANAGEMENT_ACCOUNT_ID}" ]]; then
+    [[ "${MANAGEMENT_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]] \
+        || { echo "ERROR: --management-account-id must be a 12-digit AWS account ID (got: ${MANAGEMENT_ACCOUNT_ID})" >&2; exit 1; }
+fi
+
+# Resolve sibling-script paths up front so we fail fast if the layout is wrong.
+SECURE_SCRIPT="${SCRIPT_DIR}/secure-member-account.sh"
+PROVISIONER_SCRIPT="${SCRIPT_DIR}/setup-cross-account-roles.sh"
 
 # ── Logging (stderr-only; stdout reserved for any future structured output) ──
 
@@ -381,38 +420,70 @@ verify_new_profile() {
     die "Profile verification failed (got '${verified_account}' for account, expected '${ACCOUNT_ID}')."
 }
 
-# ── 6. Optional baseline hardening using the NEW profile ────────────────────
+# ── 6. Full hardening via secure-member-account.sh --no-assume ──────────────
 
-apply_baseline() {
-    if [[ "${APPLY_BASELINE}" != "yes" ]]; then return 0; fi
+run_hardening() {
+    if [[ "${SKIP_HARDENING}" == "yes" ]]; then
+        warn "Skipping hardening (--skip-hardening). Account will NOT match the standard child-account baseline."
+        return 0
+    fi
+    [[ -x "${SECURE_SCRIPT}" ]] || die "Missing or non-executable: ${SECURE_SCRIPT}"
 
     info ""
-    info "── Applying baseline hardening (S3 BPA, EBS encryption, password policy) ──"
+    info "── Hardening (secure-member-account.sh --no-assume) ──"
 
-    info "  S3 Block Public Access (account-level)..."
-    new_aws s3control put-public-access-block \
+    if [[ "${DRY_RUN}" == "yes" ]]; then
+        echo "DRY-RUN: ${SECURE_SCRIPT} --no-assume --profile ${PROFILE_NAME} --region ${REGION} --account-id ${ACCOUNT_ID} --auto-approve" >&2
+        return 0
+    fi
+
+    # Sibling script handles its own logging; --auto-approve avoids
+    # double-prompting (we already confirmed at the top of this run).
+    "${SECURE_SCRIPT}" \
+        --no-assume \
+        --profile "${PROFILE_NAME}" \
+        --region "${REGION}" \
         --account-id "${ACCOUNT_ID}" \
-        --public-access-block-configuration \
-            "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
-        2>/dev/null || warn "  S3 BPA call returned non-zero."
+        --auto-approve \
+        || die "Hardening (secure-member-account.sh) failed. Bootstrap root key NOT revoked; re-run after fixing or pass --skip-hardening to bypass."
+}
 
-    info "  EBS default encryption..."
-    new_aws ec2 enable-ebs-encryption-by-default \
-        2>/dev/null || warn "  EBS encryption call returned non-zero."
+# ── 7. NexusClusterProvisioner role via setup-cross-account-roles.sh ────────
 
-    info "  IAM password policy..."
-    new_aws iam update-account-password-policy \
-        --minimum-password-length 14 \
-        --require-symbols \
-        --require-numbers \
-        --require-uppercase-characters \
-        --require-lowercase-characters \
-        --allow-users-to-change-password \
-        --max-password-age 90 \
-        --password-reuse-prevention 24 \
-        2>/dev/null || warn "  password policy call returned non-zero."
+create_provisioner_role() {
+    if [[ "${SKIP_PROVISIONER_ROLE}" == "yes" ]]; then
+        warn "Skipping NexusClusterProvisioner creation (--skip-provisioner-role)."
+        return 0
+    fi
+    [[ -x "${PROVISIONER_SCRIPT}" ]] || die "Missing or non-executable: ${PROVISIONER_SCRIPT}"
 
-    info "Baseline applied."
+    info ""
+    info "── NexusClusterProvisioner (setup-cross-account-roles.sh --no-assume) ──"
+    info "  external-id:     ${EXTERNAL_ID}"
+    if [[ -n "${MANAGEMENT_ACCOUNT_ID}" ]]; then
+        info "  trust principal: arn:aws:iam::${MANAGEMENT_ACCOUNT_ID}:root  (--management-account-id)"
+    else
+        info "  trust principal: arn:aws:iam::${ACCOUNT_ID}:root  (local; not assumable from another account)"
+    fi
+
+    # Build the optional --trust-account-id passthrough.
+    local trust_args=()
+    [[ -n "${MANAGEMENT_ACCOUNT_ID}" ]] && trust_args+=(--trust-account-id "${MANAGEMENT_ACCOUNT_ID}")
+
+    if [[ "${DRY_RUN}" == "yes" ]]; then
+        echo "DRY-RUN: ${PROVISIONER_SCRIPT} --no-assume --profile ${PROFILE_NAME} --region ${REGION} --account-id ${ACCOUNT_ID} --external-id ${EXTERNAL_ID}${MANAGEMENT_ACCOUNT_ID:+ --trust-account-id ${MANAGEMENT_ACCOUNT_ID}} --auto-approve" >&2
+        return 0
+    fi
+
+    "${PROVISIONER_SCRIPT}" \
+        --no-assume \
+        --profile "${PROFILE_NAME}" \
+        --region "${REGION}" \
+        --account-id "${ACCOUNT_ID}" \
+        --external-id "${EXTERNAL_ID}" \
+        "${trust_args[@]}" \
+        --auto-approve \
+        || die "Provisioner role setup failed. Bootstrap root key NOT revoked; re-run after fixing or pass --skip-provisioner-role to bypass."
 }
 
 # ── 7. Revoke the bootstrap root access key ─────────────────────────────────
@@ -437,14 +508,17 @@ delete_root_access_key() {
 info "=========================================="
 info "AWS Standalone-Account IAM Bootstrap"
 info "=========================================="
-[[ -n "${_LOADED_ENV_FILE:-}" ]] && info "Config file:     ${_LOADED_ENV_FILE}"
-info "Account:         ${ACCOUNT_ID}"
-info "IAM User:        ${IAM_USER_NAME}"
-info "Local Profile:   ${PROFILE_NAME}"
-info "Region:          ${REGION}"
-info "Apply Baseline:  ${APPLY_BASELINE}"
-info "Delete Root Key: $( [[ "${KEEP_ROOT_KEY}" == "yes" ]] && echo no || echo yes )"
-info "Dry Run:         ${DRY_RUN}"
+[[ -n "${_LOADED_ENV_FILE:-}" ]] && info "Config file:         ${_LOADED_ENV_FILE}"
+info "Account:             ${ACCOUNT_ID}"
+info "IAM User:            ${IAM_USER_NAME}"
+info "Local Profile:       ${PROFILE_NAME}"
+info "Region:              ${REGION}"
+info "Apply Hardening:     $( [[ "${SKIP_HARDENING}" == "yes" ]] && echo no || echo yes )"
+info "Create Provisioner:  $( [[ "${SKIP_PROVISIONER_ROLE}" == "yes" ]] && echo no || echo yes )"
+info "External-ID:         ${EXTERNAL_ID}"
+info "Mgmt Account (trust):${MANAGEMENT_ACCOUNT_ID:-<unset — trust will be local; role NOT assumable from elsewhere>}"
+info "Delete Root Key:     $( [[ "${KEEP_ROOT_KEY}" == "yes" ]] && echo no || echo yes )"
+info "Dry Run:             ${DRY_RUN}"
 info ""
 
 if ! confirm "Proceed?"; then
@@ -461,7 +535,8 @@ create_admin_user
 create_access_key
 write_cli_profile
 verify_new_profile
-apply_baseline
+run_hardening
+create_provisioner_role
 delete_root_access_key
 
 info ""
@@ -470,6 +545,9 @@ info "Bootstrap complete for ${ACCOUNT_ID}"
 info "=========================================="
 info "  IAM user created:      ${IAM_USER_NAME}"
 info "  Local CLI profile:     ${PROFILE_NAME}"
+[[ "${SKIP_HARDENING}" != "yes" ]]         && info "  Account hardened:      yes (password policy, S3 BPA, EBS encryption, IMDSv2, default-VPC cleanup, region opt-outs)"
+[[ "${SKIP_PROVISIONER_ROLE}" != "yes" ]]  && info "  Provisioner role:      NexusClusterProvisioner (external-id=${EXTERNAL_ID})"
+[[ "${SKIP_PROVISIONER_ROLE}" != "yes" ]]  && info "  Provisioner trust:     arn:aws:iam::${MANAGEMENT_ACCOUNT_ID:-${ACCOUNT_ID}}:root"
 info "  Use with any AWS tool: AWS_PROFILE=${PROFILE_NAME} <command>"
 info "                    or: aws --profile ${PROFILE_NAME} <command>"
 [[ "${KEEP_ROOT_KEY}" != "yes" ]] && info "  Root access key:       REVOKED"
@@ -479,6 +557,23 @@ info "  - Sign in as root once (web console) and enable MFA on the root user."
 info "  - Provision EKS / other resources using the new profile, e.g.:"
 info "      cd nexus-deployer/deploy/eks"
 info "      ./create-hardened-eks-cluster.sh --profile ${PROFILE_NAME} --region ${REGION} ..."
+if [[ "${SKIP_PROVISIONER_ROLE}" != "yes" ]]; then
+    if [[ -n "${MANAGEMENT_ACCOUNT_ID}" ]]; then
+        info "  - To assume NexusClusterProvisioner from the management account ${MANAGEMENT_ACCOUNT_ID}:"
+        info "      aws sts assume-role --role-arn arn:aws:iam::${ACCOUNT_ID}:role/NexusClusterProvisioner \\"
+        info "                          --external-id ${EXTERNAL_ID} \\"
+        info "                          --role-session-name nexus-provisioner"
+    else
+        info "  - WARNING: --management-account-id was NOT set. The provisioner role trusts"
+        info "    arn:aws:iam::${ACCOUNT_ID}:root, so it can only be assumed from inside"
+        info "    ${ACCOUNT_ID} itself. To make it assumable from a management account, either"
+        info "    re-run with --management-account-id <ID>, or run this one-liner from the new"
+        info "    profile to repoint the trust now:"
+        info "      aws --profile ${PROFILE_NAME} iam update-assume-role-policy \\"
+        info "          --role-name NexusClusterProvisioner \\"
+        info "          --policy-document '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::<MGMT_ID>:root\"},\"Action\":\"sts:AssumeRole\",\"Condition\":{\"StringEquals\":{\"sts:ExternalId\":\"${EXTERNAL_ID}\"}}}]}'"
+    fi
+fi
 
 # Scrub the secret material from the env on the way out.
 unset ROOT_AK ROOT_SK ROOT_TOKEN NEW_AK NEW_SK
