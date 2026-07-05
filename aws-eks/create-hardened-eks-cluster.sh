@@ -59,18 +59,27 @@ SKIP_ADDONS="${SKIP_ADDONS:-false}"
 #   public-nodes  = nodes in public subnets, no NAT, no endpoints (dev only)
 NETWORK_PROFILE="${NETWORK_PROFILE:-higher-cost}"
 NAT_INSTANCE_TYPE="${NAT_INSTANCE_TYPE:-t4g.nano}"
+# Ordered fallback candidates if the preferred NAT_INSTANCE_TYPE isn't
+# offered in every target AZ. Kept small + cheap; caller can override via
+# --nat-fallback or NAT_INSTANCE_TYPE_FALLBACK env var. Mixing ARM (t4g)
+# and x86_64 (t3a/t3) is intentional so a region-wide t4g shortage still
+# lands on a valid alternative.
+NAT_INSTANCE_TYPE_FALLBACK="${NAT_INSTANCE_TYPE_FALLBACK:-t4g.nano t4g.small t3a.nano t3.nano t3a.small t3.small}"
 NAT_AMI_OWNER="${NAT_AMI_OWNER:-568608671756}"        # fck-nat publisher
 NAT_AMI_NAME_FILTER="${NAT_AMI_NAME_FILTER:-fck-nat-al2023-hvm-*}"
-# AMI architecture is derived from the NAT instance type. Graviton families
-# (t4g, c6g, m6g, m7gd, c6gn, ...) end with "g" optionally followed by extra
-# letters right before the dot. Everything else is x86_64. Override
+
+# Derive the fck-nat AMI architecture from a given instance type. Graviton
+# families (t4g, c6g, m6g, m7gd, c6gn, ...) end with "g" optionally followed
+# by extra letters right before the dot. Everything else is x86_64.
+_nat_arch_for_type() {
+    local _t="$1"
+    if [[ "$_t" =~ g[a-z]*\. ]]; then echo "arm64"; else echo "x86_64"; fi
+}
+
+# AMI architecture is derived from the NAT instance type. Override
 # NAT_AMI_ARCH=... for unusual instance types.
 if [ -z "$NAT_AMI_ARCH" ]; then
-    if [[ "$NAT_INSTANCE_TYPE" =~ g[a-z]*\. ]]; then
-        NAT_AMI_ARCH="arm64"
-    else
-        NAT_AMI_ARCH="x86_64"
-    fi
+    NAT_AMI_ARCH=$(_nat_arch_for_type "$NAT_INSTANCE_TYPE")
 fi
 
 VPC_ID="${VPC_ID:-}"
@@ -101,7 +110,8 @@ while [[ $# -gt 0 ]]; do
         --skip-endpoints)   SKIP_ENDPOINTS=true; shift ;;
         --skip-addons)      SKIP_ADDONS=true; shift ;;
         --network-profile)  NETWORK_PROFILE="$2"; shift 2 ;;
-        --nat-instance-type) NAT_INSTANCE_TYPE="$2"; shift 2 ;;
+        --nat-instance-type) NAT_INSTANCE_TYPE="$2"; NAT_AMI_ARCH=""; shift 2 ;;
+        --nat-fallback)     NAT_INSTANCE_TYPE_FALLBACK="$2"; shift 2 ;;
         --auto-approve)     AUTO_APPROVE=yes; shift ;;
         --help|-h)
             echo "Usage: $0 [cluster-name] [OPTIONS]"
@@ -140,7 +150,8 @@ while [[ $# -gt 0 ]]; do
             echo "                               moderate     - S3/DDB gateway + NAT instance per AZ (~\$12-18/mo)"
             echo "                               lowest-cost  - S3/DDB gateway + single NAT instance (~\$3-5/mo)"
             echo "                               public-nodes - nodes get public IPs, no NAT (~\$0/mo, dev only)"
-            echo "  --nat-instance-type TYPE   NAT EC2 instance type (default: t4g.nano)"
+            echo "  --nat-instance-type TYPE   Preferred NAT EC2 instance type (default: t4g.nano)"
+            echo "  --nat-fallback \"T1 T2 …\"    Space-separated NAT instance-type fallbacks (default: t4g.nano t4g.small t3a.nano t3.nano t3a.small t3.small)"
             echo ""
             echo "Toggles:"
             echo "  --skip-endpoints           Skip VPC endpoint creation (legacy alias)"
@@ -769,11 +780,70 @@ if [ "$CREATE_NAT_INSTANCES" == "true" ] && [ -n "$VPC_ID" ]; then
         if [ -z "$PUB_SUB2" ]; then PUB_SUB2="$PUB_SUB1"; fi
     fi
 
-    if [ "$NAT_PER_AZ" == "true" ]; then
-        create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT_AZ1" "az1" || true
-        create_nat_asg "$PUB_SUB2" "${AZ2:-az2}" "$PRIV_RT_AZ2" "az2" || true
+    # Availability probe: not every region/AZ carries every instance family.
+    # Iterate the preferred type + fallback list and pick the first one that
+    # ``describe-instance-type-offerings`` reports as available in the AZs
+    # we're about to launch into. Fail hard if none match rather than silently
+    # skipping (which left prior runs with a broken private RT and nodes
+    # that "failed to join the cluster").
+    NAT_AZS=""
+    for _sub in "$PUB_SUB1" "$PUB_SUB2"; do
+        [ -z "$_sub" ] && continue
+        _az=$(aws ec2 describe-subnets --subnet-ids "$_sub" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'Subnets[0].AvailabilityZone' --output text 2>/dev/null)
+        [ -n "$_az" ] && [ "$_az" != "None" ] && NAT_AZS="$NAT_AZS $_az"
+    done
+    NAT_AZS=$(echo "$NAT_AZS" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+    echo "   Probing NAT instance type availability in AZs: $NAT_AZS"
+
+    _nat_candidates="$NAT_INSTANCE_TYPE $NAT_INSTANCE_TYPE_FALLBACK"
+    _picked=""
+    for _cand in $_nat_candidates; do
+        _all_ok=true
+        for _az in $NAT_AZS; do
+            _offered=$(aws ec2 describe-instance-type-offerings \
+                --location-type availability-zone \
+                --filters "Name=location,Values=$_az" "Name=instance-type,Values=$_cand" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
+                --query 'InstanceTypeOfferings[0].InstanceType' --output text 2>/dev/null)
+            if [ "$_offered" != "$_cand" ]; then
+                _all_ok=false
+                break
+            fi
+        done
+        if [ "$_all_ok" == "true" ]; then
+            _picked="$_cand"
+            break
+        else
+            echo "     $_cand not offered in every target AZ, trying next..."
+        fi
+    done
+    if [ -z "$_picked" ]; then
+        echo -e "${RED}❌ None of the NAT candidate types are available in AZs [$NAT_AZS]:${NC}"
+        echo "     $_nat_candidates"
+        echo "     Pass --nat-fallback with a valid list (e.g. 'c6gn.medium m6i.large')."
+        exit 1
+    fi
+    if [ "$_picked" != "$NAT_INSTANCE_TYPE" ]; then
+        echo -e "   ${YELLOW}→ Preferred NAT type $NAT_INSTANCE_TYPE unavailable; using fallback $_picked${NC}"
     else
-        create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT" "single" || true
+        echo "   → Using NAT type $_picked"
+    fi
+    NAT_INSTANCE_TYPE="$_picked"
+    NAT_AMI_ARCH=$(_nat_arch_for_type "$NAT_INSTANCE_TYPE")
+
+    NAT_ANY_OK=false
+    if [ "$NAT_PER_AZ" == "true" ]; then
+        if create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT_AZ1" "az1"; then NAT_ANY_OK=true; fi
+        if create_nat_asg "$PUB_SUB2" "${AZ2:-az2}" "$PRIV_RT_AZ2" "az2"; then NAT_ANY_OK=true; fi
+    else
+        if create_nat_asg "$PUB_SUB1" "${AZ1:-az1}" "$PRIV_RT" "single"; then NAT_ANY_OK=true; fi
+    fi
+    if [ "$NAT_ANY_OK" != "true" ]; then
+        echo -e "${RED}❌ No NAT instances came up. Private subnets have no default route;${NC}"
+        echo -e "${RED}   nodes would fail to join the cluster. Aborting.${NC}"
+        exit 1
     fi
     echo ""
 fi

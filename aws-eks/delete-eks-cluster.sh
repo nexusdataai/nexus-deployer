@@ -512,10 +512,35 @@ if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; t
     done
     echo "   ENIs cleaned up"
 
-    for sg in $(aws ec2 describe-security-groups \
+    # Two-pass SG cleanup: first revoke every ingress + egress rule on
+    # every non-default SG in the VPC (SGs can reference each other so a
+    # plain delete-security-group fails with DependencyViolation while a
+    # rule still points at another SG), then retry the delete. Second
+    # pass after the subnet+RT+IGW deletion below picks up any SG that
+    # was still referenced by a since-deleted ENI's ephemeral state.
+    _all_sgs=$(aws ec2 describe-security-groups \
         --filters "Name=vpc-id,Values=$VPC_ID" \
         --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null); do
+        --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)
+    for sg in $_all_sgs; do
+        _ingress=$(aws ec2 describe-security-groups --group-ids "$sg" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null)
+        if [ -n "$_ingress" ] && [ "$_ingress" != "[]" ] && [ "$_ingress" != "null" ]; then
+            aws ec2 revoke-security-group-ingress --group-id "$sg" \
+                --ip-permissions "$_ingress" \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+        fi
+        _egress=$(aws ec2 describe-security-groups --group-ids "$sg" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'SecurityGroups[0].IpPermissionsEgress' --output json 2>/dev/null)
+        if [ -n "$_egress" ] && [ "$_egress" != "[]" ] && [ "$_egress" != "null" ]; then
+            aws ec2 revoke-security-group-egress --group-id "$sg" \
+                --ip-permissions "$_egress" \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+        fi
+    done
+    for sg in $_all_sgs; do
         aws ec2 delete-security-group --group-id "$sg" \
             --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
     done
@@ -560,11 +585,22 @@ if [ "$DELETE_VPC" == "true" ] && [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; t
     done
     echo "   Internet gateway deleted"
 
+    # Second pass on non-default SGs: some (typically the NAT SG) only
+    # become deletable after their referencing ENIs / subnets are gone.
+    for sg in $(aws ec2 describe-security-groups \
+        --filters "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null); do
+        aws ec2 delete-security-group --group-id "$sg" \
+            --region "$REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+    done
+
     if aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$REGION" --profile "$AWS_PROFILE" 2>&1; then
         echo -e "${GREEN}✓ VPC $VPC_ID deleted${NC}"
     else
         echo -e "${RED}✗ VPC $VPC_ID could not be deleted. Check for remaining dependencies:${NC}"
         echo "    aws ec2 describe-network-interfaces --filters Name=vpc-id,Values=$VPC_ID --region $REGION --profile $AWS_PROFILE"
+        echo "    aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --region $REGION --profile $AWS_PROFILE --query 'SecurityGroups[?GroupName!=\`default\`].[GroupId,GroupName]' --output table"
     fi
 else
     if [ "$DELETE_VPC" != "true" ]; then

@@ -251,6 +251,18 @@ class KubernetesResourceCreator:
             ),
             spec=client.V1DeploymentSpec(
                 replicas=replicas,
+                # Explicit RollingUpdate strategy: never surge above ``replicas``
+                # (maxSurge=0) but allow one pod to be temporarily unavailable
+                # (maxUnavailable=1). Prevents the slow-start backend cold-start
+                # from stacking a 3rd pod that gets stuck for resources when
+                # replicas=2. Steady-state pod count stays at ``replicas``.
+                strategy=client.V1DeploymentStrategy(
+                    type="RollingUpdate",
+                    rolling_update=client.V1RollingUpdateDeployment(
+                        max_surge=0,
+                        max_unavailable=1,
+                    ),
+                ),
                 selector=client.V1LabelSelector(
                     match_labels={"app": deployment_name}
                 ),
@@ -823,6 +835,16 @@ class KubernetesResourceCreator:
             ),
             spec=client.V1DeploymentSpec(
                 replicas=replicas,
+                # Match backend: maxSurge=0 so rolling updates never exceed
+                # ``replicas`` running pods; maxUnavailable=1 keeps at least
+                # one replica serving traffic at all times.
+                strategy=client.V1DeploymentStrategy(
+                    type="RollingUpdate",
+                    rolling_update=client.V1RollingUpdateDeployment(
+                        max_surge=0,
+                        max_unavailable=1,
+                    ),
+                ),
                 selector=client.V1LabelSelector(
                     match_labels={"app": deployment_name}
                 ),
