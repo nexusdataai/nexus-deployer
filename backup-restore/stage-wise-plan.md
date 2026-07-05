@@ -1,155 +1,121 @@
+# Plane-scoped backup/restore for Nexus AI
 
-Different Types of Data --
+Reference: [nexus-docs/docs/architecture/data-organization.md](../../nexus-docs/docs/architecture/data-organization.md)
 
-# AI-OPs Data
+The DR layout mirrors the data-organization spec's five planes. Each
+plane produces one tarball; restore walks them in the order AI-Ops →
+Data → Control → Reasoning → Workspace.
 
-## What it consist
+```
+plane_backup.py backup --plane ai_ops   --out plane-ai-ops.tar.gz
+plane_backup.py backup --plane data     --out plane-data.tar.gz
+plane_backup.py backup --plane control  --out plane-control.tar.gz
+plane_backup.py backup --plane reasoning --out plane-reasoning.tar.gz
+plane_backup.py backup --plane workspace --out plane-workspace.tar.gz
+plane_backup.py backup --all --out-dir ./out
+plane_backup.py restore-all --dir ./out --target-capability nexus-ai --target-env stage
+```
 
-All simulators + Simulated Data + AI Diagnostic Data + AI Health Central Data
+The plane-to-content mapping is authoritative in
+`nexus-backend/src/services/planes.py` and mirrored in
+`plane_backup.py::PLANE_PREFIXES` + `PLANE_EXTERNAL_TABLES`.
 
-## How it works
+---
 
-Simulated data is stored in S3 , served through redis database, Redis database initailize the simulator data while bootstraping.
+## AI-OPs plane
 
-AI diagnostics are all automated workflows defined in AI engine.
+Consists of: **Simulators + Simulated Data + AI Diagnostic Data + AI Health Central Data.**
 
-AI Health Data are also all automated workflows defined in AI engine.
+Simulator generated data is stored in S3; served through Redis (Redis
+initializes the simulator data at bootstrap). AI diagnostics + AI Health
+are automated workflows defined in the AI engine.
 
-## Where it is persisted  
+**Where it is persisted:**
+- Simulator identity + per-table shape metadata: DynamoDB `SIM#` in
+  foundry-workspace.
+- Simulator row data: S3 per-simulator buckets + Redis warm store.
+- AI diagnostics history: DynamoDB `{capability}-{env}-diagnostics` table.
+- AI Health snapshots: DynamoDB `{capability}-{env}-health` table.
 
-Simulators metadata lies in DynamoDB + Simulator Generated Data lies in S3 
-AI diagnostics data lies in DynamoDB.
-AI -Health Data lies in DynamoDB.
+**Backup:** TAR of SIM# rows + diagnostics + health tables + the S3
+simulator buckets via `simulator_backup.py`. Redis is not backed up
+(rebuilt via `POST /api/v1/{sim}/load` after S3 restore).
 
-## How its backed Up
+## Data plane
 
-As a TAR of metedata(In Dynamo) + Generated data (in s3)
+Consists of: **Data Plane Definition Metadata + Data Sources Definition
+Metadata + Virtual Data + Virtual Data API Registry + Mapping Rules +
+Connectors + Connector-Settings + Connector API Registry + Connector
+Diagnostics.**
 
-# Data Plane Data
+The FDW Runtime routes across simulator / ERP DB / Athena / File / Social
+/ TimeSeries. VDL APIs act on virtual entities and dispatch to Connector
+APIs, which in turn either issue SQL via FDW or call third-party REST.
 
-## What it consist
+**Where it is persisted:** all of the above in DynamoDB foundry-workspace
+rows: `DATAPLANE#`, `DATASOURCE#`, `VDLENTITY#`, `VDLAPI#`, `CONNECTOR#`,
+`CONNAPI#` (+ `AUDIT#…` for connector diagnostics), `CONNECTORSETTING#`,
+`MAPPINGRULE#`. Per-source `simulator | real` mode toggles live in SSM
+under `/{capability}/{env}/data_source_mode/`.
 
-Data Plane Definition Metadata + Data Sources Definition Metdata + Virtual-data + Virtual Data API Registry +  Mapping-Rules
+**Backup:** TAR of the above prefixes + an SSM export of
+`data_source_mode/*`. Connector audit rows travel with `CONNAPI#`.
 
-## How it works
+## Control plane
 
-Data Plane connects with multiple data sources.The FDW Runtime that implements data plane can connect with Simulator, Direct ERP Databases, Athena Databases (ETL Mapping), FileToDb(), SocialToDB(),TimeSeries Historical DB().Data-Plane comprises of connections with different Data-sources Type (Simulator / ERP Databases/ ETL DB's,FileToDb(),SocialToDB(),TimeSeries Historical DB())
+Consists of: **Knowledge Pipeline + Knowledge Index + Knowledge Graph +
+Policy Editor + Workflow Editor + Integration Rules Editor + ReAct Tools
+Registry.**
 
-The supported data sources are Simulator / ERP Databases / ETL DB's,FileToDb(),SocialToDB(),TimeSeries Historical DB().
+**Where it is persisted:**
+- Policies / workflows / integration rules → foundry-workspace
+  `POLICY#`, `WORKFLOWDEF#`, `INTEGRATIONDEF#`.
+- Knowledge pipeline metadata + run history → foundry-workspace `KP#`.
+- Knowledge Index → pgvector `control_plane_embeddings` (regenerated).
+- Knowledge Graph → Apache AGE `enterprise_onto` (regenerated).
 
-Each Data Sources work through Processors that connect to external systems, fetch data, and pass it through a directed flow. 
+**Backup:** TAR of `POLICY#`, `WORKFLOWDEF#`, `INTEGRATIONDEF#`, `KP#`.
+pgvector + Apache AGE are excluded by design - the Knowledge Processor
+rebuilds them post-restore.
 
-Source --> Process --> Transform --> Route --> Destination
+## Reasoning plane
 
-Its like Oracle DB
-      \
-Kafka ---> Nexus ---> Validation ---> Enrichment ---> S3
-      /
- REST API
- 
-The Virtual-data is a standardized common data layer that define the standard data of any domain , say supply chain.
+Consists of: **AI Co-Pilot + Planning Playground + ReAct Tools + Tools
+Registry + Tool Builder.** Co-Pilot and Planning Playground are
+transient (Redis with TTL, not backed up).
 
-Virtual Data API registry is a set of API's that can act on virtual Data,finally those VDL Api's in turn use the Connector API's-
+**Where it is persisted:**
+- ReAct Tools catalog (built-ins + user tools): foundry-workspace
+  `TOOLREG#` (registry projection) + `TOOL#` (user Tool Builder rows).
 
-Connector API's can call directly the SQL Update Query via FDW Runtime or Use third Party Rest API's. We need to maintain Connector API's Registry.
+**Backup:** TAR of `TOOLREG#` + `TOOL#` rows (with VERSION/TAG
+sub-rows). Copilot Redis sessions are ephemeral.
 
-The Mapping Rules defines the mapping between data sources and Virtual Data , it a last layer of transformation between data sources and VDL.
+## Workspace plane
 
-## Where is persisted  
+Consists of: **AI Automations + AI Analytics/Dashboards + AI Solutions +
+Role Based Access Control.**
 
-The entire Data-Plane and Data Sources Data persist in Dynamo Database.
-Virtual-data and Virtual Data API registry persist in Dynamo Database.
-Connectors + Connector-Settings + Connector API Registry + Connector Diagnostics 
-- All persists in Dynamo Database.
-Mapping Rules and Daignostics are stored in dynamodb.
+**Where it is persisted:**
+- Solutions view mapping → foundry-workspace `SOLUTION#`.
+- Solutions YAML (NLP-indexed) → foundry-workspace `SOLUTIONYAML#`.
+- Analytics: `VIEW#`, `DASHBOARD#`.
+- Automations: `AUTOMATION#` (playbooks) + `JOURNEY#` (Copilot saved).
+- RBAC: dedicated `{capability}-{env}-rbac` table.
 
-## How its backed Up
+**Backup:** TAR of the above prefixes plus a full dump of the `rbac`
+table.
 
-As a TAR of all the data-plane components(from Dynamo)
+---
 
-# Control Plane Data
+## How to go about it
 
-## What it Consist
+Rollout follows the spec's ordering:
 
-Knowledge Pipeline + Knowledge Index + Knowledge Graph + Policy Editor + Workflow Editor + Integration Rules Editor + React-tools + Re-Act Tools-registry
+1. AI-Ops first (S3 buckets + SIM# + diagnostics + health).
+2. Data / Control / Reasoning planes (foundry-workspace slices).
+3. Workspace last (solutions + views + dashboards + journeys + RBAC).
 
-## How it works
-
-Knowledge Pipeline is the workflow to create the hybrid second brain for AI, it creates the vector data of knowledge index along with the knowledge graph of graph data that LLM use for its reasoning engine.  
-
-Knowledge Index is the vector database of schemas , policies, workflows and integration that LLM uses for reasoning stage to find the Top-k matches. 
-
-Knowledge graph is the Graph database of the entities , policies, workflows and integration rules.
-
-Policy Editor defines the configurable policies for AI governance.
-
-Workflow Editor defines the configurable workflows for AI governance.
-
-Integration Rule Editor defines the configurable integration rules for AI governance.
-
-## Where is persisted  
-Knowledge Pipeline metdata are stored in dynamodb.
-Knowledge index lies with PGVector
-Knowledge Graph lies with Apache Age.
-
-Workflows + Polocies + Integration Rules 
-- All persists in Dynamo Database.
-
-## How its backed Up
-
-We need to take the backup of Knowledge Pipeline and Workflows + Polocies + Integration Rules + ReAct Registries + React Tools Metadata from dynamo db as a complete control-plane tar , we dont need to take backup of the Knowledge index and Knowledge Graph as they will be generated via Knowledge Pipeline execution.
-
-# Reasoning Plane Data
-
-## What it Consist
-AI Co-Pilot , Planning Playground , ReAct Tools , Tools Registry , Tool Builder
-
-## How it works
-
-AI Co-pilot and Planning Playground are purely reasoning and planning utilities.
-
-Each Re-Act Tools = Execute (VDL Query + VDL API's)  
-VDL Api's in turn use the Connector API's,Connector API's can call directly the SQL Update Query via FDW Runtime or Use third Party Rest API's. We need to maintain Connector API's Registry and that is maintained in data-plane.
-
-We will maintain VDL Api's registry , Connectors API's registries in dynamodb.
-Also We will maintain ReactTool definitions(python code) inside ReAct Tool registry,in dynamodb.
-
-## Where is persisted  
-AI Co-Pilot , Planning Playground, Tool Buildier is pure transient program , no data is persisted.
-React Tools and Tools Registries data lies in dynamodb.
- 
-## How its backed Up
-
-React Tools and Tools Registries data are backed as tar from dynamodb.
-
-
-# Workspace Data 
-
-## What it Consist
-AI Automations + AI Analytics and Dashboards + AI solutions + Role Based Access Control  
-
-## How it works  
-
-AI Automations runs Re-Act Tools in series or DAG workflow.We will mainatin a automation workflows registries in dynnamodb.
-
-AI Analytics are a set of dashboard that performs the VDL query and does some transformation and tie up the result data with some views.
-
-AI solutions are composed of AI Automation and AI-Analytics and NLP Query interface. Each AI solutions wil have a structured YAML definitions with lot of descriptions of the solutions, so that we can index them in vector db so that when customer will look for AI solution via NLP query , he will get a readymade solution and he can improve the solution incrementally.   
-
-## Where is persisted  
-
-All persist in Dynamo Database
-
-## How its backed Up
-
-Everything are backed as tar from dynamodb.
-
-# How to go about --
-
-First do the only AI-Ops backup.
-
-Then we will do data/control/reasoning plane backup.
-
-Finally we will take the workspace backup.
-
-
+`plane_backup.py restore-all --dir ./out` runs them in that order. The
+legacy `foundry_backup.py` and `simulator_backup.py` are kept as
+deprecation shims that forward to `plane_backup.py`.

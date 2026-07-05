@@ -829,6 +829,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Phase 6 (data-organization spec) notice: simulator_backup.py is
+    # still the S3-slice tool but for a complete AI-Ops-plane backup
+    # (S3 buckets + DDB SIM# metadata + diagnostics/health tables),
+    # prefer ``plane_backup.py backup --plane ai_ops`` which composes
+    # this tool with the DDB slices.
+    if os.environ.get("SILENCE_SIMULATOR_BACKUP_HINT") != "1":
+        print(
+            "[hint] simulator_backup.py backs up S3 only. For a full "
+            "AI-Ops plane backup (S3 + DDB simulator metadata + diagnostics/health), "
+            "run plane_backup.py backup --plane ai_ops. Set "
+            "SILENCE_SIMULATOR_BACKUP_HINT=1 to hide.",
+            file=sys.stderr,
+        )
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

@@ -397,6 +397,17 @@ def cmd_restore(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------------------------
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Phase 6 (data-organization spec) deprecation notice: prefer
+    # ``plane_backup.py`` for new backups. This tool remains functional
+    # for back-compat but produces a single-blob TAR of the entire
+    # foundry-workspace table.
+    if os.environ.get("SILENCE_FOUNDRY_BACKUP_DEPRECATION") != "1":
+        print(
+            "[deprecation] foundry_backup.py produces one monolithic tarball. "
+            "For plane-scoped backups (recommended) run plane_backup.py; set "
+            "SILENCE_FOUNDRY_BACKUP_DEPRECATION=1 to hide this message.",
+            file=sys.stderr,
+        )
     p = argparse.ArgumentParser(
         prog="foundry_backup.py",
         description=__doc__,

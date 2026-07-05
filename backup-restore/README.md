@@ -1,5 +1,48 @@
 # Nexus Data Backup & Restore
 
+Post-Phase-6 alignment with
+[nexus-docs/docs/architecture/data-organization.md](../../nexus-docs/docs/architecture/data-organization.md).
+The DR layout is now plane-scoped: five separate tarballs matching the
+spec's five planes.
+
+**Preferred tool: `plane_backup.py`**
+
+```bash
+python3 plane_backup.py backup --all \
+    --capability nexus-ai --env prod \
+    --profile promode2 \
+    --out-dir ./out
+```
+
+Produces five files under `./out/`:
+
+| File | Plane | Contents |
+|---|---|---|
+| `plane-ai-ops.tar.gz`    | AI-OPs    | DDB `SIM#`, `diagnostics` + `health` tables. Simulator S3 buckets are backed up separately via `simulator_backup.py`. Redis rebuilt via `/api/v1/{sim}/load` post-restore. |
+| `plane-data.tar.gz`      | Data      | DDB `DATAPLANE#`, `DATASOURCE#`, `VDLENTITY#`, `VDLAPI#`, `CONNECTOR#`, `CONNAPI#` (+audit), `CONNECTORSETTING#`, `MAPPINGRULE#` + SSM `data_source_mode/*`. |
+| `plane-control.tar.gz`   | Control   | DDB `POLICY#`, `WORKFLOWDEF#`, `INTEGRATIONDEF#`, `KP#`. pgvector + Apache AGE **excluded** — rebuilt by the Knowledge Processor. |
+| `plane-reasoning.tar.gz` | Reasoning | DDB `TOOL#` (+VERSION/TAG subrows), `TOOLREG#`. Copilot Redis sessions are ephemeral. |
+| `plane-workspace.tar.gz` | Workspace | DDB `SOLUTION#`, `SOLUTIONYAML#`, `VIEW#`, `DASHBOARD#`, `JOURNEY#`, `AUTOMATION#`, plus a full dump of the `rbac` table. |
+
+Restore in spec order (AI-Ops → Data → Control → Reasoning → Workspace):
+
+```bash
+python3 plane_backup.py restore-all --dir ./out \
+    --target-capability nexus-ai --target-env stage \
+    --target-profile new-account
+```
+
+Each tarball ships with a `POST_RESTORE.md` note describing the required
+post-restore hooks (simulator hydrate, Knowledge Processor run, etc.).
+
+Legacy tools (`foundry_backup.py`, `simulator_backup.py`) are kept for
+back-compat and still work. The sections below describe them for
+reference; new deployments should adopt `plane_backup.py`.
+
+---
+
+## Legacy Stage 1 & 2 (pre-Phase-6)
+
 A staged rewrite of the original kitchen-sink DR tool. The new design separates
 **data** (what the user owns) from **infrastructure** (what the operator
 provisions from the CR). The DR tool's job is the former; the latter is
@@ -7,8 +50,8 @@ already idempotent via `kubectl apply -f nexus-ai-capability.yaml`.
 
 | Stage | Tool | Scope |
 |---|---|---|
-| **Stage 1**           | `simulator_backup.py` | Simulator S3 data (5 active buckets + 2 synthetic placeholders) + post-restore Redis hydration |
-| **Stage 2**           | `foundry_backup.py` + `scripts/bootstrap_foundry_from_files.py` | The Supply Chain Foundry: canonical entities, policies, workflow defs, integration mappings, mapping rules, plus workspace UI entities (solutions, views, dashboards, journeys, tools, connectors, data planes) — all in the `foundry-workspace` DynamoDB table |
+| **Stage 1**           | `simulator_backup.py` | Simulator S3 data (5 active buckets + 2 synthetic placeholders) + post-restore Redis hydration. Called by `plane_backup.py` for the AI-Ops S3 slice. |
+| **Stage 2 (legacy)**  | `foundry_backup.py` + `scripts/bootstrap_foundry_from_files.py` | Monolithic foundry-workspace dump. Superseded by `plane_backup.py`; kept as a deprecation shim. |
 | **Future**            | (no tooling planned)  | SSM / Secrets / Glue / Cognito / Velero / Postgres — covered by re-applying the operator's CR on the target cluster |
 
 The original kitchen-sink CLI is preserved unchanged in [`_archive/`](_archive/)

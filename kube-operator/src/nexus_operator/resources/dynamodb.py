@@ -150,6 +150,34 @@ class DynamoDBProvisioner:
             ],
             "BillingMode": "PAY_PER_REQUEST",
         },
+        "diagnostics": {
+            # AI-OPs diagnostics history (Phase 1). Scope buckets are the
+            # diagnostic route family (e.g. "o2c", "simulators", "react-tools",
+            # "automation", "virtual-data", "dashboard", "connector-apis").
+            # TTL attr `expires_at` set by writers to 30 days.
+            "KeySchema": [
+                {"AttributeName": "scope", "KeyType": "HASH"},
+                {"AttributeName": "run_id", "KeyType": "RANGE"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "scope", "AttributeType": "S"},
+                {"AttributeName": "run_id", "AttributeType": "S"},
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
+        "health": {
+            # AI Health Central snapshots (Phase 1). Scope is a plane name or
+            # "all". TTL attr `expires_at` set by writers to 90 days.
+            "KeySchema": [
+                {"AttributeName": "scope", "KeyType": "HASH"},
+                {"AttributeName": "iso_ts", "KeyType": "RANGE"},
+            ],
+            "AttributeDefinitions": [
+                {"AttributeName": "scope", "AttributeType": "S"},
+                {"AttributeName": "iso_ts", "AttributeType": "S"},
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
     }
     
     def __init__(self, naming: ResourceNaming, region: str):
