@@ -58,13 +58,20 @@ SKIP_ADDONS="${SKIP_ADDONS:-false}"
 #   lowest-cost   = S3/DDB gateway + single NAT instance (no HA)
 #   public-nodes  = nodes in public subnets, no NAT, no endpoints (dev only)
 NETWORK_PROFILE="${NETWORK_PROFILE:-higher-cost}"
-NAT_INSTANCE_TYPE="${NAT_INSTANCE_TYPE:-t4g.nano}"
+# NAT default is t3.nano (x86_64 Intel) rather than t4g.nano (arm64) because
+# the arm64 fck-nat AMI v1.4.0 (2026-07) has been observed silently not
+# forwarding traffic on freshly-launched instances (instances boot, but
+# neither ip_forward nor iptables MASQUERADE end up applied). The x86_64
+# fck-nat AMI is validated working out-of-the-box against a private-subnet
+# probe test. t3.nano has the broadest regional capacity pool of the small
+# NAT candidates and costs ~$3.80/mo on-demand (data transfer extra).
+NAT_INSTANCE_TYPE="${NAT_INSTANCE_TYPE:-t3.nano}"
 # Ordered fallback candidates if the preferred NAT_INSTANCE_TYPE isn't
 # offered in every target AZ. Kept small + cheap; caller can override via
-# --nat-fallback or NAT_INSTANCE_TYPE_FALLBACK env var. Mixing ARM (t4g)
-# and x86_64 (t3a/t3) is intentional so a region-wide t4g shortage still
-# lands on a valid alternative.
-NAT_INSTANCE_TYPE_FALLBACK="${NAT_INSTANCE_TYPE_FALLBACK:-t4g.nano t4g.small t3a.nano t3.nano t3a.small t3.small}"
+# --nat-fallback or NAT_INSTANCE_TYPE_FALLBACK env var. Ordering
+# prioritises x86_64 (t3/t3a) first because the arm64 fck-nat AMI has
+# known issues; t4g.* is retained as a last resort.
+NAT_INSTANCE_TYPE_FALLBACK="${NAT_INSTANCE_TYPE_FALLBACK:-t3.nano t3a.nano t3.small t3a.small t4g.nano t4g.small}"
 NAT_AMI_OWNER="${NAT_AMI_OWNER:-568608671756}"        # fck-nat publisher
 NAT_AMI_NAME_FILTER="${NAT_AMI_NAME_FILTER:-fck-nat-al2023-hvm-*}"
 
