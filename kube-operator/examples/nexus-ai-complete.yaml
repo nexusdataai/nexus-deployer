@@ -47,12 +47,12 @@ spec:
   
   # Frontend - Must listen on port 8080
   frontend:
-    replicas: 3
+    replicas: 2
     image: "__ECR_REGISTRY__/nexus-ui:latest"
   
   # Backend - Must listen on port 8000 with /health endpoint
   backend:
-    replicas: 3
+    replicas: 2
     image: "__ECR_REGISTRY__/ai-job-engine:latest"
   
   # BSS Magic Runtime — All-in-one StatefulSet with embedded PostgreSQL

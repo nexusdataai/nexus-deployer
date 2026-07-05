@@ -7,12 +7,12 @@ already idempotent via `kubectl apply -f nexus-ai-capability.yaml`.
 
 | Stage | Tool | Scope |
 |---|---|---|
-| **Stage 1 (this PR)** | `simulator_backup.py` | Simulator S3 data (5 active buckets + 2 synthetic placeholders) + post-restore Redis hydration |
-| **Stage 2 (next)**    | `entities_backup.py`  | Business entities (DynamoDB + dependent S3) |
+| **Stage 1**           | `simulator_backup.py` | Simulator S3 data (5 active buckets + 2 synthetic placeholders) + post-restore Redis hydration |
+| **Stage 2**           | `foundry_backup.py` + `scripts/bootstrap_foundry_from_files.py` | The Supply Chain Foundry: canonical entities, policies, workflow defs, integration mappings, mapping rules, plus workspace UI entities (solutions, views, dashboards, journeys, tools, connectors, data planes) — all in the `foundry-workspace` DynamoDB table |
 | **Future**            | (no tooling planned)  | SSM / Secrets / Glue / Cognito / Velero / Postgres — covered by re-applying the operator's CR on the target cluster |
 
 The original kitchen-sink CLI is preserved unchanged in [`_archive/`](_archive/)
-for reference and will be deleted once Stage 2 lands.
+for reference and will be deleted in a follow-up cleanup pass.
 
 ---
 
@@ -284,24 +284,256 @@ Uses `moto >= 5` to mock S3 + STS in-process. No AWS credentials needed.
 
 ---
 
-## Roadmap — Stage 2 (DynamoDB-backed business entities)
+## Stage 2 — Supply Chain Foundry (foundry-workspace DDB) Backup & Restore
 
-The Stage 2 deliverable (`entities_backup.py`) will let you back up / restore
-the following logical business entities, each mapped to its DynamoDB storage:
+### What gets backed up
 
-| Entity              | Storage |
-|---------------------|---|
-| `virtual-data`      | `foundry-workspace#VDLENTITY` + `#MAPPINGRULE` (+ simulator buckets, via Stage 1) |
-| `mapping-rules`     | `foundry-workspace#MAPPINGRULE` |
-| `connectors`        | `foundry-workspace#CONNECTOR` + `#CONNECTORSETTING` |
-| `connector-settings`| folded into `connectors` |
-| `connector-apis`    | `foundry-workspace#CONNECTOR/SK=API#…` |
-| `solutions`         | `foundry-workspace#SOLUTION` |
-| `analytics`         | `foundry-workspace#DASHBOARD` + `#VIEW` + `solution-results` S3 |
-| `workflows`         | `foundry-workspace#JOURNEY` + `transformation-system` |
-| `react-tools` / `tools-registry` | `foundry-workspace#TOOL` + `#TOOL_VERSION` |
-| `policies` / `rbac` | `rbac` DDB |
-| `integration-rules` | repo YAML (no-op — restored implicitly by deploying the same image) |
-| `ai-automations`    | repo YAML (no-op) |
+Stage 2 backs up the entire `foundry-workspace` DynamoDB table — the single
+table that holds every Foundry / workspace business entity. The Supply Chain
+Foundry consolidation moved four content types from filesystem/S3 into this
+table (alongside mapping rules, which were already there), giving us one
+authoritative DDB store that can be exported and imported across clusters.
 
-Stage 2 will reuse Stage 1's tarball/manifest patterns and CLI conventions.
+| Logical entity        | PK prefix          | GSI1PK             | Source pre-Stage-2 |
+|-----------------------|--------------------|--------------------|--------------------|
+| Canonical entities    | `VDLENTITY#`       | `VDLENTITY`        | `enterprise-knowledge/canonical-entities.yaml` |
+| Policies              | `POLICY#`          | `POLICY`           | `enterprise-knowledge/policies/*.md` (+ S3 `onto-data/policies/`) |
+| Workflow definitions  | `WORKFLOWDEF#`     | `WORKFLOWDEF`      | `enterprise-knowledge/workflows/*.yaml` (+ S3 `onto-data/workflows/`) |
+| Integration mappings  | `INTEGRATIONDEF#`  | `INTEGRATIONDEF`   | `enterprise-knowledge/integrations/*.yaml` (+ S3 `onto-data/integrations/`) |
+| Mapping rules         | `MAPPINGRULE#` (+ 2 link rows under `DATAPLANE#` / `VDLENTITY#`) | `MAPPINGRULE` | Already in DDB before Stage 2 |
+| Solutions             | `SOLUTION#`        | `SOLUTION`         | Already in DDB |
+| Views                 | `VIEW#`            | `VIEW`             | Already in DDB |
+| Dashboards            | `DASHBOARD#`       | `DASHBOARD`        | Already in DDB |
+| Journeys              | `JOURNEY#`         | `JOURNEY`          | Already in DDB |
+| Tools                 | `TOOL#` (+ `VERSION#…` / `TAG#…`) | `TOOL` | Already in DDB |
+| Connectors            | `CONNECTOR#` (+ `API#…`) | `CONNECTOR`  | Already in DDB |
+| Connector settings    | `CONNECTORSETTING#`| `CONNECTORSETTING` | Already in DDB |
+| Data planes           | `DATAPLANE#`       | `DATAPLANE`        | Already in DDB |
+
+The backup tool does a full `Scan` of the table and groups items by PK
+prefix into per-entity-type JSONL files inside the tarball. Unknown
+prefixes (e.g. future entity types) round-trip into `OTHER.jsonl` so
+forward-compatibility is automatic.
+
+### Bootstrap from baked-in files (one-time per cluster)
+
+Brand-new clusters have no Foundry content in DDB. Run the bootstrap script
+**once** to seed canonical entities + policies + workflows + integrations
+from the baked-in `/app/enterprise-knowledge/` files inside a Running
+backend pod:
+
+```bash
+# Dry-run first (recommended)
+python3 scripts/bootstrap_foundry_from_files.py \
+    --capability nexus-ai --env prod --dry-run
+
+# Execute
+python3 scripts/bootstrap_foundry_from_files.py \
+    --capability nexus-ai --env prod
+
+# Subset (useful when adding a new policy file mid-cycle)
+python3 scripts/bootstrap_foundry_from_files.py \
+    --capability nexus-ai --env prod --only policies
+
+# Overwrite existing rows
+python3 scripts/bootstrap_foundry_from_files.py \
+    --capability nexus-ai --env prod --force
+```
+
+The script `kubectl exec`s into a Running backend pod and POSTs to
+`/api/v1/control-plane/onto-data/foundry/bootstrap` — the backend then
+walks its own filesystem and writes to DDB via the typed CRUD methods on
+`FoundryWorkspaceRepository`. Idempotent: re-runs skip rows that already
+exist (unless `--force`).
+
+After bootstrap, run `scripts/seed_canonical_mapping_rules.py` to populate
+`MAPPINGRULE#` rows for each canonical entity. Order matters: canonical
+entities must exist before mapping rules can reference them.
+
+### Backup
+
+```bash
+python3 foundry_backup.py backup \
+    --capability nexus-ai \
+    --env prod \
+    --profile promode2 \
+    -o foundry-prod-$(date +%Y%m%d).tar.gz
+```
+
+Output shape:
+
+```
+foundry-prod-20260624.tar.gz/
+  manifest.json
+  dynamodb/
+    VDLENTITY.jsonl
+    POLICY.jsonl
+    WORKFLOWDEF.jsonl
+    INTEGRATIONDEF.jsonl
+    MAPPINGRULE.jsonl
+    SOLUTION.jsonl
+    VIEW.jsonl
+    DASHBOARD.jsonl
+    JOURNEY.jsonl
+    TOOL.jsonl
+    CONNECTOR.jsonl
+    CONNECTORSETTING.jsonl
+    DATAPLANE.jsonl
+    OTHER.jsonl    (only if future entity types are present)
+```
+
+### Inspect (no AWS calls)
+
+```bash
+python3 foundry_backup.py inspect -i foundry-prod-20260624.tar.gz
+```
+
+Prints the manifest header plus per-entity row counts. Useful when
+deciding whether a given tarball matches the target cluster.
+
+### Restore
+
+Always do a dry-run first when crossing accounts or environments:
+
+```bash
+python3 foundry_backup.py restore \
+    -i foundry-prod-20260624.tar.gz \
+    --target-capability nexus-ai \
+    --target-env stage \
+    --target-profile stage-account \
+    --dry-run
+```
+
+Once the output looks right, drop `--dry-run`. The restore is:
+
+- **Idempotent** — items are written by `(PK, SK)`; re-running overwrites.
+- **Additive merge by default** — existing rows in the target that aren't
+  present in the bundle are preserved. Pass `--prune` to delete them
+  instead (use with care — it's destructive).
+- **All three mapping-rule rows are restored verbatim** (canonical META
+  plus both denormalized link rows), preserving the
+  list-by-source / list-by-target query pattern without a separate
+  transactional rebuild step.
+- **Cross-account / cross-env rename happens implicitly** via
+  `--target-capability` / `--target-env` (table name is re-derived from
+  `{capability}-{env}-foundry-workspace`); pass `--target-table` to
+  override outright.
+
+### Pre-requisites on the target cluster
+
+The DR tool restores **data**, not infrastructure. Before you run `restore`:
+
+1. Target EKS cluster created and reachable.
+2. Operator deployed and reconciling.
+3. `NexusCapability` CR applied with the target env (operator provisions
+   the empty `foundry-workspace` DDB table with GSI1).
+4. Backend pods can be running or not — restore writes directly to DDB;
+   `VdlCatalogService` will reload from DDB on its next request (call
+   `POST /api/v1/control-plane/entities/refresh` to force a reload).
+
+### Manifest schema
+
+```json
+{
+  "schema_version": "stage2.foundry.v1",
+  "created_at": "2026-06-24T10:30:00+00:00",
+  "source": {
+    "capability": "nexus-ai",
+    "env": "prod",
+    "region": "us-east-1",
+    "table": "nexus-ai-prod-foundry-workspace"
+  },
+  "counts": {
+    "VDLENTITY": 68,
+    "POLICY": 14,
+    "WORKFLOWDEF": 23,
+    "INTEGRATIONDEF": 9,
+    "MAPPINGRULE": 219,
+    "SOLUTION": 7,
+    "VIEW": 13,
+    "DASHBOARD": 8,
+    "JOURNEY": 2,
+    "TOOL": 4,
+    "CONNECTOR": 3,
+    "DATAPLANE": 6
+  },
+  "total": 376,
+  "entity_files": ["dynamodb/CONNECTOR.jsonl", ...]
+}
+```
+
+### Cross-cluster portability workflow
+
+End-to-end recipe for moving a Foundry from prod to a fresh stage cluster:
+
+```bash
+# 1. On source: pack the whole Foundry
+python3 foundry_backup.py backup \
+    --capability nexus-ai --env prod \
+    --profile promode2 \
+    -o foundry-prod.tar.gz
+
+# 2. On target: provision the cluster with the operator (out of scope).
+#    Then point kubectl + AWS profile at the target.
+
+# 3. Verify what you're about to restore
+python3 foundry_backup.py inspect -i foundry-prod.tar.gz
+
+# 4. Dry-run the restore
+python3 foundry_backup.py restore -i foundry-prod.tar.gz \
+    --target-capability nexus-ai --target-env stage \
+    --target-profile stage-account \
+    --dry-run
+
+# 5. Apply
+python3 foundry_backup.py restore -i foundry-prod.tar.gz \
+    --target-capability nexus-ai --target-env stage \
+    --target-profile stage-account
+
+# 6. Trigger a Knowledge Processor run on the target so pgvector + AGE
+#    indexes get rebuilt from the now-populated DDB content.
+```
+
+If the target cluster has never been bootstrapped (no DDB rows at all)
+and you only need the baked-in defaults rather than a copy of another
+cluster's Foundry, skip steps 1–5 and run
+`scripts/bootstrap_foundry_from_files.py` instead.
+
+### CLI reference
+
+```text
+foundry_backup.py backup
+  --capability       Capability name           (default: nexus-ai)
+  --env              Source env                (required)
+  --profile          AWS profile               (boto3 default if omitted)
+  --region           AWS region                (default: us-east-1)
+  --table            Override the {cap}-{env}-foundry-workspace table name
+  -o, --out          Destination .tar.gz       (required)
+
+foundry_backup.py inspect
+  -i, --input        Source .tar.gz            (required)
+
+foundry_backup.py restore
+  -i, --input              Source .tar.gz                 (required)
+  --capability             Source capability (default: nexus-ai)
+  --env                    Source env
+  --profile                AWS profile (boto3 default if omitted)
+  --region                 AWS region (default: us-east-1)
+  --target-capability      Override capability for target (default: --capability)
+  --target-env             Override env for target (default: --env)
+  --target-profile         AWS profile for target (default: --profile)
+  --target-region          Region of target table (default: --region)
+  --target-table           Explicit target table name
+  --dry-run                Plan only; do not write or delete
+  --prune                  Delete target rows whose PK/SK is absent from the
+                           bundle (default: additive merge)
+
+scripts/bootstrap_foundry_from_files.py
+  --capability       Capability name           (default: nexus-ai)
+  --env              Target env                (required)
+  --namespace        K8s namespace             (default: {cap}-{env})
+  --label-selector   Pod selector              (default: app={cap}-{env}-backend)
+  --only             Comma-separated subset    (default: canonical,policies,workflows,integrations)
+  --dry-run          Plan only; do not write to DDB
+  --force            Overwrite existing rows
+```

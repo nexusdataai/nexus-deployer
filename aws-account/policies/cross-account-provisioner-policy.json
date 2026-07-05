@@ -22,6 +22,7 @@
         "cloudwatch:*",
         "acm:*",
         "route53:*",
+        "cloudfront:*",
         "wafv2:*",
         "cloudformation:*",
         "tag:*",
