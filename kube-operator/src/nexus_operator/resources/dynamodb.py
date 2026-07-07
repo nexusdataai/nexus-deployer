@@ -164,6 +164,10 @@ class DynamoDBProvisioner:
                 {"AttributeName": "run_id", "AttributeType": "S"},
             ],
             "BillingMode": "PAY_PER_REQUEST",
+            # Internal metadata (not a boto3 CreateTable param — stripped before
+            # the API call). Triggers a post-create update_time_to_live() call
+            # so rows auto-expire instead of accumulating forever.
+            "_ttl_attribute": "expires_at",
         },
         "health": {
             # AI Health Central snapshots (Phase 1). Scope is a plane name or
@@ -177,6 +181,7 @@ class DynamoDBProvisioner:
                 {"AttributeName": "iso_ts", "AttributeType": "S"},
             ],
             "BillingMode": "PAY_PER_REQUEST",
+            "_ttl_attribute": "expires_at",
         },
     }
     
@@ -196,8 +201,13 @@ class DynamoDBProvisioner:
     
     async def create_table(self, table_name: str, schema: Dict) -> Dict[str, Any]:
         """Create a single DynamoDB table."""
+        # Split boto3 CreateTable params from internal metadata (keys starting
+        # with `_`). Currently the only internal key is `_ttl_attribute`, which
+        # drives a post-create update_time_to_live() call.
+        ttl_attribute = schema.get("_ttl_attribute")
+        api_schema = {k: v for k, v in schema.items() if not k.startswith("_")}
+
         try:
-            # Check if table exists
             try:
                 desc = self.client.describe_table(TableName=table_name)
                 table_arn = desc["Table"]["TableArn"]
@@ -213,14 +223,15 @@ class DynamoDBProvisioner:
                     self.client.tag_resource(ResourceArn=table_arn, Tags=self.naming.aws_tags())
                 except Exception:
                     pass
+                if ttl_attribute:
+                    self._ensure_ttl(table_name, ttl_attribute)
                 logger.info(f"DynamoDB table {table_name} already exists")
                 return {"name": table_name, "status": "exists", "type": "DynamoDB"}
             except ClientError as e:
                 if e.response["Error"]["Code"] != "ResourceNotFoundException":
                     raise
             
-            # Create table
-            response = self.client.create_table(TableName=table_name, **schema)
+            response = self.client.create_table(TableName=table_name, **api_schema)
             table_arn = response["TableDescription"]["TableArn"]
             try:
                 self.client.tag_resource(ResourceArn=table_arn, Tags=self.naming.aws_tags())
@@ -232,12 +243,45 @@ class DynamoDBProvisioner:
                     self.client.tag_resource(ResourceArn=table_arn, Tags=self.naming.aws_tags())
                 except Exception:
                     logger.warning(f"Tagging retry also failed for {table_name} — tag manually")
+            if ttl_attribute:
+                # TTL config requires the table to be ACTIVE. Wait for it.
+                try:
+                    waiter = self.client.get_waiter("table_exists")
+                    waiter.wait(TableName=table_name, WaiterConfig={"Delay": 5, "MaxAttempts": 24})
+                except Exception as wait_err:
+                    logger.warning(f"table_exists waiter failed for {table_name}: {wait_err}")
+                self._ensure_ttl(table_name, ttl_attribute)
             logger.info(f"Created DynamoDB table: {table_name}")
             return {"name": table_name, "status": "created", "type": "DynamoDB"}
             
         except Exception as e:
             logger.error(f"Failed to create table {table_name}: {e}")
             return {"name": table_name, "status": "failed", "error": str(e), "type": "DynamoDB"}
+
+    def _ensure_ttl(self, table_name: str, attribute_name: str) -> None:
+        """Enable DynamoDB TTL on ``attribute_name`` for ``table_name`` (idempotent).
+
+        No-op if TTL is already ENABLED/ENABLING with the same attribute. Any
+        error is logged and swallowed so a TTL configuration hiccup never
+        blocks provisioning.
+        """
+        try:
+            current = self.client.describe_time_to_live(TableName=table_name)
+            spec = current.get("TimeToLiveDescription", {}) or {}
+            if (
+                spec.get("TimeToLiveStatus") in ("ENABLED", "ENABLING")
+                and spec.get("AttributeName") == attribute_name
+            ):
+                return
+            self.client.update_time_to_live(
+                TableName=table_name,
+                TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute_name},
+            )
+            logger.info(f"Enabled TTL on {table_name} (attribute={attribute_name})")
+        except ClientError as e:
+            logger.warning(f"TTL setup failed for {table_name} ({attribute_name}): {e}")
+        except Exception as e:
+            logger.warning(f"TTL setup unexpected error for {table_name}: {e}")
     
     async def delete_all(self) -> List[Dict[str, Any]]:
         """Delete all provisioned tables."""

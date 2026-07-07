@@ -45,7 +45,12 @@ NODE_COUNT_MAX="${NODE_COUNT_MAX:-4}"
 NODE_COUNT_DESIRED="${NODE_COUNT_DESIRED:-2}"
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
 AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
-CAPABILITY="${CAPABILITY:-nexus}"
+# Capability defaults to `nexus-ai` so IRSA role naming and trust policies
+# align with the operator's NexusCapability CR (spec.capabilityName: nexus-ai).
+# Setting this to `nexus` produced role `nexus-<env>-app-role` with trust for
+# namespace `nexus-<env>`, which mismatched the operator SA
+# `nexus-ai-<env>-app-role-sa` in `nexus-ai-<env>` and broke IRSA.
+CAPABILITY="${CAPABILITY:-nexus-ai}"
 APP_ENV="${APP_ENV:-dev}"
 SKIP_ENDPOINTS="${SKIP_ENDPOINTS:-false}"
 SKIP_ADDONS="${SKIP_ADDONS:-false}"
@@ -148,7 +153,7 @@ while [[ $# -gt 0 ]]; do
             echo "IAM:"
             echo "  --cluster-role-arn ARN     EKS cluster IAM role ARN"
             echo "  --node-role-arn ARN        EKS node group IAM role ARN"
-            echo "  --capability NAME          Capability name for app role (default: nexus)"
+            echo "  --capability NAME          Capability name for app role (default: nexus-ai)"
             echo "  --env ENV                  Environment for app role (default: dev)"
             echo ""
             echo "Network profile (cost tier):"
@@ -1413,6 +1418,43 @@ while true; do
     fi
 
     sleep 20
+done
+
+# Tag the worker nodes with human-readable Name tags so they're easy to
+# identify in the EC2 console (EKS-managed nodegroups don't do this by
+# default - they only add ``eks:*`` tags). We tag both:
+#   1. The underlying ASG with PropagateAtLaunch=true so future ASG-launched
+#      instances inherit the Name automatically (health-check replacement,
+#      autoscale-out, AMI refresh).
+#   2. Every currently-running instance in the nodegroup directly, so the
+#      initial pair also gets named.
+echo ""
+echo "=== Naming worker nodes ==="
+NG_ASG=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" \
+    --region "$REGION" --profile "$AWS_PROFILE" \
+    --query 'nodegroup.resources.autoScalingGroups[0].name' --output text 2>/dev/null)
+NODE_NAME_TAG="${CLUSTER_NAME}-worker"
+if [ -n "$NG_ASG" ] && [ "$NG_ASG" != "None" ]; then
+    aws autoscaling create-or-update-tags \
+        --tags "ResourceId=$NG_ASG,ResourceType=auto-scaling-group,Key=Name,Value=$NODE_NAME_TAG,PropagateAtLaunch=true" \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+    echo "  ASG $NG_ASG tagged Name=$NODE_NAME_TAG (propagates to future launches)"
+fi
+for _iid in $(aws ec2 describe-instances \
+    --filters "Name=tag:eks:cluster-name,Values=$CLUSTER_NAME" \
+              "Name=tag:eks:nodegroup-name,Values=$NODEGROUP_NAME" \
+              "Name=instance-state-name,Values=running,pending" \
+    --region "$REGION" --profile "$AWS_PROFILE" \
+    --query 'Reservations[].Instances[].InstanceId' --output text 2>/dev/null); do
+    [ -z "$_iid" ] && continue
+    aws ec2 create-tags --resources "$_iid" \
+        --tags "Key=Name,Value=$NODE_NAME_TAG" \
+               "Key=nexus:cluster,Value=$CLUSTER_NAME" \
+               "Key=nexus:capability,Value=$CAPABILITY" \
+               "Key=nexus:env,Value=$APP_ENV" \
+               "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh" \
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
+    echo "  Instance $_iid tagged Name=$NODE_NAME_TAG"
 done
 
 kubectl get nodes -o wide

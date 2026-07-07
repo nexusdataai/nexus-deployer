@@ -394,39 +394,8 @@ CAP_SANITIZED="${CAPABILITY_NAME//-/_}"
 SSM_PREFIX="/${CAPABILITY_NAME}/${DEPLOY_ENV}"
 SSM_FIXED=0
 
-EXPECTED_GLUE_DB="${CAP_SANITIZED}_${DEPLOY_ENV}_db"
-EXPECTED_GLUE_TABLE="${CAP_SANITIZED}_${DEPLOY_ENV}_call_records"
-
 echo "  Checking SSM parameters under ${SSM_PREFIX}/..."
 echo ""
-
-# Glue database
-CURRENT_GLUE_DB=$(aws ssm get-parameter --name "${SSM_PREFIX}/glue/database" \
-    --query "Parameter.Value" --output text \
-    --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null || echo "")
-if [ "$CURRENT_GLUE_DB" != "$EXPECTED_GLUE_DB" ]; then
-    echo "  Fixing glue/database: '${CURRENT_GLUE_DB}' → '${EXPECTED_GLUE_DB}'"
-    aws ssm put-parameter --name "${SSM_PREFIX}/glue/database" \
-        --value "${EXPECTED_GLUE_DB}" --type String --overwrite \
-        --region "${REGION}" --profile "${AWS_PROFILE}" >/dev/null
-    SSM_FIXED=$((SSM_FIXED + 1))
-else
-    echo "  ✓ glue/database: ${CURRENT_GLUE_DB}"
-fi
-
-# Glue table
-CURRENT_GLUE_TABLE=$(aws ssm get-parameter --name "${SSM_PREFIX}/glue/table" \
-    --query "Parameter.Value" --output text \
-    --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null || echo "")
-if [ "$CURRENT_GLUE_TABLE" != "$EXPECTED_GLUE_TABLE" ]; then
-    echo "  Fixing glue/table: '${CURRENT_GLUE_TABLE}' → '${EXPECTED_GLUE_TABLE}'"
-    aws ssm put-parameter --name "${SSM_PREFIX}/glue/table" \
-        --value "${EXPECTED_GLUE_TABLE}" --type String --overwrite \
-        --region "${REGION}" --profile "${AWS_PROFILE}" >/dev/null
-    SSM_FIXED=$((SSM_FIXED + 1))
-else
-    echo "  ✓ glue/table: ${CURRENT_GLUE_TABLE}"
-fi
 
 # Cognito user pool and app client
 COGNITO_POOL_NAME="${CAPABILITY_NAME}-${DEPLOY_ENV}"

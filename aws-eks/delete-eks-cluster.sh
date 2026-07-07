@@ -36,7 +36,9 @@ set -e
 CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
-CAPABILITY="${CAPABILITY:-nexus}"
+# Keep in sync with create-hardened-eks-cluster.sh default so app-role cleanup
+# targets the same IRSA role name the operator uses (`nexus-ai-<env>-app-role`).
+CAPABILITY="${CAPABILITY:-nexus-ai}"
 APP_ENV="${APP_ENV:-dev}"
 AUTO_APPROVE="${AUTO_APPROVE:-no}"
 # Default behavior: full teardown. Every resource the create script
@@ -72,7 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --name NAME           Cluster name (default: nexus-dev)"
             echo "  --region REGION       AWS region (default: us-east-1)"
             echo "  --profile PROFILE     AWS CLI profile (default: ptr-tech)"
-            echo "  --capability NAME     Capability name for app role cleanup (default: nexus)"
+            echo "  --capability NAME     Capability name for app role cleanup (default: nexus-ai)"
             echo "  --env ENV             Environment for app role cleanup (default: dev)"
             echo "  --vpc-id VPC_ID       VPC ID to delete (auto-detected from cluster if running)"
             echo "  --keep-vpc            DO NOT delete VPC, NAT ASGs, ELBs, EBS volumes, endpoints"
