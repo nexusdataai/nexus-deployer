@@ -46,27 +46,50 @@ CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
 NEXUS_OUTPUT="${SCRIPT_DIR}/images/nexus"
 BSSMAGIC_OUTPUT="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_OUTPUT="${SCRIPT_DIR}/images/operator"
+SRE_OUTPUT="${SCRIPT_DIR}/images/nexus-sre"
 
 BACKEND_IMAGE="ai-job-engine:latest"
 FRONTEND_IMAGE="nexus-ui:latest"
 BSSMAGIC_IMAGE="bssmagic-nexus-k8s:latest"
 OPERATOR_IMAGE="nexus-operator:latest"
+SRE_BACKEND_IMAGE="nexus-sre-backend:latest"
+SRE_UI_IMAGE="nexus-sre-ui:latest"
+SRE_POSTGRES_IMAGE="nexus-sre-postgres:latest"
 
 SKIP_BSSMAGIC=false
 ONLY_BSSMAGIC=false
 SKIP_OPERATOR=false
 ONLY_OPERATOR=false
+SKIP_SRE_BACKEND=false
+ONLY_SRE_BACKEND=false
+SKIP_SRE_UI=false
+ONLY_SRE_UI=false
+SKIP_SRE_POSTGRES=false
+ONLY_SRE_POSTGRES=false
+ONLY_SRE=false
+SKIP_SRE=true    # default: legacy invocations do not touch SRE images
 
 # Parse arguments (before resolving dirs, so --only-bssmagic can skip missing dirs)
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --backend-dir)   BACKEND_DIR="$2"; shift 2 ;;
-        --frontend-dir)  FRONTEND_DIR="$2"; shift 2 ;;
-        --bssmagic-dir)  BSSMAGIC_DIR="$2"; shift 2 ;;
-        --skip-bssmagic) SKIP_BSSMAGIC=true; shift ;;
-        --only-bssmagic) ONLY_BSSMAGIC=true; shift ;;
-        --skip-operator) SKIP_OPERATOR=true; shift ;;
-        --only-operator) ONLY_OPERATOR=true; shift ;;
+        --backend-dir)        BACKEND_DIR="$2"; shift 2 ;;
+        --frontend-dir)       FRONTEND_DIR="$2"; shift 2 ;;
+        --bssmagic-dir)       BSSMAGIC_DIR="$2"; shift 2 ;;
+        --sre-backend-dir)    SRE_BACKEND_DIR="$2"; shift 2 ;;
+        --sre-frontend-dir)   SRE_FRONTEND_DIR="$2"; shift 2 ;;
+        --sre-postgres-dir)   SRE_POSTGRES_DIR="$2"; shift 2 ;;
+        --skip-bssmagic)      SKIP_BSSMAGIC=true; shift ;;
+        --only-bssmagic)      ONLY_BSSMAGIC=true; shift ;;
+        --skip-operator)      SKIP_OPERATOR=true; shift ;;
+        --only-operator)      ONLY_OPERATOR=true; shift ;;
+        --only-sre-backend)   ONLY_SRE_BACKEND=true; SKIP_SRE=false; shift ;;
+        --only-sre-ui)        ONLY_SRE_UI=true; SKIP_SRE=false; shift ;;
+        --only-sre-postgres)  ONLY_SRE_POSTGRES=true; SKIP_SRE=false; shift ;;
+        --only-sre-images)    ONLY_SRE=true; SKIP_SRE=false; shift ;;
+        --skip-sre-backend)   SKIP_SRE_BACKEND=true; shift ;;
+        --skip-sre-ui)        SKIP_SRE_UI=true; shift ;;
+        --skip-sre-postgres)  SKIP_SRE_POSTGRES=true; shift ;;
+        --with-sre-images)    SKIP_SRE=false; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -80,12 +103,25 @@ while [[ $# -gt 0 ]]; do
             echo "  --only-bssmagic      Only package BSS Magic image (skip Nexus)"
             echo "  --skip-operator      Skip operator image"
             echo "  --only-operator      Only package operator image"
+            echo ""
+            echo "  --with-sre-images    Also package nexus-sre backend + ui + postgres images"
+            echo "  --only-sre-images    Only package nexus-sre images (skip Nexus/BSS/operator)"
+            echo "  --only-sre-backend   Only package nexus-sre backend image"
+            echo "  --only-sre-ui        Only package nexus-sre ui image"
+            echo "  --only-sre-postgres  Only package nexus-sre postgres (pgvector+AGE) image"
+            echo "  --skip-sre-backend   Skip nexus-sre backend image"
+            echo "  --skip-sre-ui        Skip nexus-sre ui image"
+            echo "  --skip-sre-postgres  Skip nexus-sre postgres image"
+            echo "  --sre-backend-dir DIR   Path to nexus-sre backend (default: ../../nexus-sre/backend)"
+            echo "  --sre-frontend-dir DIR  Path to nexus-sre frontend (default: ../../nexus-sre/frontend)"
+            echo "  --sre-postgres-dir DIR  Path to nexus-sre postgres-image (default: ../../nexus-sre/postgres-image)"
             echo "  --help               Show this help"
             echo ""
             echo "Notes:"
             echo "  Nexus images require nexus-backend + nexus-ui source repos."
             echo "  BSS Magic image requires access to CloudSense base image ECR."
             echo "  Operator image is built from kube-operator/Dockerfile."
+            echo "  SRE postgres image builds Apache AGE (same pattern as bssmagic-image)."
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -96,16 +132,24 @@ done
 # Resolve source directories (deferred until after arg parsing
 # so --only-bssmagic doesn't fail when nexus-backend/ui missing)
 # ──────────────────────────────────────────────────────────────
-if [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+SRE_MODE=false
+if [ "$ONLY_SRE" = true ] || [ "$ONLY_SRE_BACKEND" = true ] || [ "$ONLY_SRE_UI" = true ] || [ "$ONLY_SRE_POSTGRES" = true ]; then
+    SRE_MODE=true
+fi
+
+if [ "$SRE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-backend" 2>/dev/null && pwd || echo "")}"
     FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ui" 2>/dev/null && pwd || echo "")}"
 fi
 BSSMAGIC_DIR="${BSSMAGIC_DIR:-$(cd "$SCRIPT_DIR/../bssmagic-image" 2>/dev/null && pwd || echo "")}"
+SRE_BACKEND_DIR="${SRE_BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/backend" 2>/dev/null && pwd || echo "")}"
+SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend" 2>/dev/null && pwd || echo "")}"
+SRE_POSTGRES_DIR="${SRE_POSTGRES_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/postgres-image" 2>/dev/null && pwd || echo "")}"
 
 # ──────────────────────────────────────────────────────────────
 # Validation
 # ──────────────────────────────────────────────────────────────
-if [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+if [ "$SRE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     if [ ! -f "${BACKEND_DIR}/Dockerfile" ]; then
         echo "ERROR: Backend Dockerfile not found at ${BACKEND_DIR}/Dockerfile"
         echo "  Use --backend-dir to specify the nexus-backend directory"
@@ -116,6 +160,25 @@ if [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
         echo "ERROR: Frontend Dockerfile not found at ${FRONTEND_DIR}/Dockerfile"
         echo "  Use --frontend-dir to specify the nexus-ui directory"
         echo "  Or use --only-bssmagic to skip Nexus images"
+        exit 1
+    fi
+fi
+
+# Validate SRE dirs only if we intend to package them
+if [ "$SRE_MODE" = true ] || [ "$SKIP_SRE" = false ]; then
+    if [ "$SKIP_SRE_BACKEND" != true ] && [ "$ONLY_SRE_UI" != true ] && [ "$ONLY_SRE_POSTGRES" != true ] && [ ! -f "${SRE_BACKEND_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-sre backend Dockerfile not found at ${SRE_BACKEND_DIR}/Dockerfile"
+        echo "  Use --sre-backend-dir to specify the nexus-sre backend directory"
+        exit 1
+    fi
+    if [ "$SKIP_SRE_UI" != true ] && [ "$ONLY_SRE_BACKEND" != true ] && [ "$ONLY_SRE_POSTGRES" != true ] && [ ! -f "${SRE_FRONTEND_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-sre ui Dockerfile not found at ${SRE_FRONTEND_DIR}/Dockerfile"
+        echo "  Use --sre-frontend-dir to specify the nexus-sre frontend directory"
+        exit 1
+    fi
+    if [ "$SKIP_SRE_POSTGRES" != true ] && [ "$ONLY_SRE_BACKEND" != true ] && [ "$ONLY_SRE_UI" != true ] && [ ! -f "${SRE_POSTGRES_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-sre postgres Dockerfile not found at ${SRE_POSTGRES_DIR}/Dockerfile"
+        echo "  Use --sre-postgres-dir to specify the nexus-sre postgres-image directory"
         exit 1
     fi
 fi
@@ -134,8 +197,23 @@ TOTAL_STEPS=0
 PACKAGE_NEXUS=false
 PACKAGE_BSSMAGIC=false
 PACKAGE_OPERATOR=false
+PACKAGE_SRE_BACKEND=false
+PACKAGE_SRE_UI=false
+PACKAGE_SRE_POSTGRES=false
 
-if [ "$ONLY_BSSMAGIC" = true ]; then
+if [ "$SRE_MODE" = true ]; then
+    if [ "$ONLY_SRE_BACKEND" = true ]; then
+        PACKAGE_SRE_BACKEND=true
+    elif [ "$ONLY_SRE_UI" = true ]; then
+        PACKAGE_SRE_UI=true
+    elif [ "$ONLY_SRE_POSTGRES" = true ]; then
+        PACKAGE_SRE_POSTGRES=true
+    else
+        [ "$SKIP_SRE_BACKEND" = false ] && PACKAGE_SRE_BACKEND=true
+        [ "$SKIP_SRE_UI" = false ] && PACKAGE_SRE_UI=true
+        [ "$SKIP_SRE_POSTGRES" = false ] && PACKAGE_SRE_POSTGRES=true
+    fi
+elif [ "$ONLY_BSSMAGIC" = true ]; then
     PACKAGE_BSSMAGIC=true
 elif [ "$ONLY_OPERATOR" = true ]; then
     PACKAGE_OPERATOR=true
@@ -143,11 +221,19 @@ else
     PACKAGE_NEXUS=true
     [ "$SKIP_BSSMAGIC" = false ] && PACKAGE_BSSMAGIC=true
     [ "$SKIP_OPERATOR" = false ] && PACKAGE_OPERATOR=true
+    if [ "$SKIP_SRE" = false ]; then
+        [ "$SKIP_SRE_BACKEND" = false ] && PACKAGE_SRE_BACKEND=true
+        [ "$SKIP_SRE_UI" = false ] && PACKAGE_SRE_UI=true
+        [ "$SKIP_SRE_POSTGRES" = false ] && PACKAGE_SRE_POSTGRES=true
+    fi
 fi
 
 [ "$PACKAGE_NEXUS" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 4))
 [ "$PACKAGE_BSSMAGIC" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 3))
 [ "$PACKAGE_OPERATOR" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 3))
+[ "$PACKAGE_SRE_BACKEND" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_SRE_UI" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_SRE_POSTGRES" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 CURRENT_STEP=0
 
 echo "=============================================="
@@ -287,6 +373,58 @@ if [ "$PACKAGE_OPERATOR" = true ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────
+# nexus-sre Images
+# ──────────────────────────────────────────────────────────────
+if [ "$PACKAGE_SRE_BACKEND" = true ] || [ "$PACKAGE_SRE_UI" = true ] || [ "$PACKAGE_SRE_POSTGRES" = true ]; then
+    mkdir -p "${SRE_OUTPUT}"
+fi
+
+if [ "$PACKAGE_SRE_BACKEND" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-sre backend image: ${SRE_BACKEND_IMAGE} ==="
+    docker build -t "${SRE_BACKEND_IMAGE}" "${SRE_BACKEND_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${SRE_BACKEND_IMAGE} as tar.gz ==="
+    docker save "${SRE_BACKEND_IMAGE}" | gzip > "${SRE_OUTPUT}/nexus-sre-backend.tar.gz"
+    (cd "${SRE_OUTPUT}" && sha256sum nexus-sre-backend.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+if [ "$PACKAGE_SRE_UI" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-sre ui image: ${SRE_UI_IMAGE} ==="
+    docker build -t "${SRE_UI_IMAGE}" "${SRE_FRONTEND_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${SRE_UI_IMAGE} as tar.gz ==="
+    docker save "${SRE_UI_IMAGE}" | gzip > "${SRE_OUTPUT}/nexus-sre-ui.tar.gz"
+    (cd "${SRE_OUTPUT}" && sha256sum nexus-sre-ui.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+if [ "$PACKAGE_SRE_POSTGRES" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-sre postgres image (pgvector+AGE): ${SRE_POSTGRES_IMAGE} ==="
+    docker build -t "${SRE_POSTGRES_IMAGE}" "${SRE_POSTGRES_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${SRE_POSTGRES_IMAGE} as tar.gz ==="
+    docker save "${SRE_POSTGRES_IMAGE}" | gzip > "${SRE_OUTPUT}/nexus-sre-postgres.tar.gz"
+    (cd "${SRE_OUTPUT}" && sha256sum nexus-sre-postgres.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+# ──────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────
 echo "=============================================="
@@ -302,6 +440,9 @@ if [ "$PACKAGE_BSSMAGIC" = true ] && [ -d "${BSSMAGIC_OUTPUT}" ]; then
 fi
 if [ "$PACKAGE_OPERATOR" = true ] && [ -d "${OPERATOR_OUTPUT}" ]; then
     ls -lh "${OPERATOR_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
+fi
+if { [ "$PACKAGE_SRE_BACKEND" = true ] || [ "$PACKAGE_SRE_UI" = true ] || [ "$PACKAGE_SRE_POSTGRES" = true ]; } && [ -d "${SRE_OUTPUT}" ]; then
+    ls -lh "${SRE_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
 fi
 echo ""
 echo "  These files can now be shipped with kube-operator/"

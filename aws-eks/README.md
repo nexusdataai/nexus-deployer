@@ -2,6 +2,59 @@
 
 This directory contains scripts for creating and managing hardened EKS clusters.
 
+> **⚠️ CRITICAL — Read before running `delete-eks-cluster.sh`**
+>
+> `delete-eks-cluster.sh` deletes **account-wide shared IAM roles** as its default
+> behaviour (Step 6 in the script, lines ~313–335). If any *other* EKS cluster,
+> operator, or capability in the same AWS account depends on these roles, running
+> this script **silently sabotages those clusters** — the roles vanish and the
+> next pod cold-start / new nodegroup / new node fails with `AccessDenied`,
+> `AssumeRoleWithWebIdentity`, or `ImagePullBackOff: no basic auth credentials`.
+> Cluster-level resources survive, so the damage is invisible until the next
+> IRSA-token refresh or new pod schedule.
+>
+> Roles the script removes by default (all account-scoped, shared across every
+> EKS cluster in the account):
+>
+> - `nexus-operator-role` — used by every operator install
+> - `AmazonEKSAutoClusterRole` — cluster service role for every cluster
+> - `EKS_Node_Role` — kubelet role for every managed nodegroup
+> - `AmazonEKS_EBS_CSI_DriverRole` — EBS CSI addon in every cluster
+> - `aws-load-balancer-controller-role` — LBC in every cluster
+> - `AWSLoadBalancerControllerIAMPolicy` — the managed policy attached to it
+> - `nexus-<capability>-<env>-app-role` — this one **is** cluster-scoped and safe
+>
+> ### Operator runbook
+>
+> 1. **Never run `delete-eks-cluster.sh`** on a shared / multi-cluster AWS
+>    account. It is only safe for accounts that host exactly one cluster and
+>    where you are performing a complete account teardown.
+> 2. If you must tear down one cluster in a multi-cluster account, run only the
+>    cluster + nodegroup + VPC steps manually:
+>    ```bash
+>    aws eks delete-nodegroup --cluster-name <c> --nodegroup-name <ng> ...
+>    aws eks delete-cluster   --name <c> ...
+>    # Do NOT touch: EKS_Node_Role, AmazonEKSAutoClusterRole,
+>    # nexus-operator-role, AmazonEKS_EBS_CSI_DriverRole,
+>    # aws-load-balancer-controller-role
+>    ```
+> 3. If a shared role has already been deleted, symptoms include:
+>    - Backend pods: `AccessDenied ... AssumeRoleWithWebIdentity` on SSM/Cognito
+>    - New pods: `ImagePullBackOff: no basic auth credentials`
+>    - New nodegroups stuck `CREATING` with no ASG for 15+ minutes
+>    - `aws eks create-nodegroup` fails: *"The role with name
+>      AmazonEKSAutoClusterRole cannot be found"*
+> 4. Recovery is `create-hardened-eks-cluster.sh`'s IAM step — either re-run the
+>    script (idempotent — it re-creates missing roles) or replay the same
+>    `create-role` + `attach-role-policy` sequence manually (see
+>    `create-hardened-eks-cluster.sh` lines ~977–1030 for the exact spec).
+> 5. CloudTrail is the definitive source for who did it:
+>    ```bash
+>    aws cloudtrail lookup-events \
+>        --lookup-attributes AttributeKey=EventName,AttributeValue=DeleteRole \
+>        --region us-east-1 --max-items 50
+>    ```
+
 ## Network profiles & cost tiers
 
 `create-hardened-eks-cluster.sh` accepts `--network-profile NAME` to pick the

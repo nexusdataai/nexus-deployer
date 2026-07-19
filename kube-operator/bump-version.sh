@@ -8,7 +8,8 @@
 # Usage:
 #   ./bump-version.sh <target> <bump> [options]
 #
-#   <target>  backend | ui | frontend | docs | operator | capability | both | all
+#   <target>  backend | ui | frontend | docs | operator | capability |
+#             sre-backend | sre-ui | sre-all | both | all
 #   <bump>    major | minor | patch
 #
 # Examples:
@@ -27,13 +28,15 @@
 #   --dry-run             Show planned change without writing or committing
 #   --commit              After bumping, git add <VERSION-file> + git commit in each repo
 #   --push                After --commit, also git push origin <current-branch>
-#   --backend-dir PATH    Override nexus-backend path (default: ../../nexus-backend)
-#   --frontend-dir PATH   Override nexus-ui path (default: ../../nexus-ui)
-#   --docs-dir PATH       Override nexus-docs path (default: ../../nexus-docs)
-#   --operator-dir PATH   Override kube-operator path (default: this script's directory)
-#   --capability-file P   Override capability YAML path (default: examples/nexus-ai-complete.yaml)
-#                         The VERSION file is derived by replacing .yaml with .VERSION
-#   --help                Show this help
+#   --backend-dir PATH        Override nexus-backend path (default: ../../nexus-backend)
+#   --frontend-dir PATH       Override nexus-ui path (default: ../../nexus-ui)
+#   --docs-dir PATH           Override nexus-docs path (default: ../../nexus-docs)
+#   --operator-dir PATH       Override kube-operator path (default: this script's directory)
+#   --sre-backend-dir PATH    Override nexus-sre/backend path (default: ../../nexus-sre/backend)
+#   --sre-frontend-dir PATH   Override nexus-sre/frontend path (default: ../../nexus-sre/frontend)
+#   --capability-file P       Override capability YAML path (default: examples/nexus-ai-complete.yaml)
+#                             The VERSION file is derived by replacing .yaml with .VERSION
+#   --help                    Show this help
 
 set -eo pipefail
 
@@ -56,6 +59,8 @@ BACKEND_DIR=""
 FRONTEND_DIR=""
 DOCS_DIR=""
 OPERATOR_DIR=""
+SRE_BACKEND_DIR=""
+SRE_FRONTEND_DIR=""
 CAPABILITY_FILE=""
 
 show_help() {
@@ -67,13 +72,15 @@ while [ $# -gt 0 ]; do
         --dry-run)        DRY_RUN=true; shift ;;
         --commit)         DO_COMMIT=true; shift ;;
         --push)           DO_PUSH=true; shift ;;
-        --backend-dir)    BACKEND_DIR="$2"; shift 2 ;;
-        --frontend-dir)   FRONTEND_DIR="$2"; shift 2 ;;
-        --docs-dir)       DOCS_DIR="$2"; shift 2 ;;
-        --operator-dir)   OPERATOR_DIR="$2"; shift 2 ;;
-        --capability-file) CAPABILITY_FILE="$2"; shift 2 ;;
-        --help|-h)        show_help; exit 0 ;;
-        backend|ui|frontend|docs|operator|capability|both|all)
+        --backend-dir)       BACKEND_DIR="$2"; shift 2 ;;
+        --frontend-dir)      FRONTEND_DIR="$2"; shift 2 ;;
+        --docs-dir)          DOCS_DIR="$2"; shift 2 ;;
+        --operator-dir)      OPERATOR_DIR="$2"; shift 2 ;;
+        --sre-backend-dir)   SRE_BACKEND_DIR="$2"; shift 2 ;;
+        --sre-frontend-dir)  SRE_FRONTEND_DIR="$2"; shift 2 ;;
+        --capability-file)   CAPABILITY_FILE="$2"; shift 2 ;;
+        --help|-h)           show_help; exit 0 ;;
+        backend|ui|frontend|docs|operator|capability|sre-backend|sre-ui|sre-all|both|all)
             if [ -z "$TARGET" ]; then TARGET="$1"; else
                 echo "Unexpected positional argument: $1" >&2; exit 1
             fi
@@ -94,7 +101,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$TARGET" ] || [ -z "$BUMP" ]; then
-    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|both|all> <major|minor|patch> [options]" >&2
+    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|sre-backend|sre-ui|sre-all|both|all> <major|minor|patch> [options]" >&2
     echo "Run with --help for full usage." >&2
     exit 1
 fi
@@ -109,6 +116,8 @@ BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-backend" 2>/dev/null &
 FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ui" 2>/dev/null && pwd || echo "")}"
 DOCS_DIR="${DOCS_DIR:-$(cd "$SCRIPT_DIR/../../nexus-docs" 2>/dev/null && pwd || echo "")}"
 OPERATOR_DIR="${OPERATOR_DIR:-$SCRIPT_DIR}"
+SRE_BACKEND_DIR="${SRE_BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/backend" 2>/dev/null && pwd || echo "")}"
+SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend" 2>/dev/null && pwd || echo "")}"
 CAPABILITY_FILE="${CAPABILITY_FILE:-${SCRIPT_DIR}/examples/nexus-ai-complete.yaml}"
 CAPABILITY_DIR="$(dirname "$CAPABILITY_FILE")"
 CAPABILITY_VERSION_FILENAME="$(basename "${CAPABILITY_FILE%.yaml}.VERSION")"
@@ -123,6 +132,12 @@ case "$TARGET" in
     operator)       REPOS=("operator|${OPERATOR_DIR}|VERSION") ;;
     capability)     REPOS=("capability|${CAPABILITY_DIR}|${CAPABILITY_VERSION_FILENAME}") ;;
     both)           REPOS=("backend|${BACKEND_DIR}|VERSION" "ui|${FRONTEND_DIR}|VERSION") ;;
+    sre-backend)    REPOS=("sre-backend|${SRE_BACKEND_DIR}|VERSION") ;;
+    sre-ui)         REPOS=("sre-ui|${SRE_FRONTEND_DIR}|VERSION") ;;
+    sre-all)        REPOS=(
+                       "sre-backend|${SRE_BACKEND_DIR}|VERSION"
+                       "sre-ui|${SRE_FRONTEND_DIR}|VERSION"
+                    ) ;;
     all)            REPOS=(
                        "backend|${BACKEND_DIR}|VERSION"
                        "ui|${FRONTEND_DIR}|VERSION"

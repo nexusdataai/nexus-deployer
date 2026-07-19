@@ -40,8 +40,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGES_DIR="${SCRIPT_DIR}/images/nexus"
 BSSMAGIC_IMAGES_DIR="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_IMAGES_DIR="${SCRIPT_DIR}/images/operator"
+SRE_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-sre"
 BACKEND_DIR="/opt/mycode/nexus/nexus-backend"
 FRONTEND_DIR="/opt/mycode/nexus/nexus-ui"
+SRE_BACKEND_DIR="/opt/mycode/nexus/nexus-sre/backend"
+SRE_FRONTEND_DIR="/opt/mycode/nexus/nexus-sre/frontend"
+SRE_POSTGRES_DIR="/opt/mycode/nexus/nexus-sre/postgres-image"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -52,16 +56,23 @@ fi
 DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-prod}}"
 CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-dev}}"
 REGION="${REGION:-us-east-1}"
-AWS_PROFILE="${AWS_PROFILE:-ptr-tech}"
+# AWS_PROFILE is read from .env.local when set (survhana for nexus-prod);
+# defaults to ptr-tech for legacy compatibility.
+_ENV_LOCAL_AWS_PROFILE=$(grep '^AWS_PROFILE=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2- || true)
+AWS_PROFILE="${AWS_PROFILE:-${_ENV_LOCAL_AWS_PROFILE:-ptr-tech}}"
 
 PUSH_OPERATOR=true
 PUSH_APP=true
 PUSH_BSSMAGIC=true
+PUSH_SRE_BACKEND=false
+PUSH_SRE_UI=false
+PUSH_SRE_POSTGRES=false
 ONLY_MODE=""
 NO_CACHE=false
 APP_VERSION_OVERRIDE=""
 BSSMAGIC_VERSION_OVERRIDE=""
 OPERATOR_VERSION_OVERRIDE=""
+SRE_VERSION_OVERRIDE=""
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -106,17 +117,21 @@ docker_dual_tag_push() {
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-operator)    PUSH_OPERATOR=false; shift ;;
-        --skip-app-images)  PUSH_APP=false; shift ;;
-        --skip-bssmagic)    PUSH_BSSMAGIC=false; shift ;;
-        --only-operator)    ONLY_MODE="operator"; shift ;;
-        --only-app-images)  ONLY_MODE="app"; shift ;;
-        --only-bssmagic)    ONLY_MODE="bssmagic"; shift ;;
-        --no-cache)         NO_CACHE=true; shift ;;
-        --env)              DEPLOY_ENV="$2"; shift 2 ;;
-        --version)          APP_VERSION_OVERRIDE="$2"; shift 2 ;;
-        --bssmagic-version) BSSMAGIC_VERSION_OVERRIDE="$2"; shift 2 ;;
-        --operator-version) OPERATOR_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --skip-operator)     PUSH_OPERATOR=false; shift ;;
+        --skip-app-images)   PUSH_APP=false; shift ;;
+        --skip-bssmagic)     PUSH_BSSMAGIC=false; shift ;;
+        --only-operator)     ONLY_MODE="operator"; shift ;;
+        --only-app-images)   ONLY_MODE="app"; shift ;;
+        --only-bssmagic)     ONLY_MODE="bssmagic"; shift ;;
+        --only-sre-images)   ONLY_MODE="sre"; shift ;;
+        --with-sre-images)   PUSH_SRE_BACKEND=true; PUSH_SRE_UI=true; PUSH_SRE_POSTGRES=true; shift ;;
+        --only-sre-postgres) ONLY_MODE="sre-postgres"; shift ;;
+        --sre-version)       SRE_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --no-cache)          NO_CACHE=true; shift ;;
+        --env)               DEPLOY_ENV="$2"; shift 2 ;;
+        --version)           APP_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --bssmagic-version)  BSSMAGIC_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --operator-version)  OPERATOR_VERSION_OVERRIDE="$2"; shift 2 ;;
         --help|-h)
             echo "Create ECR Images"
             echo ""
@@ -142,11 +157,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -n "$ONLY_MODE" ]; then
-    PUSH_OPERATOR=false; PUSH_APP=false; PUSH_BSSMAGIC=false
+    PUSH_OPERATOR=false; PUSH_APP=false; PUSH_BSSMAGIC=false; PUSH_SRE_BACKEND=false; PUSH_SRE_UI=false; PUSH_SRE_POSTGRES=false
     case "$ONLY_MODE" in
-        operator) PUSH_OPERATOR=true ;;
-        app)      PUSH_APP=true ;;
-        bssmagic) PUSH_BSSMAGIC=true ;;
+        operator)     PUSH_OPERATOR=true ;;
+        app)          PUSH_APP=true ;;
+        bssmagic)     PUSH_BSSMAGIC=true ;;
+        sre)          PUSH_SRE_BACKEND=true; PUSH_SRE_UI=true; PUSH_SRE_POSTGRES=true ;;
+        sre-postgres) PUSH_SRE_POSTGRES=true ;;
     esac
 fi
 
@@ -168,6 +185,9 @@ echo "  ECR Registry: ${ECR_REGISTRY}"
 echo "  Operator:     ${PUSH_OPERATOR}"
 echo "  Nexus:        ${PUSH_APP}"
 echo "  BSS Magic:    ${PUSH_BSSMAGIC}"
+echo "  nexus-sre-backend:  ${PUSH_SRE_BACKEND}"
+echo "  nexus-sre-ui:       ${PUSH_SRE_UI}"
+echo "  nexus-sre-postgres: ${PUSH_SRE_POSTGRES}"
 echo ""
 
 # ECR login
@@ -182,6 +202,9 @@ TOTAL=0
 [ "$PUSH_OPERATOR" = true ] && TOTAL=$((TOTAL+1))
 [ "$PUSH_APP" = true ] && TOTAL=$((TOTAL+1))
 [ "$PUSH_BSSMAGIC" = true ] && TOTAL=$((TOTAL+1))
+[ "$PUSH_SRE_BACKEND" = true ] && TOTAL=$((TOTAL+1))
+[ "$PUSH_SRE_UI" = true ] && TOTAL=$((TOTAL+1))
+[ "$PUSH_SRE_POSTGRES" = true ] && TOTAL=$((TOTAL+1))
 
 # ──────────────────────────────────────────────────────────────
 # Operator Image
@@ -345,6 +368,67 @@ if [ "$PUSH_BSSMAGIC" = true ]; then
         echo "    Run ./package-images.sh --only-bssmagic to create the tar."
     fi
     echo ""
+fi
+
+# ──────────────────────────────────────────────────────────────
+# nexus-sre backend + ui
+# ──────────────────────────────────────────────────────────────
+sre_push() {
+    local repo="$1" src_dir="$2" tar_name="$3"
+    STEP=$((STEP+1))
+    echo -e "${CYAN}── [${STEP}/${TOTAL}] ${repo} ──${NC}"
+
+    _ver=$(cat "${src_dir}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+    _sha=$(cd "${src_dir}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    LIVE_TAG="${_ver}-${_sha}"
+    if [ -n "${SRE_VERSION_OVERRIDE}" ]; then
+        TAG="${SRE_VERSION_OVERRIDE}"
+        echo "  (using --sre-version override: ${TAG})"
+    else
+        TAG="${LIVE_TAG}"
+    fi
+
+    HAS_TAR=false
+    [ -f "${SRE_IMAGES_DIR}/${tar_name}" ] && HAS_TAR=true
+
+    if [ "$NO_CACHE" = true ] || [ "$HAS_TAR" = false ]; then
+        if [ ! -d "${src_dir}" ]; then
+            echo -e "${RED}  Source directory not available: ${src_dir}${NC}"
+            return 1
+        fi
+        echo "  Building from source: ${src_dir}"
+        docker build --no-cache -t "${repo}:latest" "${src_dir}"
+    else
+        echo "  Loading from tar: ${SRE_IMAGES_DIR}/${tar_name}"
+        docker load -i "${SRE_IMAGES_DIR}/${tar_name}"
+    fi
+
+    echo "  Version tag: ${TAG}"
+    echo "  Push plan:"
+    echo "    ${ECR_REGISTRY}/${repo}:${TAG}"
+    echo "    ${ECR_REGISTRY}/${repo}:latest"
+
+    aws ecr describe-repositories --repository-names "$repo" \
+        --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
+    || aws ecr create-repository --repository-name "$repo" \
+        --region "${REGION}" --profile "${AWS_PROFILE}" \
+        --image-scanning-configuration scanOnPush=true > /dev/null 2>&1 \
+    || true
+
+    docker_dual_tag_push "${repo}:latest" "$repo" "$TAG"
+    echo ""
+}
+
+if [ "$PUSH_SRE_BACKEND" = true ]; then
+    sre_push "nexus-sre-backend" "${SRE_BACKEND_DIR}" "nexus-sre-backend.tar.gz"
+fi
+
+if [ "$PUSH_SRE_UI" = true ]; then
+    sre_push "nexus-sre-ui" "${SRE_FRONTEND_DIR}" "nexus-sre-ui.tar.gz"
+fi
+
+if [ "$PUSH_SRE_POSTGRES" = true ]; then
+    sre_push "nexus-sre-postgres" "${SRE_POSTGRES_DIR}" "nexus-sre-postgres.tar.gz"
 fi
 
 # ──────────────────────────────────────────────────────────────

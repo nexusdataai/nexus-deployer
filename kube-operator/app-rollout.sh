@@ -81,6 +81,8 @@ while [ $# -gt 0 ]; do
         --backend-version)  BACKEND_VERSION="$2"; shift 2 ;;
         --frontend-version) FRONTEND_VERSION="$2"; shift 2 ;;
         --bssmagic-version) BSSMAGIC_VERSION="$2"; shift 2 ;;
+        --sre-backend-version) SRE_BACKEND_VERSION="$2"; shift 2 ;;
+        --sre-ui-version)      SRE_UI_VERSION="$2"; shift 2 ;;
         --rollback)         ROLLBACK_MODE=1; shift ;;
         --rollback-to)      ROLLBACK_MODE=1; ROLLBACK_TO_VERSION="$2"; shift 2 ;;
         --list-versions)    LIST_VERSIONS=1; shift ;;
@@ -144,7 +146,7 @@ Ordering (when rolling out multiple):
 EOF
             exit 0
             ;;
-        frontend|backend|bssmagic|all)
+        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all)
             COMPONENTS="${COMPONENTS} $1"; shift ;;
         *)
             echo "Unknown option: $1"; exit 1 ;;
@@ -154,53 +156,81 @@ done
 [ -z "$NAMESPACE" ] && NAMESPACE="${CAPABILITY}-${ENV}"
 [ -z "$COMPONENTS" ] && COMPONENTS="all"
 
-# Expand "all" into ordered list
+# Expand "all" / "sre-all" into ordered lists.
+#
+# `sre-all` and the plain `all` are mutually exclusive per invocation; use
+# `sre-all` when rolling out the nexus-sre capability and `all` for the
+# nexus-ai capability. Mixing components across capabilities in a single
+# invocation is not supported.
 case "$COMPONENTS" in
-    *all*) COMPONENTS="bssmagic backend frontend" ;;
+    *sre-all*) COMPONENTS="sre-postgres sre-backend sre-ui" ;;
+    *all*)     COMPONENTS="bssmagic backend frontend" ;;
 esac
 
 # ── Naming helpers ─────────────────────────────────────────────────
+#
+# For legacy nexus-ai components the resource name is
+# `${CAPABILITY}-${ENV}-${component}`. For nexus-sre components the
+# deployments live in the `nexus-sre` namespace and are named directly
+# (`nexus-sre-backend`, `nexus-sre-ui`) so we short-circuit the naming.
 resource_name() {
-    echo "${CAPABILITY}-${ENV}-${1}"
+    case "$1" in
+        sre-backend)  echo "nexus-sre-backend" ;;
+        sre-ui)       echo "nexus-sre-ui" ;;
+        sre-postgres) echo "nexus-sre-postgres" ;;
+        *)            echo "${CAPABILITY}-${ENV}-${1}" ;;
+    esac
 }
 
 resource_kind() {
     case "$1" in
-        bssmagic) echo "statefulset" ;;
-        *)        echo "deployment" ;;
+        bssmagic|sre-postgres) echo "statefulset" ;;
+        *)                     echo "deployment" ;;
     esac
 }
 
 ecr_repo() {
     case "$1" in
-        backend)  echo "ai-job-engine" ;;
-        frontend) echo "nexus-ui" ;;
-        bssmagic) echo "bssmagic-nexus-k8s" ;;
+        backend)      echo "ai-job-engine" ;;
+        frontend)     echo "nexus-ui" ;;
+        bssmagic)     echo "bssmagic-nexus-k8s" ;;
+        sre-backend)  echo "nexus-sre-backend" ;;
+        sre-ui)       echo "nexus-sre-ui" ;;
+        sre-postgres) echo "nexus-sre-postgres" ;;
     esac
 }
 
 container_name() {
     case "$1" in
-        backend)  echo "backend" ;;
-        frontend) echo "frontend" ;;
-        bssmagic) echo "bssmagic-runtime" ;;
+        backend)      echo "backend" ;;
+        frontend)     echo "frontend" ;;
+        bssmagic)     echo "bssmagic-runtime" ;;
+        sre-backend)  echo "backend" ;;
+        sre-ui)       echo "ui" ;;
+        sre-postgres) echo "postgres" ;;
     esac
 }
 
 health_check_cmd() {
     case "$1" in
-        backend)  echo "curl -sf --max-time 5 http://localhost:8000/health" ;;
-        frontend) echo "wget -qO- --timeout=5 http://localhost:8080/ >/dev/null 2>&1" ;;
-        bssmagic) echo "pg_isready -U postgres -d bssmagic -q 2>/dev/null || echo fail" ;;
+        backend)      echo "curl -sf --max-time 5 http://localhost:8000/health" ;;
+        frontend)     echo "wget -qO- --timeout=5 http://localhost:8080/ >/dev/null 2>&1" ;;
+        bssmagic)     echo "pg_isready -U postgres -d bssmagic -q 2>/dev/null || echo fail" ;;
+        sre-backend)  echo "curl -sf --max-time 5 http://127.0.0.1:8000/healthz" ;;
+        sre-ui)       echo "wget -qO- --timeout=5 http://127.0.0.1:8080/healthz >/dev/null 2>&1" ;;
+        sre-postgres) echo "pg_isready -U nexus -d nexus_sre -q 2>/dev/null || echo fail" ;;
     esac
 }
 
 target_version_for() {
     case "$1" in
-        backend)  _tv="${BACKEND_VERSION:-${TARGET_VERSION}}" ;;
-        frontend) _tv="${FRONTEND_VERSION:-${TARGET_VERSION}}" ;;
-        bssmagic) _tv="${BSSMAGIC_VERSION:-${TARGET_VERSION}}" ;;
-        *)        _tv="" ;;
+        backend)     _tv="${BACKEND_VERSION:-${TARGET_VERSION}}" ;;
+        frontend)    _tv="${FRONTEND_VERSION:-${TARGET_VERSION}}" ;;
+        bssmagic)    _tv="${BSSMAGIC_VERSION:-${TARGET_VERSION}}" ;;
+        sre-backend)  _tv="${SRE_BACKEND_VERSION:-${TARGET_VERSION}}" ;;
+        sre-ui)       _tv="${SRE_UI_VERSION:-${TARGET_VERSION}}" ;;
+        sre-postgres) _tv="${SRE_POSTGRES_VERSION:-${TARGET_VERSION}}" ;;
+        *)            _tv="" ;;
     esac
     if [ -n "$_tv" ]; then
         echo "$_tv"
@@ -835,11 +865,16 @@ if [ "$DIAGNOSTICS_ONLY" = "0" ]; then
             pod=$(get_pod "$comp")
             if [ -n "$pod" ]; then
                 hc=$(health_check_cmd "$comp")
+                _hc_container=$(container_name "$comp")
                 log_info "Health-checking ${comp} pod (${pod})..."
                 attempts=0
                 max_attempts=12
                 while [ $attempts -lt $max_attempts ]; do
-                    result=$(kubectl exec "$pod" -n "$NAMESPACE" -- sh -c "$hc" 2>/dev/null) && break
+                    if [ -n "$_hc_container" ]; then
+                        result=$(kubectl exec "$pod" -n "$NAMESPACE" -c "$_hc_container" -- sh -c "$hc" 2>/dev/null) && break
+                    else
+                        result=$(kubectl exec "$pod" -n "$NAMESPACE" -- sh -c "$hc" 2>/dev/null) && break
+                    fi
                     attempts=$((attempts + 1))
                     sleep 5
                 done

@@ -22,6 +22,7 @@ class DynamoDBProvisioner:
     # Backend expects uppercase PK/SK keys and GSI1 on transformation-system
     TABLE_SCHEMAS = {
         "transformation-system": {
+            # Solution/journey transformation state. Provisioned + autoscaling.
             "KeySchema": [
                 {"AttributeName": "PK", "KeyType": "HASH"},
                 {"AttributeName": "SK", "KeyType": "RANGE"},
@@ -40,9 +41,23 @@ class DynamoDBProvisioner:
                         {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
                     ],
                     "Projection": {"ProjectionType": "ALL"},
+                    "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
                 }
             ],
-            "BillingMode": "PAY_PER_REQUEST",
+            "BillingMode": "PROVISIONED",
+            "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+            "_autoscaling": {
+                "base": {
+                    "read_min": 5, "read_max": 200,
+                    "write_min": 5, "write_max": 200,
+                    "target_util": 70.0,
+                },
+                "gsi": {
+                    "read_min": 5, "read_max": 100,
+                    "write_min": 5, "write_max": 100,
+                    "target_util": 70.0,
+                },
+            },
         },
         "license": {
             "KeySchema": [
@@ -85,13 +100,22 @@ class DynamoDBProvisioner:
             "BillingMode": "PAY_PER_REQUEST",
         },
         "sessions": {
+            # Predictable user-count-driven load. Provisioned + autoscaling.
             "KeySchema": [
                 {"AttributeName": "session_id", "KeyType": "HASH"},
             ],
             "AttributeDefinitions": [
                 {"AttributeName": "session_id", "AttributeType": "S"},
             ],
-            "BillingMode": "PAY_PER_REQUEST",
+            "BillingMode": "PROVISIONED",
+            "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+            "_autoscaling": {
+                "base": {
+                    "read_min": 5, "read_max": 200,
+                    "write_min": 5, "write_max": 200,
+                    "target_util": 70.0,
+                },
+            },
         },
         "audit-log": {
             "KeySchema": [
@@ -105,6 +129,8 @@ class DynamoDBProvisioner:
             "BillingMode": "PAY_PER_REQUEST",
         },
         "foundry-workspace": {
+            # Primary single-table (highest and steadiest traffic). Provisioned
+            # + autoscaling so a purchased Reserved Capacity block applies.
             "KeySchema": [
                 {"AttributeName": "PK", "KeyType": "HASH"},
                 {"AttributeName": "SK", "KeyType": "RANGE"},
@@ -123,9 +149,23 @@ class DynamoDBProvisioner:
                         {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
                     ],
                     "Projection": {"ProjectionType": "ALL"},
+                    "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
                 }
             ],
-            "BillingMode": "PAY_PER_REQUEST",
+            "BillingMode": "PROVISIONED",
+            "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+            "_autoscaling": {
+                "base": {
+                    "read_min": 5, "read_max": 200,
+                    "write_min": 5, "write_max": 200,
+                    "target_util": 70.0,
+                },
+                "gsi": {
+                    "read_min": 5, "read_max": 100,
+                    "write_min": 5, "write_max": 100,
+                    "target_util": 70.0,
+                },
+            },
         },
         "control-plane-audit": {
             # Keys must match AuditLogger._log_item in
@@ -189,6 +229,17 @@ class DynamoDBProvisioner:
         self.naming = naming
         self.region = region
         self.client = vpc_boto3_client("dynamodb", region_name=region)
+        # Application Auto Scaling is only used for tables that carry
+        # `_autoscaling` metadata. Lazily created to avoid a hard boto3
+        # dependency at import time for callers that never need it.
+        self._aas_client = None
+
+    def _aas(self):
+        if self._aas_client is None:
+            self._aas_client = vpc_boto3_client(
+                "application-autoscaling", region_name=self.region
+            )
+        return self._aas_client
     
     async def provision_all(self) -> List[Dict[str, Any]]:
         """Provision all required DynamoDB tables."""
@@ -202,10 +253,14 @@ class DynamoDBProvisioner:
     async def create_table(self, table_name: str, schema: Dict) -> Dict[str, Any]:
         """Create a single DynamoDB table."""
         # Split boto3 CreateTable params from internal metadata (keys starting
-        # with `_`). Currently the only internal key is `_ttl_attribute`, which
-        # drives a post-create update_time_to_live() call.
+        # with `_`). Recognised internal keys:
+        #   _ttl_attribute  — drives update_time_to_live() post-create.
+        #   _autoscaling    — drives application-autoscaling register+policy
+        #                     post-create (base table + GSIs).
         ttl_attribute = schema.get("_ttl_attribute")
+        autoscaling = schema.get("_autoscaling")
         api_schema = {k: v for k, v in schema.items() if not k.startswith("_")}
+        gsi_names = [g["IndexName"] for g in api_schema.get("GlobalSecondaryIndexes", []) or []]
 
         try:
             try:
@@ -225,6 +280,8 @@ class DynamoDBProvisioner:
                     pass
                 if ttl_attribute:
                     self._ensure_ttl(table_name, ttl_attribute)
+                if autoscaling:
+                    self._ensure_autoscaling(table_name, autoscaling, gsi_names)
                 logger.info(f"DynamoDB table {table_name} already exists")
                 return {"name": table_name, "status": "exists", "type": "DynamoDB"}
             except ClientError as e:
@@ -243,14 +300,17 @@ class DynamoDBProvisioner:
                     self.client.tag_resource(ResourceArn=table_arn, Tags=self.naming.aws_tags())
                 except Exception:
                     logger.warning(f"Tagging retry also failed for {table_name} — tag manually")
-            if ttl_attribute:
-                # TTL config requires the table to be ACTIVE. Wait for it.
+            if ttl_attribute or autoscaling:
+                # TTL and autoscaling both require the table to be ACTIVE.
                 try:
                     waiter = self.client.get_waiter("table_exists")
                     waiter.wait(TableName=table_name, WaiterConfig={"Delay": 5, "MaxAttempts": 24})
                 except Exception as wait_err:
                     logger.warning(f"table_exists waiter failed for {table_name}: {wait_err}")
+            if ttl_attribute:
                 self._ensure_ttl(table_name, ttl_attribute)
+            if autoscaling:
+                self._ensure_autoscaling(table_name, autoscaling, gsi_names)
             logger.info(f"Created DynamoDB table: {table_name}")
             return {"name": table_name, "status": "created", "type": "DynamoDB"}
             
@@ -282,7 +342,93 @@ class DynamoDBProvisioner:
             logger.warning(f"TTL setup failed for {table_name} ({attribute_name}): {e}")
         except Exception as e:
             logger.warning(f"TTL setup unexpected error for {table_name}: {e}")
-    
+
+    def _ensure_autoscaling(
+        self, table_name: str, cfg: Dict[str, Any], gsi_names: List[str]
+    ) -> None:
+        """Register Application Auto Scaling targets + target-tracking policies.
+
+        ``cfg`` has the shape::
+
+            {
+                "base": {"read_min", "read_max", "write_min", "write_max", "target_util"},
+                "gsi":  {"read_min", "read_max", "write_min", "write_max", "target_util"},  # optional
+            }
+
+        Idempotent: ``register_scalable_target`` and ``put_scaling_policy``
+        both replace-in-place, so re-invocation on an existing table simply
+        reconciles the desired state. All errors are logged and swallowed
+        so a partial permissions gap never blocks provisioning.
+        """
+        aas = self._aas()
+        base = cfg.get("base") or {}
+        gsi = cfg.get("gsi")
+
+        def _register(resource_id: str, dimension: str, metric_type: str,
+                      mn: int, mx: int, target_util: float, policy_name: str) -> None:
+            try:
+                aas.register_scalable_target(
+                    ServiceNamespace="dynamodb",
+                    ResourceId=resource_id,
+                    ScalableDimension=dimension,
+                    MinCapacity=mn,
+                    MaxCapacity=mx,
+                )
+                aas.put_scaling_policy(
+                    ServiceNamespace="dynamodb",
+                    ResourceId=resource_id,
+                    ScalableDimension=dimension,
+                    PolicyName=policy_name,
+                    PolicyType="TargetTrackingScaling",
+                    TargetTrackingScalingPolicyConfiguration={
+                        "TargetValue": float(target_util),
+                        "PredefinedMetricSpecification": {"PredefinedMetricType": metric_type},
+                        "ScaleInCooldown": 60,
+                        "ScaleOutCooldown": 60,
+                    },
+                )
+                logger.info(
+                    f"Autoscaling registered on {resource_id} ({dimension.split(':')[-1]}): "
+                    f"{mn}-{mx} @ {target_util}% target"
+                )
+            except Exception as e:
+                logger.warning(f"Autoscaling setup failed for {resource_id} {dimension}: {e}")
+
+        # Base table
+        if base:
+            _register(
+                f"table/{table_name}", "dynamodb:table:ReadCapacityUnits",
+                "DynamoDBReadCapacityUtilization",
+                int(base.get("read_min", 5)), int(base.get("read_max", 200)),
+                float(base.get("target_util", 70.0)),
+                f"{table_name}-base-read",
+            )
+            _register(
+                f"table/{table_name}", "dynamodb:table:WriteCapacityUnits",
+                "DynamoDBWriteCapacityUtilization",
+                int(base.get("write_min", 5)), int(base.get("write_max", 200)),
+                float(base.get("target_util", 70.0)),
+                f"{table_name}-base-write",
+            )
+
+        # GSIs — one shared config applies to every GSI on the table
+        if gsi and gsi_names:
+            for g in gsi_names:
+                _register(
+                    f"table/{table_name}/index/{g}", "dynamodb:index:ReadCapacityUnits",
+                    "DynamoDBReadCapacityUtilization",
+                    int(gsi.get("read_min", 5)), int(gsi.get("read_max", 100)),
+                    float(gsi.get("target_util", 70.0)),
+                    f"{table_name}-{g}-read",
+                )
+                _register(
+                    f"table/{table_name}/index/{g}", "dynamodb:index:WriteCapacityUnits",
+                    "DynamoDBWriteCapacityUtilization",
+                    int(gsi.get("write_min", 5)), int(gsi.get("write_max", 100)),
+                    float(gsi.get("target_util", 70.0)),
+                    f"{table_name}-{g}-write",
+                )
+
     async def delete_all(self) -> List[Dict[str, Any]]:
         """Delete all provisioned tables."""
         results = []

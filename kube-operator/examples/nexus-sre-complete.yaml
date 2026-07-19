@@ -1,0 +1,31 @@
+# Nexus-SRE capability (operator pipeline target)
+#
+# Deployed via kube-operator image pipeline (same tooling as nexus-ai):
+#   bump-version.sh sre-all patch
+#   package-images.sh --only-sre-images          # backend + ui + postgres(AGE)
+#   create-ecr-images.sh --only-sre-images
+#   app-rollout.sh --namespace nexus-sre --version <tag> --skip-diagnostics sre-all
+#
+# Postgres image builds Apache AGE at image-build time (bssmagic pattern) and
+# creates graph `nexus_sre_ops` on startup via init-extensions.sh.
+#
+# Full NexusCapability CR reconcile for SRE (like nexus-ai-complete.yaml) is a
+# follow-up; today SRE lives in Helm chart `nexus-sre` + operator rollout scripts.
+#
+# Images:
+#   __ECR_REGISTRY__/nexus-sre-backend:<tag>
+#   __ECR_REGISTRY__/nexus-sre-ui:<tag>
+#   __ECR_REGISTRY__/nexus-sre-postgres:<tag>   # pgvector + Apache AGE
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-sre-operator-notes
+  namespace: nexus-sre
+  labels:
+    app.kubernetes.io/name: nexus-sre
+    nexus.ai/capability: nexus-sre
+data:
+  deploy.md: |
+    Use kube-operator scripts with component `sre-all` (includes sre-postgres).
+    AGE graph: nexus_sre_ops
+    Reference: nexus-sre/postgres-image/ (mirrors bssmagic-image AGE install)
