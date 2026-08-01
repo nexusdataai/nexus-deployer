@@ -25,6 +25,8 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PERMISSIONS_DIR="${SCRIPT_DIR}/permissions"
+# shellcheck source=resolve-public-subnets.sh
+source "${SCRIPT_DIR}/resolve-public-subnets.sh"
 
 # Defaults
 CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}"
@@ -601,6 +603,11 @@ create_nat_asg() {
     local priv_rt="$3"
     local suffix="$4"
 
+    if [ -z "$pub_subnet" ] || [ "$pub_subnet" == "None" ]; then
+        echo "   ❌ Missing public subnet for NAT ASG ${CLUSTER_NAME}-nat-${suffix}"
+        return 1
+    fi
+
     local asg_name="${CLUSTER_NAME}-nat-${suffix}"
     local lt_name="${CLUSTER_NAME}-nat-lt-${suffix}"
     local sg_name="${CLUSTER_NAME}-nat-sg"
@@ -707,7 +714,7 @@ EOF
             echo "   Launch template: $lt_name"
         fi
 
-        aws autoscaling create-auto-scaling-group \
+        if ! aws autoscaling create-auto-scaling-group \
             --auto-scaling-group-name "$asg_name" \
             --launch-template "LaunchTemplateName=$lt_name,Version=\$Latest" \
             --min-size 1 --max-size 1 --desired-capacity 1 \
@@ -719,7 +726,10 @@ EOF
                    "Key=nexus:capability,Value=$CAPABILITY,PropagateAtLaunch=false" \
                    "Key=nexus:env,Value=$APP_ENV,PropagateAtLaunch=false" \
                    "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh,PropagateAtLaunch=false" \
-            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
+            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null; then
+            echo "   ❌ Failed to create ASG $asg_name in subnet $pub_subnet"
+            return 1
+        fi
         echo "   ASG: $asg_name (min=max=1, in $pub_subnet)"
     fi
 
@@ -781,15 +791,12 @@ if [ "$CREATE_NAT_INSTANCES" == "true" ] && [ -n "$VPC_ID" ]; then
     echo "=== Creating NAT instance(s) for network-profile=$NETWORK_PROFILE ==="
 
     # Need public subnets to launch NAT instances into. Use the script-created
-    # ones when available, otherwise pick from the existing VPC.
-    if [ -z "$PUB_SUB1" ] || [ -z "$PUB_SUB2" ]; then
-        PUB_SUBS_RESOLVED=$(aws ec2 describe-subnets \
-            --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=true" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'Subnets[].SubnetId' --output text 2>/dev/null)
-        PUB_SUB1=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $1}')
-        PUB_SUB2=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $2}')
-        if [ -z "$PUB_SUB2" ]; then PUB_SUB2="$PUB_SUB1"; fi
+    # ones when available, otherwise discover from the existing VPC.
+    if ! resolve_public_subnets; then
+        echo -e "${RED}❌ No public subnets found in $VPC_ID. Cannot place a NAT instance.${NC}"
+        echo "   Existing VPCs may not have map-public-ip-on-launch enabled."
+        echo "   Pass explicit IDs: --public-subnets subnet-abc,subnet-def"
+        exit 1
     fi
 
     # Availability probe: not every region/AZ carries every instance family.

@@ -36,6 +36,10 @@
 
 set -e
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# shellcheck source=resolve-public-subnets.sh
+source "${SCRIPT_DIR}/resolve-public-subnets.sh"
+
 # ── Defaults ────────────────────────────────────────────────────────────
 CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}"
 REGION="${REGION:-us-east-1}"
@@ -454,17 +458,12 @@ if [ "$NEEDED_NATS" -gt 0 ]; then
     lookup_nat_ami
 
     # Resolve public subnets (NAT instances must live in a public subnet).
-    PUB_SUBS_RESOLVED=$(aws ec2 describe-subnets --region "$REGION" --profile "$AWS_PROFILE" \
-        --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=true" \
-        --query 'Subnets[].SubnetId' --output text 2>/dev/null)
-    PUB_SUB1=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $1}')
-    PUB_SUB2=$(echo "$PUB_SUBS_RESOLVED" | awk '{print $2}')
-    if [ -z "$PUB_SUB1" ]; then
+    if ! resolve_public_subnets; then
         echo -e "${RED}❌ No public subnets found in $VPC_ID. Cannot place a NAT instance.${NC}"
-        echo "   This script expects the cluster was created by create-hardened-eks-cluster.sh."
+        echo "   Existing VPCs may not have map-public-ip-on-launch enabled."
+        echo "   Pass explicit IDs via PUBLIC_SUBNETS=subnet-abc,subnet-def"
         exit 1
     fi
-    [ -z "$PUB_SUB2" ] && PUB_SUB2="$PUB_SUB1"
 
     # Resolve private RTs by Name tag (handles both single-RT clusters and
     # per-AZ-RT clusters from --network-profile moderate).
