@@ -43,6 +43,8 @@ SKIP_SLOW=0
 
 # ── Load .env.local (if present; CLI args override) ────────────────
 _script_dir="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$_script_dir"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 _env_local="${_script_dir}/.env.local"
 [ -f "$_env_local" ] && . "$_env_local"
 unset _script_dir _env_local

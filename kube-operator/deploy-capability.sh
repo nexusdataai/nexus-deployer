@@ -28,6 +28,7 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 # Load defaults from .env.local
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
@@ -120,7 +121,8 @@ fi
 export CLUSTER_NAME DEPLOY_ENV REGION
 
 aws eks update-kubeconfig \
-    --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null \
+    --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" \
+    --kubeconfig "${KUBECONFIG}" 2>/dev/null \
 || fail "Failed to update kubeconfig for cluster '${CLUSTER_NAME}'"
 
 # Verify kubectl works

@@ -17,6 +17,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -60,7 +61,7 @@ do_setup() {
     echo "Region:      ${REGION}"
     echo ""
 
-    aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null
 
     echo "Creating Fluent Bit ConfigMap..."
     kubectl apply -f - <<CFGEOF

@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
+
 NAMESPACE="${NAMESPACE:-}"
 TENANT="${TENANT:-nexus-default}"
 SERVICE="mimir-svc"

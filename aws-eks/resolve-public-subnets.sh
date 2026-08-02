@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Discover public subnets in an existing VPC for NAT instance placement.
-# Expects: VPC_ID, REGION, AWS_PROFILE
-# Optional inputs: PUB_SUB1, PUB_SUB2, PUBLIC_SUBNETS, SUBNETS, PRIVATE_SUBNETS
-# Sets: PUB_SUB1, PUB_SUB2
+# Network discovery helpers for existing / shared VPCs.
+# Expects: VPC_ID, REGION, AWS_PROFILE, AWS_ACCOUNT_ID (for ownership checks)
+# Optional inputs: PUB_SUB1, PUB_SUB2, PUBLIC_SUBNETS, PRIVATE_SUBNETS, SUBNETS
+# Sets: PUB_SUB1, PUB_SUB2 (via resolve_public_subnets)
 
 _pick_subnets_across_azs() {
     local candidates="$1"
@@ -32,7 +32,6 @@ _pick_subnets_across_azs() {
         picked+=("$sid")
     done
 
-    # If AZ filtering left us with nothing, retry without the filter.
     if [ ${#picked[@]} -eq 0 ] && [ -n "$preferred_azs" ]; then
         _pick_subnets_across_azs "$candidates" ""
         return
@@ -72,6 +71,74 @@ _filter_existing_subnets() {
         fi
     done
     echo "$existing"
+}
+
+route_table_for_subnet() {
+    local subnet_id="$1"
+    aws ec2 describe-route-tables \
+        --filters "Name=association.subnet-id,Values=$subnet_id" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null
+}
+
+route_table_owner() {
+    local rt_id="$1"
+    aws ec2 describe-route-tables --route-table-ids "$rt_id" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --query 'RouteTables[0].OwnerId' --output text 2>/dev/null
+}
+
+resolve_private_subnets() {
+    local candidates=""
+
+    if [ -n "$PRIVATE_SUBNETS" ]; then
+        echo "$PRIVATE_SUBNETS"
+        return 0
+    fi
+
+    candidates=$(aws ec2 describe-subnets \
+        --filters "Name=vpc-id,Values=$VPC_ID" \
+        --region "$REGION" --profile "$AWS_PROFILE" \
+        --output json 2>/dev/null \
+        | jq -r '
+            def is_public:
+                .MapPublicIpOnLaunch == true
+                or ((.Tags // []) | any(.Key == "Name" and (.Value | test("public"; "i"))));
+            .Subnets[]
+            | select(
+                ((.Tags // []) | any(.Key == "Name" and (.Value | test("private"; "i"))))
+                or (.MapPublicIpOnLaunch == false and (is_public | not))
+              )
+            | .SubnetId
+          ' | sort -u | tr '\n' ' ')
+
+    if [ -z "$candidates" ]; then
+        return 1
+    fi
+
+    echo "$candidates" | tr ' ' '\n' | sort -u | paste -sd, -
+    return 0
+}
+
+validate_eks_subnets() {
+    local subnet_list="$1"
+    local azs az_count
+
+    if [ -z "$subnet_list" ]; then
+        echo "❌ No subnets resolved for EKS. Pass --subnets or --private-subnets."
+        return 1
+    fi
+
+    azs=$(_target_azs_from_subnets "$subnet_list")
+    az_count=$(echo "$azs" | wc -w)
+    if [ "$az_count" -lt 2 ]; then
+        echo "❌ EKS requires subnets in at least 2 AZs; found ${az_count}: ${azs:-none}"
+        echo "   Subnets: $subnet_list"
+        echo "   This VPC exposes only one AZ to your account."
+        echo "   Pass --subnets spanning 2+ AZs, or omit --vpc-id to create a dedicated VPC."
+        return 1
+    fi
+    return 0
 }
 
 resolve_public_subnets() {

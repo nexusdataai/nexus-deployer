@@ -15,6 +15,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -93,7 +94,7 @@ echo -e "  ${CYAN}Cognito Client:${NC} ${CLIENT_ID}"
 
 # Get admin credentials from K8s secret if not provided
 if [ -z "$ADMIN_EMAIL" ]; then
-    aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" >/dev/null 2>&1
     ADMIN_EMAIL=$(kubectl get secret "${NAMESPACE}-admin-credentials" -n "${NAMESPACE}" -o jsonpath='{.data.admin-email}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     if [ -z "$ADMIN_EMAIL" ]; then
         echo -e "  ${YELLOW}Could not read admin email from K8s secret.${NC}"

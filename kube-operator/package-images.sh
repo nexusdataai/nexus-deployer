@@ -47,6 +47,7 @@ NEXUS_OUTPUT="${SCRIPT_DIR}/images/nexus"
 BSSMAGIC_OUTPUT="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_OUTPUT="${SCRIPT_DIR}/images/operator"
 SRE_OUTPUT="${SCRIPT_DIR}/images/nexus-sre"
+AI_ENGINE_OUTPUT="${SCRIPT_DIR}/images/nexus-ai-engine"
 
 BACKEND_IMAGE="ai-job-engine:latest"
 FRONTEND_IMAGE="nexus-ui:latest"
@@ -55,6 +56,7 @@ OPERATOR_IMAGE="nexus-operator:latest"
 SRE_BACKEND_IMAGE="nexus-sre-backend:latest"
 SRE_UI_IMAGE="nexus-sre-ui:latest"
 SRE_POSTGRES_IMAGE="nexus-sre-postgres:latest"
+AI_ENGINE_API_IMAGE="nexus-ai-engine-api:latest"
 
 SKIP_BSSMAGIC=false
 ONLY_BSSMAGIC=false
@@ -68,6 +70,11 @@ SKIP_SRE_POSTGRES=false
 ONLY_SRE_POSTGRES=false
 ONLY_SRE=false
 SKIP_SRE=true    # default: legacy invocations do not touch SRE images
+SKIP_AI_ENGINE=true
+SKIP_AI_ENGINE_API=false
+ONLY_AI_ENGINE=false
+ONLY_AI_ENGINE_API=false
+ONLY_AI_ENGINE_UI=false
 
 # Parse arguments (before resolving dirs, so --only-bssmagic can skip missing dirs)
 while [[ $# -gt 0 ]]; do
@@ -78,6 +85,7 @@ while [[ $# -gt 0 ]]; do
         --sre-backend-dir)    SRE_BACKEND_DIR="$2"; shift 2 ;;
         --sre-frontend-dir)   SRE_FRONTEND_DIR="$2"; shift 2 ;;
         --sre-postgres-dir)   SRE_POSTGRES_DIR="$2"; shift 2 ;;
+        --ai-engine-dir)      AI_ENGINE_DIR="$2"; shift 2 ;;
         --skip-bssmagic)      SKIP_BSSMAGIC=true; shift ;;
         --only-bssmagic)      ONLY_BSSMAGIC=true; shift ;;
         --skip-operator)      SKIP_OPERATOR=true; shift ;;
@@ -90,6 +98,11 @@ while [[ $# -gt 0 ]]; do
         --skip-sre-ui)        SKIP_SRE_UI=true; shift ;;
         --skip-sre-postgres)  SKIP_SRE_POSTGRES=true; shift ;;
         --with-sre-images)    SKIP_SRE=false; shift ;;
+        --only-ai-engine-api) ONLY_AI_ENGINE_API=true; SKIP_AI_ENGINE=false; shift ;;
+        --only-ai-engine-ui)  ONLY_AI_ENGINE_UI=true; SKIP_AI_ENGINE=false; shift ;;
+        --only-ai-engine-images) ONLY_AI_ENGINE=true; SKIP_AI_ENGINE=false; shift ;;
+        --with-ai-engine-images) SKIP_AI_ENGINE=false; shift ;;
+        --skip-ai-engine-api) SKIP_AI_ENGINE_API=true; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -115,6 +128,13 @@ while [[ $# -gt 0 ]]; do
             echo "  --sre-backend-dir DIR   Path to nexus-sre backend (default: ../../nexus-sre/backend)"
             echo "  --sre-frontend-dir DIR  Path to nexus-sre frontend (default: ../../nexus-sre/frontend)"
             echo "  --sre-postgres-dir DIR  Path to nexus-sre postgres-image (default: ../../nexus-sre/postgres-image)"
+            echo ""
+            echo "  --with-ai-engine-images    Also package nexus-ai-engine API image"
+            echo "  --only-ai-engine-images    Only package nexus-ai-engine images (skip Nexus/BSS/operator)"
+            echo "  --only-ai-engine-api       Only package nexus-ai-engine API image"
+            echo "  --only-ai-engine-ui        Only package nexus-ai-engine UI image (S11+)"
+            echo "  --skip-ai-engine-api       Skip nexus-ai-engine API when bundling"
+            echo "  --ai-engine-dir DIR        Path to nexus-ai-engine repo root (default: ../../nexus-ai-engine)"
             echo "  --help               Show this help"
             echo ""
             echo "Notes:"
@@ -133,11 +153,15 @@ done
 # so --only-bssmagic doesn't fail when nexus-backend/ui missing)
 # ──────────────────────────────────────────────────────────────
 SRE_MODE=false
+AI_ENGINE_MODE=false
 if [ "$ONLY_SRE" = true ] || [ "$ONLY_SRE_BACKEND" = true ] || [ "$ONLY_SRE_UI" = true ] || [ "$ONLY_SRE_POSTGRES" = true ]; then
     SRE_MODE=true
 fi
+if [ "$ONLY_AI_ENGINE" = true ] || [ "$ONLY_AI_ENGINE_API" = true ] || [ "$ONLY_AI_ENGINE_UI" = true ]; then
+    AI_ENGINE_MODE=true
+fi
 
-if [ "$SRE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-backend" 2>/dev/null && pwd || echo "")}"
     FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ui" 2>/dev/null && pwd || echo "")}"
 fi
@@ -145,11 +169,12 @@ BSSMAGIC_DIR="${BSSMAGIC_DIR:-$(cd "$SCRIPT_DIR/../bssmagic-image" 2>/dev/null &
 SRE_BACKEND_DIR="${SRE_BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/backend" 2>/dev/null && pwd || echo "")}"
 SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend" 2>/dev/null && pwd || echo "")}"
 SRE_POSTGRES_DIR="${SRE_POSTGRES_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/postgres-image" 2>/dev/null && pwd || echo "")}"
+AI_ENGINE_DIR="${AI_ENGINE_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ai-engine" 2>/dev/null && pwd || echo "")}"
 
 # ──────────────────────────────────────────────────────────────
 # Validation
 # ──────────────────────────────────────────────────────────────
-if [ "$SRE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     if [ ! -f "${BACKEND_DIR}/Dockerfile" ]; then
         echo "ERROR: Backend Dockerfile not found at ${BACKEND_DIR}/Dockerfile"
         echo "  Use --backend-dir to specify the nexus-backend directory"
@@ -183,6 +208,19 @@ if [ "$SRE_MODE" = true ] || [ "$SKIP_SRE" = false ]; then
     fi
 fi
 
+# Validate AI Engine dirs only if we intend to package them
+if [ "$AI_ENGINE_MODE" = true ] || [ "$SKIP_AI_ENGINE" = false ]; then
+    if [ "$SKIP_AI_ENGINE_API" != true ] && [ "$ONLY_AI_ENGINE_UI" != true ] && [ ! -f "${AI_ENGINE_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-ai-engine Dockerfile not found at ${AI_ENGINE_DIR}/Dockerfile"
+        echo "  Use --ai-engine-dir to specify the nexus-ai-engine repository root"
+        exit 1
+    fi
+    if [ "$ONLY_AI_ENGINE_UI" = true ] && [ ! -f "${AI_ENGINE_DIR}/frontend/Dockerfile" ]; then
+        echo "ERROR: nexus-ai-engine UI Dockerfile not found at ${AI_ENGINE_DIR}/frontend/Dockerfile (S11+)"
+        exit 1
+    fi
+fi
+
 if [ "$SKIP_BSSMAGIC" = false ]; then
     if [ ! -f "${BSSMAGIC_DIR}/Dockerfile" ]; then
         echo "ERROR: BSS Magic Dockerfile not found at ${BSSMAGIC_DIR}/Dockerfile"
@@ -200,8 +238,19 @@ PACKAGE_OPERATOR=false
 PACKAGE_SRE_BACKEND=false
 PACKAGE_SRE_UI=false
 PACKAGE_SRE_POSTGRES=false
+PACKAGE_AI_ENGINE_API=false
+PACKAGE_AI_ENGINE_UI=false
 
-if [ "$SRE_MODE" = true ]; then
+if [ "$AI_ENGINE_MODE" = true ]; then
+    if [ "$ONLY_AI_ENGINE_API" = true ]; then
+        PACKAGE_AI_ENGINE_API=true
+    elif [ "$ONLY_AI_ENGINE_UI" = true ]; then
+        PACKAGE_AI_ENGINE_UI=true
+    else
+        [ "${SKIP_AI_ENGINE_API}" = false ] && PACKAGE_AI_ENGINE_API=true
+        PACKAGE_AI_ENGINE_UI=false  # UI lands S11; keep off until frontend/Dockerfile exists
+    fi
+elif [ "$SRE_MODE" = true ]; then
     if [ "$ONLY_SRE_BACKEND" = true ]; then
         PACKAGE_SRE_BACKEND=true
     elif [ "$ONLY_SRE_UI" = true ]; then
@@ -226,6 +275,9 @@ else
         [ "$SKIP_SRE_UI" = false ] && PACKAGE_SRE_UI=true
         [ "$SKIP_SRE_POSTGRES" = false ] && PACKAGE_SRE_POSTGRES=true
     fi
+    if [ "$SKIP_AI_ENGINE" = false ]; then
+        [ "${SKIP_AI_ENGINE_API}" = false ] && PACKAGE_AI_ENGINE_API=true
+    fi
 fi
 
 [ "$PACKAGE_NEXUS" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 4))
@@ -234,6 +286,8 @@ fi
 [ "$PACKAGE_SRE_BACKEND" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 [ "$PACKAGE_SRE_UI" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 [ "$PACKAGE_SRE_POSTGRES" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_AI_ENGINE_API" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_AI_ENGINE_UI" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 CURRENT_STEP=0
 
 echo "=============================================="
@@ -425,6 +479,28 @@ if [ "$PACKAGE_SRE_POSTGRES" = true ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────
+# nexus-ai-engine Images
+# ──────────────────────────────────────────────────────────────
+if [ "$PACKAGE_AI_ENGINE_API" = true ] || [ "$PACKAGE_AI_ENGINE_UI" = true ]; then
+    mkdir -p "${AI_ENGINE_OUTPUT}"
+fi
+
+if [ "$PACKAGE_AI_ENGINE_API" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-ai-engine API image: ${AI_ENGINE_API_IMAGE} ==="
+    docker build -t "${AI_ENGINE_API_IMAGE}" "${AI_ENGINE_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${AI_ENGINE_API_IMAGE} as tar.gz ==="
+    docker save "${AI_ENGINE_API_IMAGE}" | gzip > "${AI_ENGINE_OUTPUT}/nexus-ai-engine-api.tar.gz"
+    (cd "${AI_ENGINE_OUTPUT}" && sha256sum nexus-ai-engine-api.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+# ──────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────
 echo "=============================================="
@@ -443,6 +519,9 @@ if [ "$PACKAGE_OPERATOR" = true ] && [ -d "${OPERATOR_OUTPUT}" ]; then
 fi
 if { [ "$PACKAGE_SRE_BACKEND" = true ] || [ "$PACKAGE_SRE_UI" = true ] || [ "$PACKAGE_SRE_POSTGRES" = true ]; } && [ -d "${SRE_OUTPUT}" ]; then
     ls -lh "${SRE_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
+fi
+if { [ "$PACKAGE_AI_ENGINE_API" = true ] || [ "$PACKAGE_AI_ENGINE_UI" = true ]; } && [ -d "${AI_ENGINE_OUTPUT}" ]; then
+    ls -lh "${AI_ENGINE_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
 fi
 echo ""
 echo "  These files can now be shipped with kube-operator/"

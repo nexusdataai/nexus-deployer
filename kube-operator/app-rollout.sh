@@ -49,6 +49,11 @@ TARGET_VERSION=""
 BACKEND_VERSION=""
 FRONTEND_VERSION=""
 BSSMAGIC_VERSION=""
+SRE_BACKEND_VERSION=""
+SRE_UI_VERSION=""
+SRE_POSTGRES_VERSION=""
+AI_ENGINE_API_VERSION=""
+AI_ENGINE_UI_VERSION=""
 ROLLBACK_MODE=0
 ROLLBACK_TO_VERSION=""
 LIST_VERSIONS=0
@@ -61,6 +66,7 @@ RESTART_ONLY=0
 
 # ── Load .env.local (overrides defaults; CLI args override these) ─
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 _env_local="${SCRIPT_DIR}/.env.local"
 [ -f "$_env_local" ] && . "$_env_local"
 unset _env_local
@@ -83,6 +89,8 @@ while [ $# -gt 0 ]; do
         --bssmagic-version) BSSMAGIC_VERSION="$2"; shift 2 ;;
         --sre-backend-version) SRE_BACKEND_VERSION="$2"; shift 2 ;;
         --sre-ui-version)      SRE_UI_VERSION="$2"; shift 2 ;;
+        --ai-engine-api-version) AI_ENGINE_API_VERSION="$2"; shift 2 ;;
+        --ai-engine-ui-version)  AI_ENGINE_UI_VERSION="$2"; shift 2 ;;
         --rollback)         ROLLBACK_MODE=1; shift ;;
         --rollback-to)      ROLLBACK_MODE=1; ROLLBACK_TO_VERSION="$2"; shift 2 ;;
         --list-versions)    LIST_VERSIONS=1; shift ;;
@@ -146,7 +154,7 @@ Ordering (when rolling out multiple):
 EOF
             exit 0
             ;;
-        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all)
+        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all)
             COMPONENTS="${COMPONENTS} $1"; shift ;;
         *)
             echo "Unknown option: $1"; exit 1 ;;
@@ -156,29 +164,32 @@ done
 [ -z "$NAMESPACE" ] && NAMESPACE="${CAPABILITY}-${ENV}"
 [ -z "$COMPONENTS" ] && COMPONENTS="all"
 
-# Expand "all" / "sre-all" into ordered lists.
+# Expand "all" / "sre-all" / "ai-engine-all" into ordered lists.
 #
-# `sre-all` and the plain `all` are mutually exclusive per invocation; use
-# `sre-all` when rolling out the nexus-sre capability and `all` for the
-# nexus-ai capability. Mixing components across capabilities in a single
-# invocation is not supported.
+# `sre-all`, `ai-engine-all`, and the plain `all` are mutually exclusive per
+# invocation. Use the component set that matches the capability you are rolling:
+#   nexus-ai     -> all (bssmagic backend frontend)
+#   nexus-sre    -> sre-all
+#   ai-engine    -> ai-engine-all
 case "$COMPONENTS" in
-    *sre-all*) COMPONENTS="sre-postgres sre-backend sre-ui" ;;
-    *all*)     COMPONENTS="bssmagic backend frontend" ;;
+    *sre-all*)        COMPONENTS="sre-postgres sre-backend sre-ui" ;;
+    *ai-engine-all*)  COMPONENTS="ai-engine-api" ;;
+    *all*)            COMPONENTS="bssmagic backend frontend" ;;
 esac
 
 # ── Naming helpers ─────────────────────────────────────────────────
 #
 # For legacy nexus-ai components the resource name is
-# `${CAPABILITY}-${ENV}-${component}`. For nexus-sre components the
-# deployments live in the `nexus-sre` namespace and are named directly
-# (`nexus-sre-backend`, `nexus-sre-ui`) so we short-circuit the naming.
+# `${CAPABILITY}-${ENV}-${component}`. For nexus-sre and nexus-ai-engine the
+# deployments use fixed names in capability-specific namespaces.
 resource_name() {
     case "$1" in
-        sre-backend)  echo "nexus-sre-backend" ;;
-        sre-ui)       echo "nexus-sre-ui" ;;
-        sre-postgres) echo "nexus-sre-postgres" ;;
-        *)            echo "${CAPABILITY}-${ENV}-${1}" ;;
+        sre-backend)     echo "nexus-sre-backend" ;;
+        sre-ui)          echo "nexus-sre-ui" ;;
+        sre-postgres)    echo "nexus-sre-postgres" ;;
+        ai-engine-api)   echo "nexus-ai-engine" ;;
+        ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
+        *)               echo "${CAPABILITY}-${ENV}-${1}" ;;
     esac
 }
 
@@ -194,9 +205,11 @@ ecr_repo() {
         backend)      echo "ai-job-engine" ;;
         frontend)     echo "nexus-ui" ;;
         bssmagic)     echo "bssmagic-nexus-k8s" ;;
-        sre-backend)  echo "nexus-sre-backend" ;;
-        sre-ui)       echo "nexus-sre-ui" ;;
-        sre-postgres) echo "nexus-sre-postgres" ;;
+        sre-backend)     echo "nexus-sre-backend" ;;
+        sre-ui)          echo "nexus-sre-ui" ;;
+        sre-postgres)    echo "nexus-sre-postgres" ;;
+        ai-engine-api)   echo "nexus-ai-engine-api" ;;
+        ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
     esac
 }
 
@@ -205,9 +218,11 @@ container_name() {
         backend)      echo "backend" ;;
         frontend)     echo "frontend" ;;
         bssmagic)     echo "bssmagic-runtime" ;;
-        sre-backend)  echo "backend" ;;
-        sre-ui)       echo "ui" ;;
-        sre-postgres) echo "postgres" ;;
+        sre-backend)     echo "backend" ;;
+        sre-ui)          echo "ui" ;;
+        sre-postgres)    echo "postgres" ;;
+        ai-engine-api)   echo "server" ;;
+        ai-engine-ui)    echo "ui" ;;
     esac
 }
 
@@ -218,7 +233,9 @@ health_check_cmd() {
         bssmagic)     echo "pg_isready -U postgres -d bssmagic -q 2>/dev/null || echo fail" ;;
         sre-backend)  echo "curl -sf --max-time 5 http://127.0.0.1:8000/healthz" ;;
         sre-ui)       echo "wget -qO- --timeout=5 http://127.0.0.1:8080/healthz >/dev/null 2>&1" ;;
-        sre-postgres) echo "pg_isready -U nexus -d nexus_sre -q 2>/dev/null || echo fail" ;;
+        sre-postgres)    echo "pg_isready -U nexus -d nexus_sre -q 2>/dev/null || echo fail" ;;
+        ai-engine-api)   echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
+        ai-engine-ui)    echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
     esac
 }
 
@@ -227,10 +244,12 @@ target_version_for() {
         backend)     _tv="${BACKEND_VERSION:-${TARGET_VERSION}}" ;;
         frontend)    _tv="${FRONTEND_VERSION:-${TARGET_VERSION}}" ;;
         bssmagic)    _tv="${BSSMAGIC_VERSION:-${TARGET_VERSION}}" ;;
-        sre-backend)  _tv="${SRE_BACKEND_VERSION:-${TARGET_VERSION}}" ;;
-        sre-ui)       _tv="${SRE_UI_VERSION:-${TARGET_VERSION}}" ;;
-        sre-postgres) _tv="${SRE_POSTGRES_VERSION:-${TARGET_VERSION}}" ;;
-        *)            _tv="" ;;
+        sre-backend)     _tv="${SRE_BACKEND_VERSION:-${TARGET_VERSION}}" ;;
+        sre-ui)          _tv="${SRE_UI_VERSION:-${TARGET_VERSION}}" ;;
+        sre-postgres)    _tv="${SRE_POSTGRES_VERSION:-${TARGET_VERSION}}" ;;
+        ai-engine-api)   _tv="${AI_ENGINE_API_VERSION:-${TARGET_VERSION}}" ;;
+        ai-engine-ui)    _tv="${AI_ENGINE_UI_VERSION:-${TARGET_VERSION}}" ;;
+        *)               _tv="" ;;
     esac
     if [ -n "$_tv" ]; then
         echo "$_tv"
@@ -295,7 +314,9 @@ component_label() {
         frontend) echo "frontend (UI)" ;;
         backend)  echo "backend (API)" ;;
         bssmagic) echo "BSS Magic" ;;
-        *)        echo "$1" ;;
+        ai-engine-api) echo "AI Engine API" ;;
+        ai-engine-ui)  echo "AI Engine UI" ;;
+        *)             echo "$1" ;;
     esac
 }
 

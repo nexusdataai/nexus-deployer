@@ -24,6 +24,7 @@ fi
 
 # Determine directories relative to script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NEXUS_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
 
@@ -92,7 +93,7 @@ ECR_BACKEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ai-job-engine:latest"
 ECR_FRONTEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/nexus-ui:latest"
 
 # Switch kubeconfig to target cluster
-aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" 2>/dev/null \
+nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null \
     || { echo "Failed to update kubeconfig for cluster '${CLUSTER_NAME}'"; exit 1; }
 
 kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1 \

@@ -1,0 +1,21 @@
+# Environment registry for set-context.sh
+#
+# Copy to environments.conf and edit cluster names / namespaces for your accounts.
+# Format (pipe-delimited, 9 fields):
+#   index|label|aws_profile|role_index|role_arn|region|cluster|namespace|context_alias
+#
+# - role_arn: when non-empty, overrides role_index for aws-login.sh
+# - context_alias: unique kubectl context name (use when cluster names repeat across accounts)
+# - Lines starting with # and blank lines are ignored
+#
+# Role index reference (from .env.local):
+#   0 = telcodrtotogipresales1 (617147411452)
+#   1 = TotogiPS              (764119721991)
+#   2 = BSSMagicStarhub       (298722972165)
+#   3 = zainsudanbssmagic     (914357406961)
+
+0|Totogi Presales|external-access|0|arn:aws:iam::617147411452:role/RAM-AWS-Prod-TelcoDR-telcodrtotogipresales1-Admin|us-east-1|CHANGE_ME_CLUSTER|nexus-ai-dev|presales-dev
+1|TotogiPS Prod|external-access|1|arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-TotogiPS-Admin|ap-southeast-1|starhu-test|callsense-prod|totogips-callsense-prod
+2|TotogiPS Dev|external-access|2|arn:aws:iam::764119721991:role/RAM-AWS-Prod-TelcoDR-TotogiPS-Admin|ap-southeast-1|starhu-test1|callsense-dev|totogips-callsense-dev
+3|Starhub BSSMagic|external-access|2|arn:aws:iam::298722972165:role/RAM-AWS-Prod-Totogi-BSSMagicStarhub-Admin|us-east-1|prod-cluster|nexus-ai-prod|nexus-prod
+4|Zain Sudan|external-access|3|arn:aws:iam::914357406961:role/RAM-AWS-Prod-Totogi-zainsudanbssmagic-Admin|ap-southeast-1|CHANGE_ME_CLUSTER|nexus-ai-dev|zain-dev

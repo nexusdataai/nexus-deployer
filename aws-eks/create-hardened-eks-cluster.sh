@@ -100,6 +100,7 @@ VPC_ID="${VPC_ID:-}"
 PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
 PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
 SUBNETS="${SUBNETS:-}"
+CREATE_VPC="${CREATE_VPC:-false}"
 
 # Parse command-line options
 while [[ $# -gt 0 ]]; do
@@ -117,6 +118,7 @@ while [[ $# -gt 0 ]]; do
         --public-subnets)   PUBLIC_SUBNETS="$2"; shift 2 ;;
         --private-subnets)  PRIVATE_SUBNETS="$2"; shift 2 ;;
         --subnets)          SUBNETS="$2"; shift 2 ;;
+        --create-vpc)       CREATE_VPC=true; shift ;;
         --cluster-role-arn) CLUSTER_ROLE_ARN="$2"; shift 2 ;;
         --node-role-arn)    NODE_ROLE_ARN="$2"; shift 2 ;;
         --capability)       CAPABILITY="$2"; shift 2 ;;
@@ -141,8 +143,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --support-type TYPE        EKS upgrade policy: STANDARD or EXTENDED (default: STANDARD)"
             echo ""
             echo "Networking:"
-            echo "  --vpc-id VPC_ID            Use an existing VPC"
-            echo "  --public-subnets  S1,S2    Comma-separated public subnet IDs"
+            echo "  --create-vpc               Create a new dedicated VPC (skip existing/shared VPC discovery)"
+            echo "  --vpc-id VPC_ID            Use an existing VPC you own (do not use shared VPCs for NAT profiles)"
+            echo "  --public-subnets  S1,S2    Public subnet IDs (NAT placement only unless paired with --private-subnets)"
             echo "  --private-subnets S1,S2    Comma-separated private subnet IDs"
             echo "  --subnets S1,S2,...         All subnets as a flat list"
             echo ""
@@ -184,12 +187,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$SUBNETS" ] && { [ -n "$PUBLIC_SUBNETS" ] || [ -n "$PRIVATE_SUBNETS" ]; }; then
+# --public-subnets is for NAT placement only; never use it alone as EKS subnets.
+if [ -z "$SUBNETS" ]; then
     if [ -n "$PUBLIC_SUBNETS" ] && [ -n "$PRIVATE_SUBNETS" ]; then
         SUBNETS="${PUBLIC_SUBNETS},${PRIVATE_SUBNETS}"
-    elif [ -n "$PUBLIC_SUBNETS" ]; then
-        SUBNETS="$PUBLIC_SUBNETS"
-    else
+    elif [ -n "$PRIVATE_SUBNETS" ]; then
         SUBNETS="$PRIVATE_SUBNETS"
     fi
 fi
@@ -202,6 +204,15 @@ case "$NETWORK_PROFILE" in
         exit 1
         ;;
 esac
+
+if [ "$CREATE_VPC" == "true" ] && [ -n "$VPC_ID" ]; then
+    echo "❌ --create-vpc cannot be combined with --vpc-id (omit --vpc-id to provision a new VPC)"
+    exit 1
+fi
+if [ "$CREATE_VPC" == "true" ] && { [ -n "$SUBNETS" ] || [ -n "$PUBLIC_SUBNETS" ] || [ -n "$PRIVATE_SUBNETS" ]; }; then
+    echo "❌ --create-vpc cannot be combined with --subnets / --public-subnets / --private-subnets"
+    exit 1
+fi
 
 # Derive networking switches from the profile.
 #   CREATE_NAT_INSTANCES : whether to launch NAT EC2 instances (moderate, lowest-cost)
@@ -370,61 +381,64 @@ VPC_CREATED=false
 
 pick_eks_subnets() {
     local vpc="$1"
-    local all_subnets
-    all_subnets=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" \
-        --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'Subnets[].[SubnetId,AvailabilityZone]' --output text 2>/dev/null | sort -k2)
-    local selected_azs=()
-    local filtered=""
-    while IFS=$'\t' read -r sid az; do
-        [ -z "$sid" ] && continue
-        local az_known=false
-        for a in "${selected_azs[@]}"; do [ "$a" == "$az" ] && az_known=true; done
-        if [ ${#selected_azs[@]} -ge 2 ] && [ "$az_known" == "false" ]; then
-            continue
-        fi
-        if [ "$az_known" == "false" ]; then
-            selected_azs+=("$az")
-        fi
-        [ -n "$filtered" ] && filtered="${filtered},"
-        filtered="${filtered}${sid}"
-    done <<< "$all_subnets"
-    if [ ${#selected_azs[@]} -ge 2 ]; then
-        echo "   Using AZs: ${selected_azs[*]}" >&2
+    local filtered azs
+    filtered=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" \
+        --region "$REGION" --profile "$AWS_PROFILE" --output json 2>/dev/null \
+        | jq -r '
+            def is_public:
+                .MapPublicIpOnLaunch == true
+                or ((.Tags // []) | any(.Key == "Name" and (.Value | test("public"; "i"))));
+            def is_private:
+                ((.Tags // []) | any(.Key == "Name" and (.Value | test("private"; "i"))))
+                or (is_public | not);
+            [.Subnets[]
+             | {id: .SubnetId, az: .AvailabilityZone, private: is_private, public: is_public}]
+            | sort_by(.az)
+            | group_by(.az)[]
+            | (map(select(.private)) + map(select(.public | not)) + .)[0]
+            | .id
+          ' | head -2 | paste -sd, -)
+    azs=$(_target_azs_from_subnets "$filtered")
+    if [ "$(echo "$azs" | wc -w)" -ge 2 ]; then
+        echo "   Using AZs: $azs" >&2
     fi
     echo "$filtered"
 }
 
 if [ -z "$SUBNETS" ]; then
-    if [ -n "$VPC_ID" ]; then
-        echo "🔍 Discovering subnets in VPC: $VPC_ID..."
-        SUBNETS=$(pick_eks_subnets "$VPC_ID")
-        if [ -z "$SUBNETS" ]; then
-            echo "❌ No subnets found in VPC $VPC_ID"
-            exit 1
-        fi
-        echo "   Subnets: $SUBNETS"
-    else
-        echo "🔍 Looking for existing VPC/subnets in $REGION..."
-        # `|| EXISTING_VPC=""` keeps `set -e` from killing the script when the
-        # caller lacks ec2:DescribeVpcs (or hits any other API error). We
-        # deliberately leave stderr unredirected so the operator sees the
-        # real reason (e.g. UnauthorizedOperation) instead of a silent exit.
-        EXISTING_VPC=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
-            --region "$REGION" --profile "$AWS_PROFILE" \
-            --query 'Vpcs[0].VpcId' --output text) || EXISTING_VPC=""
-        if [ -z "$EXISTING_VPC" ] || [ "$EXISTING_VPC" == "None" ]; then
-            EXISTING_VPC=$(aws ec2 describe-vpcs --region "$REGION" --profile "$AWS_PROFILE" \
+    if [ "$CREATE_VPC" != "true" ]; then
+        if [ -n "$VPC_ID" ]; then
+            echo "🔍 Discovering subnets in VPC: $VPC_ID..."
+            SUBNETS=$(pick_eks_subnets "$VPC_ID")
+            if [ -z "$SUBNETS" ]; then
+                echo "❌ No subnets found in VPC $VPC_ID"
+                exit 1
+            fi
+            echo "   Subnets: $SUBNETS"
+        else
+            echo "🔍 Looking for existing VPC/subnets in $REGION..."
+            # `|| EXISTING_VPC=""` keeps `set -e` from killing the script when the
+            # caller lacks ec2:DescribeVpcs (or hits any other API error). We
+            # deliberately leave stderr unredirected so the operator sees the
+            # real reason (e.g. UnauthorizedOperation) instead of a silent exit.
+            EXISTING_VPC=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
+                --region "$REGION" --profile "$AWS_PROFILE" \
                 --query 'Vpcs[0].VpcId' --output text) || EXISTING_VPC=""
-        fi
-        if [ -n "$EXISTING_VPC" ] && [ "$EXISTING_VPC" != "None" ]; then
-            SUBNETS=$(pick_eks_subnets "$EXISTING_VPC")
-            if [ -n "$SUBNETS" ]; then
-                VPC_ID="$EXISTING_VPC"
-                echo "   Using existing VPC: $EXISTING_VPC"
-                echo "   Subnets: $SUBNETS"
+            if [ -z "$EXISTING_VPC" ] || [ "$EXISTING_VPC" == "None" ]; then
+                EXISTING_VPC=$(aws ec2 describe-vpcs --region "$REGION" --profile "$AWS_PROFILE" \
+                    --query 'Vpcs[0].VpcId' --output text) || EXISTING_VPC=""
+            fi
+            if [ -n "$EXISTING_VPC" ] && [ "$EXISTING_VPC" != "None" ]; then
+                SUBNETS=$(pick_eks_subnets "$EXISTING_VPC")
+                if [ -n "$SUBNETS" ]; then
+                    VPC_ID="$EXISTING_VPC"
+                    echo "   Using existing VPC: $EXISTING_VPC"
+                    echo "   Subnets: $SUBNETS"
+                fi
             fi
         fi
+    else
+        echo "🏗️  --create-vpc set: skipping existing/shared VPC discovery"
     fi
 
     # ── Auto-create VPC (topology driven by --network-profile) ──────
@@ -551,11 +565,23 @@ if [ -z "$VPC_ID" ] && [ -n "$SUBNETS" ]; then
         --query 'Subnets[0].VpcId' --output text 2>/dev/null)
 fi
 
-# Resolve PRIV_RT if not set (for VPC endpoints on existing VPCs)
+# Resolve PRIV_RT if not set (for VPC endpoints / NAT on existing VPCs)
 if [ -z "$PRIV_RT" ] && [ -n "$VPC_ID" ]; then
-    PRIV_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
-        --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
+    _priv_for_rt=$(resolve_private_subnets 2>/dev/null || true)
+    if [ -z "$_priv_for_rt" ]; then
+        _priv_for_rt=$(echo "$SUBNETS" | cut -d',' -f1)
+    else
+        PRIVATE_SUBNETS="$_priv_for_rt"
+    fi
+    _first_priv=$(echo "$_priv_for_rt" | cut -d',' -f1 | tr -d ' ')
+    if [ -n "$_first_priv" ]; then
+        PRIV_RT=$(route_table_for_subnet "$_first_priv")
+    fi
+    if [ -z "$PRIV_RT" ] || [ "$PRIV_RT" == "None" ]; then
+        PRIV_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
+    fi
 fi
 
 # Stamp/refresh the network-profile tag on existing VPCs so the operator can
@@ -570,15 +596,16 @@ if [ -n "$VPC_ID" ]; then
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
 fi
 
-# Resolve PRIVATE_SUBNETS if not set (needed for interface endpoints)
+# Resolve PRIVATE_SUBNETS if not set (needed for interface endpoints / nodegroups)
 if [ -z "$PRIVATE_SUBNETS" ] && [ -n "$VPC_ID" ]; then
-    PRIVATE_SUBNETS=$(aws ec2 describe-subnets \
-        --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=false" \
-        --region "$REGION" --profile "$AWS_PROFILE" \
-        --query 'Subnets[].SubnetId' --output text 2>/dev/null | tr '\t' ',')
+    PRIVATE_SUBNETS=$(resolve_private_subnets 2>/dev/null || true)
     if [ -z "$PRIVATE_SUBNETS" ]; then
         PRIVATE_SUBNETS="$SUBNETS"
     fi
+fi
+
+if ! validate_eks_subnets "$SUBNETS"; then
+    exit 1
 fi
 
 # If running against a pre-existing VPC and per-AZ RTs were not created in this
@@ -595,6 +622,80 @@ fi
 # is launched via an Auto Scaling Group (min=max=1) so it self-heals on EC2
 # instance failure. Source/dest-check is disabled on each ENI, and the matching
 # private route table gets a default route via that ENI.
+
+wait_for_asg_name_released() {
+    # After delete-auto-scaling-group the name can stay locked for several
+    # minutes while AWS finishes "Delete in progress".
+    local asg_name="$1"
+    local tries=0
+    local max_tries=120
+
+    echo -n "   Waiting for ASG $asg_name deletion"
+    while [ $tries -lt $max_tries ]; do
+        local count
+        count=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$asg_name" \
+            --region "$REGION" --profile "$AWS_PROFILE" \
+            --query 'length(AutoScalingGroups)' --output text 2>/dev/null || echo "0")
+        if [ "$count" == "0" ] || [ "$count" == "None" ] || [ -z "$count" ]; then
+            echo " done"
+            # Name can remain locked briefly after describe goes empty.
+            sleep 10
+            return 0
+        fi
+        echo -n "."
+        sleep 5
+        tries=$((tries + 1))
+    done
+    echo ""
+    echo "   ⚠ ASG still visible after 10 min; will retry create anyway"
+    return 0
+}
+
+create_nat_asg_with_retry() {
+    local asg_name="$1" lt_name="$2" pub_subnet="$3"
+    local tries=0
+    local max_tries=60
+    local err_file
+
+    while [ $tries -lt $max_tries ]; do
+        err_file=$(mktemp)
+        if aws autoscaling create-auto-scaling-group \
+            --auto-scaling-group-name "$asg_name" \
+            --launch-template "LaunchTemplateName=$lt_name,Version=\$Latest" \
+            --min-size 1 --max-size 1 --desired-capacity 1 \
+            --vpc-zone-identifier "$pub_subnet" \
+            --tags "Key=Name,Value=$asg_name,PropagateAtLaunch=false" \
+                   "Key=nexus:nat-instance,Value=true,PropagateAtLaunch=false" \
+                   "Key=nexus:network-profile,Value=$NETWORK_PROFILE,PropagateAtLaunch=false" \
+                   "Key=nexus:cluster,Value=$CLUSTER_NAME,PropagateAtLaunch=false" \
+                   "Key=nexus:capability,Value=$CAPABILITY,PropagateAtLaunch=false" \
+                   "Key=nexus:env,Value=$APP_ENV,PropagateAtLaunch=false" \
+                   "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh,PropagateAtLaunch=false" \
+            --region "$REGION" --profile "$AWS_PROFILE" 2>"$err_file"; then
+            rm -f "$err_file"
+            echo "   ASG: $asg_name (min=max=1, in $pub_subnet)"
+            return 0
+        fi
+        if grep -qE 'pending delete|AlreadyExists' "$err_file"; then
+            if [ $tries -eq 0 ]; then
+                echo -n "   ASG name locked (pending delete), waiting"
+            fi
+            echo -n "."
+            sleep 10
+            tries=$((tries + 1))
+            rm -f "$err_file"
+            continue
+        fi
+        cat "$err_file" >&2
+        rm -f "$err_file"
+        echo "   ❌ Failed to create ASG $asg_name in subnet $pub_subnet"
+        return 1
+    done
+    echo ""
+    echo "   ❌ Timed out creating ASG $asg_name (name still locked after 10 min)"
+    return 1
+}
 
 create_nat_asg() {
     # Usage: create_nat_asg <public_subnet_id> <az_label> <priv_rt_id> <suffix>
@@ -675,20 +776,16 @@ create_nat_asg() {
             echo "   ASG $asg_name already exists with current subnet; reusing"
         else
             echo "   ASG $asg_name exists but maps to stale subnets ($existing_subnets); deleting and rebuilding..."
+            aws autoscaling update-auto-scaling-group \
+                --auto-scaling-group-name "$asg_name" \
+                --min-size 0 --max-size 0 --desired-capacity 0 \
+                --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
             aws autoscaling delete-auto-scaling-group \
                 --auto-scaling-group-name "$asg_name" --force-delete \
                 --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
-            # Wait for AWS to fully release the ASG name (usually a few seconds).
-            local del_tries=0
-            while aws autoscaling describe-auto-scaling-groups \
-                --auto-scaling-group-names "$asg_name" \
-                --region "$REGION" --profile "$AWS_PROFILE" \
-                --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text 2>/dev/null \
-                | grep -q "$asg_name"; do
-                del_tries=$((del_tries + 1))
-                [ $del_tries -gt 30 ] && break
-                sleep 2
-            done
+            if ! wait_for_asg_name_released "$asg_name"; then
+                return 1
+            fi
             # Stale launch template (same name) often references the dead
             # subnet too; drop it so the rebuild below recreates it cleanly.
             aws ec2 delete-launch-template --launch-template-name "$lt_name" \
@@ -714,23 +811,9 @@ EOF
             echo "   Launch template: $lt_name"
         fi
 
-        if ! aws autoscaling create-auto-scaling-group \
-            --auto-scaling-group-name "$asg_name" \
-            --launch-template "LaunchTemplateName=$lt_name,Version=\$Latest" \
-            --min-size 1 --max-size 1 --desired-capacity 1 \
-            --vpc-zone-identifier "$pub_subnet" \
-            --tags "Key=Name,Value=$asg_name,PropagateAtLaunch=false" \
-                   "Key=nexus:nat-instance,Value=true,PropagateAtLaunch=false" \
-                   "Key=nexus:network-profile,Value=$NETWORK_PROFILE,PropagateAtLaunch=false" \
-                   "Key=nexus:cluster,Value=$CLUSTER_NAME,PropagateAtLaunch=false" \
-                   "Key=nexus:capability,Value=$CAPABILITY,PropagateAtLaunch=false" \
-                   "Key=nexus:env,Value=$APP_ENV,PropagateAtLaunch=false" \
-                   "Key=nexus:managed-by,Value=create-hardened-eks-cluster.sh,PropagateAtLaunch=false" \
-            --region "$REGION" --profile "$AWS_PROFILE" >/dev/null; then
-            echo "   ❌ Failed to create ASG $asg_name in subnet $pub_subnet"
+        if ! create_nat_asg_with_retry "$asg_name" "$lt_name" "$pub_subnet"; then
             return 1
         fi
-        echo "   ASG: $asg_name (min=max=1, in $pub_subnet)"
     fi
 
     # Wait for the NAT instance to be running and its ENI to be attached.
@@ -778,11 +861,27 @@ EOF
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
 
     # Wire (or replace) the default route on the target private RT to point at the NAT ENI.
+    local rt_owner
+    rt_owner=$(route_table_owner "$priv_rt")
+    if [ -z "$rt_owner" ] || [ "$rt_owner" == "None" ]; then
+        echo "   ❌ Could not resolve owner for route table $priv_rt"
+        return 1
+    fi
+    if [ "$rt_owner" != "$AWS_ACCOUNT_ID" ]; then
+        echo "   ❌ Cannot modify route table $priv_rt (owner $rt_owner, you are $AWS_ACCOUNT_ID)."
+        echo "      Shared VPC: ask the VPC owner to add 0.0.0.0/0 → $nat_eni"
+        echo "      Or use --network-profile higher-cost / public-nodes, or a dedicated VPC."
+        return 1
+    fi
+
     aws ec2 delete-route --route-table-id "$priv_rt" --destination-cidr-block 0.0.0.0/0 \
         --region "$REGION" --profile "$AWS_PROFILE" >/dev/null 2>&1 || true
-    aws ec2 create-route --route-table-id "$priv_rt" --destination-cidr-block 0.0.0.0/0 \
+    if ! aws ec2 create-route --route-table-id "$priv_rt" --destination-cidr-block 0.0.0.0/0 \
         --network-interface-id "$nat_eni" \
-        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null
+        --region "$REGION" --profile "$AWS_PROFILE" >/dev/null; then
+        echo "   ❌ Failed to create NAT route on $priv_rt"
+        return 1
+    fi
     echo "   Route: 0.0.0.0/0 via $nat_eni on $priv_rt"
     return 0
 }

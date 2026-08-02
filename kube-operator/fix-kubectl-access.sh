@@ -7,6 +7,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
+
 CLUSTER_NAME="${1:-nexus-test}"
 REGION="${2:-us-east-1}"
 AWS_PROFILE="${3:-external-access}"
@@ -23,10 +26,8 @@ echo ""
 
 # Update kubeconfig
 echo "Updating kubeconfig..."
-aws eks update-kubeconfig \
-    --name "${CLUSTER_NAME}" \
-    --region "${REGION}" \
-    --profile "${AWS_PROFILE}"
+echo "KUBECONFIG: ${KUBECONFIG}"
+nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}"
 
 echo ""
 echo "Testing kubectl access..."

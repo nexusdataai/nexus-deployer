@@ -37,6 +37,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 # Defaults
 AWS_PROFILE="${AWS_PROFILE:-external-access}"

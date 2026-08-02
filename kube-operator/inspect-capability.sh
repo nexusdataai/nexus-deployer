@@ -23,6 +23,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -87,7 +88,7 @@ echo "  Region: ${REGION}"
 echo ""
 
 if [ "${USE_AWS_PROFILE}" = "1" ]; then
-    aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 || true
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" >/dev/null 2>&1 || true
     ACCOUNT_ID=$(timeout 15 aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null || echo "")
 else
     ACCOUNT_ID=$(timeout 15 aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")

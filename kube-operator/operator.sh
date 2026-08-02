@@ -23,6 +23,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 # Load defaults from .env.local (CLI args and env vars override these)
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
@@ -201,10 +202,7 @@ deploy_operator() {
         
         # Refresh kubeconfig to ensure kubectl works with standard AWS CLI context
         echo "Refreshing kubeconfig for kubectl access..."
-        AWS_PROFILE="${AWS_PROFILE}" aws eks update-kubeconfig \
-            --name "${CLUSTER_NAME}" \
-            --region "${REGION}" \
-            --profile "${AWS_PROFILE}" 2>/dev/null || true
+        nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null || true
         echo ""
         
         # ALB Controller is admin-managed -- just verify it's running via kubectl
@@ -547,10 +545,7 @@ monitor_capability() {
     local target="${1:-}"
     
     # Switch kubeconfig to target cluster
-    AWS_PROFILE="${AWS_PROFILE}" aws eks update-kubeconfig \
-        --name "${CLUSTER_NAME}" \
-        --region "${REGION}" \
-        --profile "${AWS_PROFILE}" 2>/dev/null || true
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null || true
     
     export CLUSTER_NAME="${CLUSTER_NAME}"
     export REGION="${REGION}"
@@ -783,10 +778,7 @@ verify_capability() {
     done
     
     # Switch kubeconfig to target cluster (admin/user identity to create Job + read logs)
-    AWS_PROFILE="${AWS_PROFILE}" aws eks update-kubeconfig \
-        --name "${CLUSTER_NAME}" \
-        --region "${REGION}" \
-        --profile "${AWS_PROFILE}" 2>/dev/null || true
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null || true
     
     export CLUSTER_NAME="${CLUSTER_NAME}"
     export REGION="${REGION}"
@@ -1007,7 +999,7 @@ check_status() {
         echo "  ./build-and-deploy.sh     (recommended)"
         echo ""
         echo "If operator is already deployed, manually configure access:"
-        echo "  aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${REGION} --profile ${AWS_PROFILE}"
+        echo "  aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${REGION} --profile ${AWS_PROFILE} --kubeconfig \${KUBECONFIG:-../aws-login/.kube/config}"
         echo ""
         return 1
     fi

@@ -5,10 +5,11 @@
 # Reads cluster defaults from .env.local.
 #
 # Prerequisites — refresh AWS credentials first using the SSO + assume-role workflow:
-#   1. ./aws-login/aws-sso-login.sh                       # SSO login (refreshes the source profile, e.g. ptr-tech)
-#   2. ./aws-login/assume-role-to-profile.sh --<profile>  # Assume role into target account (e.g. --promode2)
-#                                                         # Skip this step if you're operating on the source account itself.
-#   3. ./aws-login/aws-eks-context.sh --profile <profile> # Point kubectl at this cluster
+#   1. ./aws-login/set-context.sh [INDEX]              # unified AWS + EKS (recommended)
+#      source ./aws-login/.active-env
+#   2. ./aws-login/aws-sso-login.sh                  # SSO login (alternative)
+#   3. ./aws-login/assume-role-to-profile.sh --<profile>
+#   4. ./aws-login/aws-eks-context.sh --profile <profile>  # ad-hoc cluster picker
 #
 # Usage:
 #   ./cluster-access.sh check                          # Diagnose cluster access (read-only)
@@ -22,6 +23,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -314,7 +316,7 @@ check_kubectl() {
     echo ""
     echo -e "${CYAN}── kubectl Connectivity ──${NC}"
 
-    aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1
+    nexus_eks_update_kubeconfig "$CLUSTER_NAME" "$REGION" "$AWS_PROFILE" >/dev/null 2>&1
     log_info "Kubeconfig updated for $CLUSTER_NAME"
 
     local MAX_RETRIES="${1:-1}"

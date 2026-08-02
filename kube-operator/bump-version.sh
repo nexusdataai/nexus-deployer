@@ -9,7 +9,9 @@
 #   ./bump-version.sh <target> <bump> [options]
 #
 #   <target>  backend | ui | frontend | docs | operator | capability |
-#             sre-backend | sre-ui | sre-all | both | all
+#             sre-backend | sre-ui | sre-all |
+#             ai-engine-api | ai-engine-ui | ai-engine-all |
+#             both | all
 #   <bump>    major | minor | patch
 #
 # Examples:
@@ -34,6 +36,7 @@
 #   --operator-dir PATH       Override kube-operator path (default: this script's directory)
 #   --sre-backend-dir PATH    Override nexus-sre/backend path (default: ../../nexus-sre/backend)
 #   --sre-frontend-dir PATH   Override nexus-sre/frontend path (default: ../../nexus-sre/frontend)
+#   --ai-engine-dir PATH      Override nexus-ai-engine repo root (default: ../../nexus-ai-engine)
 #   --capability-file P       Override capability YAML path (default: examples/nexus-ai-complete.yaml)
 #                             The VERSION file is derived by replacing .yaml with .VERSION
 #   --help                    Show this help
@@ -61,6 +64,7 @@ DOCS_DIR=""
 OPERATOR_DIR=""
 SRE_BACKEND_DIR=""
 SRE_FRONTEND_DIR=""
+AI_ENGINE_DIR=""
 CAPABILITY_FILE=""
 
 show_help() {
@@ -78,9 +82,10 @@ while [ $# -gt 0 ]; do
         --operator-dir)      OPERATOR_DIR="$2"; shift 2 ;;
         --sre-backend-dir)   SRE_BACKEND_DIR="$2"; shift 2 ;;
         --sre-frontend-dir)  SRE_FRONTEND_DIR="$2"; shift 2 ;;
+        --ai-engine-dir)     AI_ENGINE_DIR="$2"; shift 2 ;;
         --capability-file)   CAPABILITY_FILE="$2"; shift 2 ;;
         --help|-h)           show_help; exit 0 ;;
-        backend|ui|frontend|docs|operator|capability|sre-backend|sre-ui|sre-all|both|all)
+        backend|ui|frontend|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|both|all)
             if [ -z "$TARGET" ]; then TARGET="$1"; else
                 echo "Unexpected positional argument: $1" >&2; exit 1
             fi
@@ -101,7 +106,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$TARGET" ] || [ -z "$BUMP" ]; then
-    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|sre-backend|sre-ui|sre-all|both|all> <major|minor|patch> [options]" >&2
+    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|both|all> <major|minor|patch> [options]" >&2
     echo "Run with --help for full usage." >&2
     exit 1
 fi
@@ -118,6 +123,9 @@ DOCS_DIR="${DOCS_DIR:-$(cd "$SCRIPT_DIR/../../nexus-docs" 2>/dev/null && pwd || 
 OPERATOR_DIR="${OPERATOR_DIR:-$SCRIPT_DIR}"
 SRE_BACKEND_DIR="${SRE_BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/backend" 2>/dev/null && pwd || echo "")}"
 SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend" 2>/dev/null && pwd || echo "")}"
+AI_ENGINE_DIR="${AI_ENGINE_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ai-engine" 2>/dev/null && pwd || echo "")}"
+AI_ENGINE_BACKEND_DIR="${AI_ENGINE_DIR}/backend"
+AI_ENGINE_FRONTEND_DIR="${AI_ENGINE_DIR}/frontend"
 CAPABILITY_FILE="${CAPABILITY_FILE:-${SCRIPT_DIR}/examples/nexus-ai-complete.yaml}"
 CAPABILITY_DIR="$(dirname "$CAPABILITY_FILE")"
 CAPABILITY_VERSION_FILENAME="$(basename "${CAPABILITY_FILE%.yaml}.VERSION")"
@@ -137,6 +145,12 @@ case "$TARGET" in
     sre-all)        REPOS=(
                        "sre-backend|${SRE_BACKEND_DIR}|VERSION"
                        "sre-ui|${SRE_FRONTEND_DIR}|VERSION"
+                    ) ;;
+    ai-engine-api)  REPOS=("ai-engine-api|${AI_ENGINE_BACKEND_DIR}|VERSION") ;;
+    ai-engine-ui)   REPOS=("ai-engine-ui|${AI_ENGINE_FRONTEND_DIR}|VERSION") ;;
+    ai-engine-all)  REPOS=(
+                       "ai-engine-api|${AI_ENGINE_BACKEND_DIR}|VERSION"
+                       "ai-engine-ui|${AI_ENGINE_FRONTEND_DIR}|VERSION"
                     ) ;;
     all)            REPOS=(
                        "backend|${BACKEND_DIR}|VERSION"

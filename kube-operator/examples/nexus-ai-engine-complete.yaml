@@ -1,0 +1,51 @@
+# Nexus AI Engine capability (operator pipeline target)
+#
+# Separate from nexus-ai (ontology / VDL / Connector). AI Engine owns journey
+# execution, tool compute, and the reference FastAPI server.
+#
+# Deployed via kube-operator image pipeline (same tooling as nexus-sre):
+#   bump-version.sh ai-engine-api patch
+#   package-images.sh --only-ai-engine-api
+#   create-ecr-images.sh --only-ai-engine-images
+#   app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-api
+#
+# v0.2.0-alpha: API image only (embedded dev UI ships inside the API container).
+# React SPA (`ai-engine-ui`) joins the pipeline from Sprint 11.
+#
+# Full NexusCapability CR reconcile (like nexus-ai-complete.yaml) is a follow-up;
+# today AI Engine lives in deploy/k8s manifests + operator rollout scripts.
+#
+# Images:
+#   __ECR_REGISTRY__/nexus-ai-engine-api:<tag>
+#
+# Namespaces:
+#   dev      -> ai-engine-dev
+#   staging  -> ai-engine-staging
+#   prod     -> ai-engine
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-ai-engine-operator-notes
+  namespace: ai-engine-dev
+  labels:
+    app.kubernetes.io/name: nexus-ai-engine
+    nexus.ai/capability: ai-engine
+data:
+  deploy.md: |
+    Use kube-operator scripts with component `ai-engine-api` (alpha) or `ai-engine-all` (when UI lands).
+
+    Bump + build + push:
+      ./bump-version.sh ai-engine-api patch
+      ./package-images.sh --only-ai-engine-api
+      ./create-ecr-images.sh --only-ai-engine-images
+
+    Rollout (dev):
+      ./app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-api
+
+    Health gates:
+      GET /health     -> 200
+      GET /readiness  -> 200 (from v0.2.0-alpha)
+
+    Source repo: nexus-ai-engine/
+    K8s manifests: nexus-ai-engine/deploy/k8s/
+    Reference: docs/dev-plan/040-kube-operator-integration.md

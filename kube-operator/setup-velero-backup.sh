@@ -18,6 +18,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -91,7 +92,7 @@ switch_context() {
     echo "  Bucket:      $BUCKET_NAME"
     echo ""
 
-    aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1
+    nexus_eks_update_kubeconfig "$CLUSTER_NAME" "$REGION" "$AWS_PROFILE" > /dev/null 2>&1
 
     if ! kubectl get nodes > /dev/null 2>&1; then
         echo ""

@@ -29,6 +29,7 @@ CLUSTER="${2:-nexus-test}"
 REGION="${3:-${AWS_REGION:-us-east-1}}"
 AWS_PROFILE="${4:-${AWS_PROFILE:-external-access}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/init-kube-env.sh"
 
 echo ""
 echo -e "${BLUE}================================================"

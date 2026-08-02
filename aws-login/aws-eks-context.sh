@@ -17,6 +17,10 @@ cd "$SCRIPT_DIR"
 # Restore working directory on every exit path.
 trap 'cd "$ORIGINAL_DIR"' EXIT
 
+# shellcheck source=lib/kube-env.sh
+. "${SCRIPT_DIR}/lib/kube-env.sh"
+nexus_kube_env_init "$SCRIPT_DIR"
+
 # ── Defaults ────────────────────────────────────────────────────────────
 # Configuration is read from --profile / --region CLI flags or AWS_PROFILE /
 # AWS_REGION shell env vars only. No .env.* files are sourced — log in first
@@ -87,6 +91,9 @@ Examples:
   NAMESPACE=nexus-ai-engine-dev ./aws-eks-context.sh    # nexus-ai-engine namespace
   ./aws-eks-context.sh --pick-namespace                 # menu of namespaces after cluster
   ./aws-eks-context.sh --reset                          # clear cache and re-prompt
+
+  Prefer ./set-context.sh for unified AWS account + cluster selection
+  (writes to aws-login/.kube/config via KUBECONFIG).
 EOF
             exit 0
             ;;
@@ -220,11 +227,8 @@ echo "🎯 Selected cluster: $SELECTED"
 
 # ── update-kubeconfig ───────────────────────────────────────────────────
 echo "🔧 Running aws eks update-kubeconfig ..."
-if ! aws eks update-kubeconfig \
-        --name "$SELECTED" \
-        --region "$AWS_REGION" \
-        --profile "$AWS_PROFILE" \
-        --alias "$SELECTED" >/dev/null 2>&1; then
+echo "   KUBECONFIG: $KUBECONFIG"
+if ! nexus_eks_update_kubeconfig "$SELECTED" "$AWS_REGION" "$AWS_PROFILE" "$SELECTED"; then
     echo "❌ aws eks update-kubeconfig failed for cluster '$SELECTED'."
     echo "   Re-run with --reset, or verify your IAM permissions on this cluster."
     exit 1
@@ -232,7 +236,7 @@ fi
 echo "   kubectl context set to: $SELECTED"
 
 # Switch to the new context (update-kubeconfig sets it as current, but be explicit)
-kubectl config use-context "$SELECTED" >/dev/null 2>&1 || true
+kubectl config use-context "$SELECTED" --kubeconfig="$KUBECONFIG" >/dev/null 2>&1 || true
 
 # ── Resolve namespace ───────────────────────────────────────────────────
 NAMESPACE_PINNED=false
@@ -280,7 +284,7 @@ fi
 # ── Verify namespace exists and pin it ──────────────────────────────────
 if [ -n "$RESOLVED_NAMESPACE" ]; then
     if kubectl get ns "$RESOLVED_NAMESPACE" >/dev/null 2>&1; then
-        if kubectl config set-context --current --namespace="$RESOLVED_NAMESPACE" >/dev/null 2>&1; then
+        if kubectl config set-context --current --namespace="$RESOLVED_NAMESPACE" --kubeconfig="$KUBECONFIG" >/dev/null 2>&1; then
             NAMESPACE_PINNED=true
         else
             NAMESPACE_REASON="kubectl config set-context failed; not pinned"
@@ -295,7 +299,7 @@ if [ -n "$RESOLVED_NAMESPACE" ]; then
             if [[ "$NS_ACTION" =~ ^[Cc] ]]; then
                 if kubectl create namespace "$RESOLVED_NAMESPACE" >/dev/null 2>&1; then
                     echo "   Created namespace: $RESOLVED_NAMESPACE"
-                    if kubectl config set-context --current --namespace="$RESOLVED_NAMESPACE" >/dev/null 2>&1; then
+                    if kubectl config set-context --current --namespace="$RESOLVED_NAMESPACE" --kubeconfig="$KUBECONFIG" >/dev/null 2>&1; then
                         NAMESPACE_PINNED=true
                     fi
                 else
@@ -314,7 +318,7 @@ fi
 # ── Smoke checks (informational) ────────────────────────────────────────
 echo ""
 echo "🔍 Smoke checks ..."
-CURRENT_CTX=$(kubectl config current-context 2>/dev/null || echo "?")
+CURRENT_CTX=$(kubectl config current-context --kubeconfig="$KUBECONFIG" 2>/dev/null || echo "?")
 echo "   current-context: $CURRENT_CTX"
 
 if [ "$NAMESPACE_PINNED" = "true" ]; then
