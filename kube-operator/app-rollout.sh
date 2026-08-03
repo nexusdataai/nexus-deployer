@@ -173,7 +173,7 @@ done
 #   ai-engine    -> ai-engine-all
 case "$COMPONENTS" in
     *sre-all*)        COMPONENTS="sre-postgres sre-backend sre-ui" ;;
-    *ai-engine-all*)  COMPONENTS="ai-engine-api" ;;
+    *ai-engine-all*)  COMPONENTS="ai-engine-api ai-engine-ui" ;;
     *all*)            COMPONENTS="bssmagic backend frontend" ;;
 esac
 

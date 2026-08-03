@@ -173,7 +173,7 @@ if [ -n "$ONLY_MODE" ]; then
         bssmagic)     PUSH_BSSMAGIC=true ;;
         sre)          PUSH_SRE_BACKEND=true; PUSH_SRE_UI=true; PUSH_SRE_POSTGRES=true ;;
         sre-postgres) PUSH_SRE_POSTGRES=true ;;
-        ai-engine)    PUSH_AI_ENGINE_API=true ;;
+        ai-engine)    PUSH_AI_ENGINE_API=true; PUSH_AI_ENGINE_UI=true ;;
         ai-engine-api) PUSH_AI_ENGINE_API=true ;;
     esac
 fi

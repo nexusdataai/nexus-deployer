@@ -57,6 +57,7 @@ SRE_BACKEND_IMAGE="nexus-sre-backend:latest"
 SRE_UI_IMAGE="nexus-sre-ui:latest"
 SRE_POSTGRES_IMAGE="nexus-sre-postgres:latest"
 AI_ENGINE_API_IMAGE="nexus-ai-engine-api:latest"
+AI_ENGINE_UI_IMAGE="nexus-ai-engine-ui:latest"
 
 SKIP_BSSMAGIC=false
 ONLY_BSSMAGIC=false
@@ -248,7 +249,7 @@ if [ "$AI_ENGINE_MODE" = true ]; then
         PACKAGE_AI_ENGINE_UI=true
     else
         [ "${SKIP_AI_ENGINE_API}" = false ] && PACKAGE_AI_ENGINE_API=true
-        PACKAGE_AI_ENGINE_UI=false  # UI lands S11; keep off until frontend/Dockerfile exists
+        PACKAGE_AI_ENGINE_UI=true
     fi
 elif [ "$SRE_MODE" = true ]; then
     if [ "$ONLY_SRE_BACKEND" = true ]; then
@@ -496,6 +497,21 @@ if [ "$PACKAGE_AI_ENGINE_API" = true ]; then
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${AI_ENGINE_API_IMAGE} as tar.gz ==="
     docker save "${AI_ENGINE_API_IMAGE}" | gzip > "${AI_ENGINE_OUTPUT}/nexus-ai-engine-api.tar.gz"
     (cd "${AI_ENGINE_OUTPUT}" && sha256sum nexus-ai-engine-api.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+if [ "$PACKAGE_AI_ENGINE_UI" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-ai-engine UI image: ${AI_ENGINE_UI_IMAGE} ==="
+    docker build -t "${AI_ENGINE_UI_IMAGE}" "${AI_ENGINE_DIR}/frontend"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${AI_ENGINE_UI_IMAGE} as tar.gz ==="
+    docker save "${AI_ENGINE_UI_IMAGE}" | gzip > "${AI_ENGINE_OUTPUT}/nexus-ai-engine-ui.tar.gz"
+    (cd "${AI_ENGINE_OUTPUT}" && sha256sum nexus-ai-engine-ui.tar.gz >> checksums.sha256)
     echo "  Done."
     echo ""
 fi
