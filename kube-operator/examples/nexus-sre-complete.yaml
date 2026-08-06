@@ -1,8 +1,11 @@
 # Nexus-SRE capability (operator pipeline target)
 #
-# Deployed via kube-operator image pipeline (same tooling as nexus-ai):
+# First-time deploy: operator + Helm/k8s; namespace nexus-sre
+# Dev iteration:     ./deploy-app-changes.sh sre --env dev
+#
+# Full pipeline:
 #   bump-version.sh sre-all patch
-#   package-images.sh --only-sre-images          # backend + ui + postgres(AGE)
+#   package-images.sh --only-sre-images
 #   create-ecr-images.sh --only-sre-images
 #   app-rollout.sh --namespace nexus-sre --version <tag> --skip-diagnostics sre-all
 #
@@ -26,6 +29,12 @@ metadata:
     nexus.ai/capability: nexus-sre
 data:
   deploy.md: |
-    Use kube-operator scripts with component `sre-all` (includes sre-postgres).
-    AGE graph: nexus_sre_ops
-    Reference: nexus-sre/postgres-image/ (mirrors bssmagic-image AGE install)
+    First time: deploy nexus-sre via operator / Helm (namespace nexus-sre)
+    Dev updates: ./deploy-app-changes.sh sre --env dev
+    Postgres image (rare): ./deploy-app-changes.sh sre --postgres
+
+    Full release:
+      ./bump-version.sh sre-all patch
+      ./package-images.sh --only-sre-images
+      ./create-ecr-images.sh --only-sre-images
+      ./app-rollout.sh --namespace nexus-sre --version <tag> sre-all

@@ -11,6 +11,7 @@
 #   <target>  backend | ui | frontend | docs | operator | capability |
 #             sre-backend | sre-ui | sre-all |
 #             ai-engine-api | ai-engine-ui | ai-engine-all |
+#             ontology-api | ontology-ui | ontology-all |
 #             both | all
 #   <bump>    major | minor | patch
 #
@@ -37,6 +38,7 @@
 #   --sre-backend-dir PATH    Override nexus-sre/backend path (default: ../../nexus-sre/backend)
 #   --sre-frontend-dir PATH   Override nexus-sre/frontend path (default: ../../nexus-sre/frontend)
 #   --ai-engine-dir PATH      Override nexus-ai-engine repo root (default: ../../nexus-ai-engine)
+#   --ontology-dir PATH       Override nexus-ontology repo root (default: ../../nexus-ontology)
 #   --capability-file P       Override capability YAML path (default: examples/nexus-ai-complete.yaml)
 #                             The VERSION file is derived by replacing .yaml with .VERSION
 #   --help                    Show this help
@@ -65,6 +67,7 @@ OPERATOR_DIR=""
 SRE_BACKEND_DIR=""
 SRE_FRONTEND_DIR=""
 AI_ENGINE_DIR=""
+ONTOLOGY_DIR=""
 CAPABILITY_FILE=""
 
 show_help() {
@@ -83,9 +86,10 @@ while [ $# -gt 0 ]; do
         --sre-backend-dir)   SRE_BACKEND_DIR="$2"; shift 2 ;;
         --sre-frontend-dir)  SRE_FRONTEND_DIR="$2"; shift 2 ;;
         --ai-engine-dir)     AI_ENGINE_DIR="$2"; shift 2 ;;
+        --ontology-dir)      ONTOLOGY_DIR="$2"; shift 2 ;;
         --capability-file)   CAPABILITY_FILE="$2"; shift 2 ;;
         --help|-h)           show_help; exit 0 ;;
-        backend|ui|frontend|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|both|all)
+        backend|ui|frontend|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|both|all)
             if [ -z "$TARGET" ]; then TARGET="$1"; else
                 echo "Unexpected positional argument: $1" >&2; exit 1
             fi
@@ -106,7 +110,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$TARGET" ] || [ -z "$BUMP" ]; then
-    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|both|all> <major|minor|patch> [options]" >&2
+    echo "Usage: $(basename "$0") <backend|ui|docs|operator|capability|sre-backend|sre-ui|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|both|all> <major|minor|patch> [options]" >&2
     echo "Run with --help for full usage." >&2
     exit 1
 fi
@@ -126,6 +130,9 @@ SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend
 AI_ENGINE_DIR="${AI_ENGINE_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ai-engine" 2>/dev/null && pwd || echo "")}"
 AI_ENGINE_BACKEND_DIR="${AI_ENGINE_DIR}/backend"
 AI_ENGINE_FRONTEND_DIR="${AI_ENGINE_DIR}/frontend"
+ONTOLOGY_DIR="${ONTOLOGY_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ontology" 2>/dev/null && pwd || echo "")}"
+ONTOLOGY_BACKEND_DIR="${ONTOLOGY_DIR}/backend"
+ONTOLOGY_FRONTEND_DIR="${ONTOLOGY_DIR}/frontend"
 CAPABILITY_FILE="${CAPABILITY_FILE:-${SCRIPT_DIR}/examples/nexus-ai-complete.yaml}"
 CAPABILITY_DIR="$(dirname "$CAPABILITY_FILE")"
 CAPABILITY_VERSION_FILENAME="$(basename "${CAPABILITY_FILE%.yaml}.VERSION")"
@@ -151,6 +158,12 @@ case "$TARGET" in
     ai-engine-all)  REPOS=(
                        "ai-engine-api|${AI_ENGINE_BACKEND_DIR}|VERSION"
                        "ai-engine-ui|${AI_ENGINE_FRONTEND_DIR}|VERSION"
+                    ) ;;
+    ontology-api)  REPOS=("ontology-api|${ONTOLOGY_BACKEND_DIR}|VERSION") ;;
+    ontology-ui)   REPOS=("ontology-ui|${ONTOLOGY_FRONTEND_DIR}|VERSION") ;;
+    ontology-all)  REPOS=(
+                       "ontology-api|${ONTOLOGY_BACKEND_DIR}|VERSION"
+                       "ontology-ui|${ONTOLOGY_FRONTEND_DIR}|VERSION"
                     ) ;;
     all)            REPOS=(
                        "backend|${BACKEND_DIR}|VERSION"

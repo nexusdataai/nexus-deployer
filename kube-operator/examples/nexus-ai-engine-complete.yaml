@@ -1,13 +1,13 @@
 # Nexus AI Engine capability (operator pipeline target)
 #
-# Separate from nexus-ai (ontology / VDL / Connector). AI Engine owns journey
-# execution, tool compute, and the reference FastAPI server.
+# First-time deploy: operator + this descriptor; kubectl apply -k nexus-ai-engine/deploy/k8s/
+# Dev iteration:     ./deploy-app-changes.sh ai-engine --env dev
 #
-# Deployed via kube-operator image pipeline (same tooling as nexus-sre):
-#   bump-version.sh ai-engine-api patch
-#   package-images.sh --only-ai-engine-api
+# Full pipeline (jumpbox / release):
+#   bump-version.sh ai-engine-all patch
+#   package-images.sh --only-ai-engine-images
 #   create-ecr-images.sh --only-ai-engine-images
-#   app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-api
+#   app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-all
 #
 # v0.2.0-alpha: API image only (embedded dev UI ships inside the API container).
 # React SPA (`ai-engine-ui`) joins the pipeline from Sprint 11.
@@ -32,15 +32,14 @@ metadata:
     nexus.ai/capability: ai-engine
 data:
   deploy.md: |
-    Use kube-operator scripts with component `ai-engine-api` (alpha) or `ai-engine-all` (when UI lands).
+    First time: kubectl apply -k nexus-ai-engine/deploy/k8s/ (after operator/admin setup)
+    Dev updates: ./deploy-app-changes.sh ai-engine --env dev
 
-    Bump + build + push:
-      ./bump-version.sh ai-engine-api patch
-      ./package-images.sh --only-ai-engine-api
+    Full release pipeline:
+      ./bump-version.sh ai-engine-all patch
+      ./package-images.sh --only-ai-engine-images
       ./create-ecr-images.sh --only-ai-engine-images
-
-    Rollout (dev):
-      ./app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-api
+      ./app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-all
 
     Health gates:
       GET /health     -> 200

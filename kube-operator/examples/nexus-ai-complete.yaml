@@ -43,7 +43,8 @@ spec:
   environment: __ENV__
   region: us-east-1
   enableCognito: true
-  adminEmail: "admin@nexus.ai"     # Initial admin user (password change required on first login)
+  adminEmail: "admin@nexus.ai"
+  adminPassword: "Pass123!"
   
   # Frontend - Must listen on port 8080
   frontend:

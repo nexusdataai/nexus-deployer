@@ -513,11 +513,16 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                     spec["cognito"].get("user_pool_id", "provided-in-spec")
                 ])
             else:
-                admin_email = spec.get("adminEmail", "")
+                from .resources.cognito import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
+                admin_email = spec.get("adminEmail") or DEFAULT_ADMIN_EMAIL
+                admin_password = spec.get("adminPassword") or DEFAULT_ADMIN_PASSWORD
                 frontend_url = spec.get("frontendUrl", "")
                 callback_urls = spec.get("cognitoCallbackUrls", [])
                 cognito_results = await cognito.provision_all(
-                    admin_email=admin_email, frontend_url=frontend_url, callback_urls=callback_urls
+                    admin_email=admin_email,
+                    admin_password=admin_password,
+                    frontend_url=frontend_url,
+                    callback_urls=callback_urls,
                 )
                 cognito_config = cognito_results.get("cognito_config", {})
                 cognito_error = cognito_results.get("error")
@@ -540,7 +545,12 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                             core_api = k8s_client.CoreV1Api()
                             secret_name = f"{naming.capability_name}-{naming.environment}-admin-credentials"
                             # For new users, store temp password; for existing, store status
-                            admin_pw = admin_result.get("temporary_password", "")
+                            admin_pw = (
+                                admin_result.get("password")
+                                or admin_result.get("temporary_password")
+                                or spec.get("adminPassword")
+                                or ""
+                            )
                             admin_status = admin_result.get("user_status", admin_result.get("status", ""))
                             secret_data = {
                                 "admin-email": base64.b64encode(admin_email_val.encode()).decode(),
@@ -654,9 +664,16 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         _update_step(steps, "ServiceAccount", "done", resources=[naming.kubernetes_service_account("app")])
         patch.status["steps"] = list(steps)
         
-        # ── Step 10a: Redis Cache (always deployed for simulator data) ──
+        # ── Step 10a: Redis Cache (optional; skipped for lightweight capabilities) ──
         redis_spec = spec.get("redis", {})
-        redis_enabled = redis_spec.get("enabled", True)
+        data_services = spec.get("dataServices", {})
+        _lightweight = (
+            not data_services.get("dynamodb", {}).get("enabled", True)
+            and not data_services.get("s3", {}).get("enabled", True)
+            and not data_services.get("glue", {}).get("enabled", True)
+            and not spec.get("bssmagic", {}).get("enabled", False)
+        )
+        redis_enabled = False if _lightweight else redis_spec.get("enabled", True)
         redis_service_name = None
         if redis_enabled:
             patch.status["phase"] = "DeployingRedis"
@@ -679,9 +696,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             _update_step(steps, "Redis", "skipped")
             patch.status["steps"] = list(steps)
 
-        # ── Step 10b: Grafana Mimir (time-series backend for solution four-views) ──
+        # ── Step 10b: Grafana Mimir (optional; skipped for lightweight capabilities) ──
         mimir_spec = spec.get("mimir", {})
-        mimir_enabled = mimir_spec.get("enabled", True)
+        mimir_enabled = False if _lightweight else mimir_spec.get("enabled", True)
         if mimir_enabled:
             patch.status["phase"] = "DeployingMimir"
             patch.status["message"] = "Deploying Grafana Mimir (monolithic) for solution KPI history..."

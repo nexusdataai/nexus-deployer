@@ -48,6 +48,7 @@ BSSMAGIC_OUTPUT="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_OUTPUT="${SCRIPT_DIR}/images/operator"
 SRE_OUTPUT="${SCRIPT_DIR}/images/nexus-sre"
 AI_ENGINE_OUTPUT="${SCRIPT_DIR}/images/nexus-ai-engine"
+ONTOLOGY_OUTPUT="${SCRIPT_DIR}/images/nexus-ontology"
 
 BACKEND_IMAGE="ai-job-engine:latest"
 FRONTEND_IMAGE="nexus-ui:latest"
@@ -58,6 +59,8 @@ SRE_UI_IMAGE="nexus-sre-ui:latest"
 SRE_POSTGRES_IMAGE="nexus-sre-postgres:latest"
 AI_ENGINE_API_IMAGE="nexus-ai-engine-api:latest"
 AI_ENGINE_UI_IMAGE="nexus-ai-engine-ui:latest"
+ONTOLOGY_API_IMAGE="nexus-ontology-api:latest"
+ONTOLOGY_UI_IMAGE="nexus-ontology-ui:latest"
 
 SKIP_BSSMAGIC=false
 ONLY_BSSMAGIC=false
@@ -76,6 +79,11 @@ SKIP_AI_ENGINE_API=false
 ONLY_AI_ENGINE=false
 ONLY_AI_ENGINE_API=false
 ONLY_AI_ENGINE_UI=false
+SKIP_ONTOLOGY=true
+SKIP_ONTOLOGY_API=false
+ONLY_ONTOLOGY=false
+ONLY_ONTOLOGY_API=false
+ONLY_ONTOLOGY_UI=false
 
 # Parse arguments (before resolving dirs, so --only-bssmagic can skip missing dirs)
 while [[ $# -gt 0 ]]; do
@@ -87,6 +95,7 @@ while [[ $# -gt 0 ]]; do
         --sre-frontend-dir)   SRE_FRONTEND_DIR="$2"; shift 2 ;;
         --sre-postgres-dir)   SRE_POSTGRES_DIR="$2"; shift 2 ;;
         --ai-engine-dir)      AI_ENGINE_DIR="$2"; shift 2 ;;
+        --ontology-dir)       ONTOLOGY_DIR="$2"; shift 2 ;;
         --skip-bssmagic)      SKIP_BSSMAGIC=true; shift ;;
         --only-bssmagic)      ONLY_BSSMAGIC=true; shift ;;
         --skip-operator)      SKIP_OPERATOR=true; shift ;;
@@ -104,6 +113,11 @@ while [[ $# -gt 0 ]]; do
         --only-ai-engine-images) ONLY_AI_ENGINE=true; SKIP_AI_ENGINE=false; shift ;;
         --with-ai-engine-images) SKIP_AI_ENGINE=false; shift ;;
         --skip-ai-engine-api) SKIP_AI_ENGINE_API=true; shift ;;
+        --only-ontology-api) ONLY_ONTOLOGY_API=true; SKIP_ONTOLOGY=false; shift ;;
+        --only-ontology-ui)  ONLY_ONTOLOGY_UI=true; SKIP_ONTOLOGY=false; shift ;;
+        --only-ontology-images) ONLY_ONTOLOGY=true; SKIP_ONTOLOGY=false; shift ;;
+        --with-ontology-images) SKIP_ONTOLOGY=false; shift ;;
+        --skip-ontology-api) SKIP_ONTOLOGY_API=true; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -136,6 +150,13 @@ while [[ $# -gt 0 ]]; do
             echo "  --only-ai-engine-ui        Only package nexus-ai-engine UI image (S11+)"
             echo "  --skip-ai-engine-api       Skip nexus-ai-engine API when bundling"
             echo "  --ai-engine-dir DIR        Path to nexus-ai-engine repo root (default: ../../nexus-ai-engine)"
+            echo ""
+            echo "  --with-ontology-images     Also package nexus-ontology API + UI images"
+            echo "  --only-ontology-images     Only package nexus-ontology images"
+            echo "  --only-ontology-api        Only package nexus-ontology API image"
+            echo "  --only-ontology-ui         Only package nexus-ontology UI image"
+            echo "  --skip-ontology-api        Skip nexus-ontology API when bundling"
+            echo "  --ontology-dir DIR         Path to nexus-ontology repo root (default: ../../nexus-ontology)"
             echo "  --help               Show this help"
             echo ""
             echo "Notes:"
@@ -155,14 +176,18 @@ done
 # ──────────────────────────────────────────────────────────────
 SRE_MODE=false
 AI_ENGINE_MODE=false
+ONTOLOGY_MODE=false
 if [ "$ONLY_SRE" = true ] || [ "$ONLY_SRE_BACKEND" = true ] || [ "$ONLY_SRE_UI" = true ] || [ "$ONLY_SRE_POSTGRES" = true ]; then
     SRE_MODE=true
 fi
 if [ "$ONLY_AI_ENGINE" = true ] || [ "$ONLY_AI_ENGINE_API" = true ] || [ "$ONLY_AI_ENGINE_UI" = true ]; then
     AI_ENGINE_MODE=true
 fi
+if [ "$ONLY_ONTOLOGY" = true ] || [ "$ONLY_ONTOLOGY_API" = true ] || [ "$ONLY_ONTOLOGY_UI" = true ]; then
+    ONTOLOGY_MODE=true
+fi
 
-if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONTOLOGY_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     BACKEND_DIR="${BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-backend" 2>/dev/null && pwd || echo "")}"
     FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ui" 2>/dev/null && pwd || echo "")}"
 fi
@@ -171,11 +196,14 @@ SRE_BACKEND_DIR="${SRE_BACKEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/backend" 2
 SRE_FRONTEND_DIR="${SRE_FRONTEND_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/frontend" 2>/dev/null && pwd || echo "")}"
 SRE_POSTGRES_DIR="${SRE_POSTGRES_DIR:-$(cd "$SCRIPT_DIR/../../nexus-sre/postgres-image" 2>/dev/null && pwd || echo "")}"
 AI_ENGINE_DIR="${AI_ENGINE_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ai-engine" 2>/dev/null && pwd || echo "")}"
+ONTOLOGY_DIR="${ONTOLOGY_DIR:-$(cd "$SCRIPT_DIR/../../nexus-ontology" 2>/dev/null && pwd || echo "")}"
+ONTOLOGY_BACKEND_DIR="${ONTOLOGY_DIR}/backend"
+ONTOLOGY_FRONTEND_DIR="${ONTOLOGY_DIR}/frontend"
 
 # ──────────────────────────────────────────────────────────────
 # Validation
 # ──────────────────────────────────────────────────────────────
-if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
+if [ "$SRE_MODE" = false ] && [ "$AI_ENGINE_MODE" = false ] && [ "$ONTOLOGY_MODE" = false ] && [ "$ONLY_BSSMAGIC" = false ] && [ "$ONLY_OPERATOR" = false ]; then
     if [ ! -f "${BACKEND_DIR}/Dockerfile" ]; then
         echo "ERROR: Backend Dockerfile not found at ${BACKEND_DIR}/Dockerfile"
         echo "  Use --backend-dir to specify the nexus-backend directory"
@@ -222,6 +250,19 @@ if [ "$AI_ENGINE_MODE" = true ] || [ "$SKIP_AI_ENGINE" = false ]; then
     fi
 fi
 
+# Validate Ontology dirs only if we intend to package them
+if [ "$ONTOLOGY_MODE" = true ] || [ "$SKIP_ONTOLOGY" = false ]; then
+    if [ "$SKIP_ONTOLOGY_API" != true ] && [ "$ONLY_ONTOLOGY_UI" != true ] && [ ! -f "${ONTOLOGY_BACKEND_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-ontology backend Dockerfile not found at ${ONTOLOGY_BACKEND_DIR}/Dockerfile"
+        echo "  Use --ontology-dir to specify the nexus-ontology repository root"
+        exit 1
+    fi
+    if [ "$ONLY_ONTOLOGY_UI" = true ] && [ ! -f "${ONTOLOGY_FRONTEND_DIR}/Dockerfile" ]; then
+        echo "ERROR: nexus-ontology UI Dockerfile not found at ${ONTOLOGY_FRONTEND_DIR}/Dockerfile"
+        exit 1
+    fi
+fi
+
 if [ "$SKIP_BSSMAGIC" = false ]; then
     if [ ! -f "${BSSMAGIC_DIR}/Dockerfile" ]; then
         echo "ERROR: BSS Magic Dockerfile not found at ${BSSMAGIC_DIR}/Dockerfile"
@@ -241,8 +282,19 @@ PACKAGE_SRE_UI=false
 PACKAGE_SRE_POSTGRES=false
 PACKAGE_AI_ENGINE_API=false
 PACKAGE_AI_ENGINE_UI=false
+PACKAGE_ONTOLOGY_API=false
+PACKAGE_ONTOLOGY_UI=false
 
-if [ "$AI_ENGINE_MODE" = true ]; then
+if [ "$ONTOLOGY_MODE" = true ]; then
+    if [ "$ONLY_ONTOLOGY_API" = true ]; then
+        PACKAGE_ONTOLOGY_API=true
+    elif [ "$ONLY_ONTOLOGY_UI" = true ]; then
+        PACKAGE_ONTOLOGY_UI=true
+    else
+        [ "${SKIP_ONTOLOGY_API}" = false ] && PACKAGE_ONTOLOGY_API=true
+        PACKAGE_ONTOLOGY_UI=true
+    fi
+elif [ "$AI_ENGINE_MODE" = true ]; then
     if [ "$ONLY_AI_ENGINE_API" = true ]; then
         PACKAGE_AI_ENGINE_API=true
     elif [ "$ONLY_AI_ENGINE_UI" = true ]; then
@@ -289,6 +341,8 @@ fi
 [ "$PACKAGE_SRE_POSTGRES" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 [ "$PACKAGE_AI_ENGINE_API" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 [ "$PACKAGE_AI_ENGINE_UI" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_ONTOLOGY_API" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
+[ "$PACKAGE_ONTOLOGY_UI" = true ] && TOTAL_STEPS=$((TOTAL_STEPS + 2))
 CURRENT_STEP=0
 
 echo "=============================================="
@@ -517,6 +571,43 @@ if [ "$PACKAGE_AI_ENGINE_UI" = true ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────
+# nexus-ontology Images
+# ──────────────────────────────────────────────────────────────
+if [ "$PACKAGE_ONTOLOGY_API" = true ] || [ "$PACKAGE_ONTOLOGY_UI" = true ]; then
+    mkdir -p "${ONTOLOGY_OUTPUT}"
+fi
+
+if [ "$PACKAGE_ONTOLOGY_API" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-ontology API image: ${ONTOLOGY_API_IMAGE} ==="
+    docker build -t "${ONTOLOGY_API_IMAGE}" "${ONTOLOGY_BACKEND_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${ONTOLOGY_API_IMAGE} as tar.gz ==="
+    docker save "${ONTOLOGY_API_IMAGE}" | gzip > "${ONTOLOGY_OUTPUT}/nexus-ontology-api.tar.gz"
+    (cd "${ONTOLOGY_OUTPUT}" && sha256sum nexus-ontology-api.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+if [ "$PACKAGE_ONTOLOGY_UI" = true ]; then
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-ontology UI image: ${ONTOLOGY_UI_IMAGE} ==="
+    docker build -t "${ONTOLOGY_UI_IMAGE}" "${ONTOLOGY_FRONTEND_DIR}"
+    echo "  Done."
+    echo ""
+
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Saving ${ONTOLOGY_UI_IMAGE} as tar.gz ==="
+    docker save "${ONTOLOGY_UI_IMAGE}" | gzip > "${ONTOLOGY_OUTPUT}/nexus-ontology-ui.tar.gz"
+    (cd "${ONTOLOGY_OUTPUT}" && sha256sum nexus-ontology-ui.tar.gz >> checksums.sha256)
+    echo "  Done."
+    echo ""
+fi
+
+# ──────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────
 echo "=============================================="
@@ -538,6 +629,9 @@ if { [ "$PACKAGE_SRE_BACKEND" = true ] || [ "$PACKAGE_SRE_UI" = true ] || [ "$PA
 fi
 if { [ "$PACKAGE_AI_ENGINE_API" = true ] || [ "$PACKAGE_AI_ENGINE_UI" = true ]; } && [ -d "${AI_ENGINE_OUTPUT}" ]; then
     ls -lh "${AI_ENGINE_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
+fi
+if { [ "$PACKAGE_ONTOLOGY_API" = true ] || [ "$PACKAGE_ONTOLOGY_UI" = true ]; } && [ -d "${ONTOLOGY_OUTPUT}" ]; then
+    ls -lh "${ONTOLOGY_OUTPUT}/"*.tar.gz 2>/dev/null | awk '{print "    " $5 "  " $NF}'
 fi
 echo ""
 echo "  These files can now be shipped with kube-operator/"

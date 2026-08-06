@@ -3,6 +3,7 @@ deploy/.env.local
 # Packaged images (shipped separately, not committed — too large for git)
 kube-operator/images/nexus/*.tar.gz
 kube-operator/images/nexus-sre/*.tar.gz
+kube-operator/images/nexus-ontology/*.tar.gz
 kube-operator/images/callsense/*.tar.gz
 kube-operator/images/bssmagic/*.tar.gz
 kube-operator/images/operator/*.tar.gz

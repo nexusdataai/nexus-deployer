@@ -199,6 +199,15 @@ deploy_operator() {
         echo "  ✓ Deployment completed successfully!"
         echo -e "===============================================${NC}"
         echo ""
+
+        # NexusNetworkConfig CRD — required before kopf reconciles NexusCapability CRs
+        if [ -f "${SCRIPT_DIR}/manifests/network-config-crd.yaml" ]; then
+            echo "Applying NexusNetworkConfig CRD..."
+            kubectl apply -f "${SCRIPT_DIR}/manifests/network-config-crd.yaml" >/dev/null 2>&1 \
+                && echo -e "${GREEN}  ✓ NexusNetworkConfig CRD ready${NC}" \
+                || echo -e "${YELLOW}  ! Could not apply network-config CRD${NC}"
+            echo ""
+        fi
         
         # Refresh kubeconfig to ensure kubectl works with standard AWS CLI context
         echo "Refreshing kubeconfig for kubectl access..."
@@ -226,8 +235,8 @@ deploy_operator() {
         echo -e "===============================================${NC}"
         echo ""
         echo "1. Deploy a capability:"
-        echo "   kubectl create namespace nexus-ai-prod"
-        echo "   kubectl apply -f examples/nexus-ai-complete.yaml"
+        echo "   ./deploy-capability.sh --product ontology --env dev --cluster ${CLUSTER_NAME}"
+        echo "   ./deploy-capability.sh --product nexus-ai --env prod"
         echo ""
         echo "2. Monitor deployment progress:"
         echo "   ./operator.sh monitor"

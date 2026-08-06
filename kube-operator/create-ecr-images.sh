@@ -42,12 +42,14 @@ BSSMAGIC_IMAGES_DIR="${SCRIPT_DIR}/images/bssmagic"
 OPERATOR_IMAGES_DIR="${SCRIPT_DIR}/images/operator"
 SRE_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-sre"
 AI_ENGINE_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-ai-engine"
+ONTOLOGY_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-ontology"
 BACKEND_DIR="/opt/mycode/nexus/nexus-backend"
 FRONTEND_DIR="/opt/mycode/nexus/nexus-ui"
 SRE_BACKEND_DIR="/opt/mycode/nexus/nexus-sre/backend"
 SRE_FRONTEND_DIR="/opt/mycode/nexus/nexus-sre/frontend"
 SRE_POSTGRES_DIR="/opt/mycode/nexus/nexus-sre/postgres-image"
 AI_ENGINE_DIR="/opt/mycode/nexus/nexus-ai-engine"
+ONTOLOGY_DIR="/opt/mycode/nexus/nexus-ontology"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -71,6 +73,8 @@ PUSH_SRE_UI=false
 PUSH_SRE_POSTGRES=false
 PUSH_AI_ENGINE_API=false
 PUSH_AI_ENGINE_UI=false
+PUSH_ONTOLOGY_API=false
+PUSH_ONTOLOGY_UI=false
 ONLY_MODE=""
 NO_CACHE=false
 APP_VERSION_OVERRIDE=""
@@ -78,6 +82,7 @@ BSSMAGIC_VERSION_OVERRIDE=""
 OPERATOR_VERSION_OVERRIDE=""
 SRE_VERSION_OVERRIDE=""
 AI_ENGINE_VERSION_OVERRIDE=""
+ONTOLOGY_VERSION_OVERRIDE=""
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -135,6 +140,10 @@ while [[ $# -gt 0 ]]; do
         --only-ai-engine-api)  ONLY_MODE="ai-engine-api"; shift ;;
         --with-ai-engine-images) PUSH_AI_ENGINE_API=true; shift ;;
         --ai-engine-version)   AI_ENGINE_VERSION_OVERRIDE="$2"; shift 2 ;;
+        --only-ontology-images) ONLY_MODE="ontology"; shift ;;
+        --only-ontology-api)   ONLY_MODE="ontology-api"; shift ;;
+        --with-ontology-images) PUSH_ONTOLOGY_API=true; PUSH_ONTOLOGY_UI=true; shift ;;
+        --ontology-version)    ONTOLOGY_VERSION_OVERRIDE="$2"; shift 2 ;;
         --sre-version)       SRE_VERSION_OVERRIDE="$2"; shift 2 ;;
         --no-cache)          NO_CACHE=true; shift ;;
         --env)               DEPLOY_ENV="$2"; shift 2 ;;
@@ -166,7 +175,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -n "$ONLY_MODE" ]; then
-    PUSH_OPERATOR=false; PUSH_APP=false; PUSH_BSSMAGIC=false; PUSH_SRE_BACKEND=false; PUSH_SRE_UI=false; PUSH_SRE_POSTGRES=false; PUSH_AI_ENGINE_API=false; PUSH_AI_ENGINE_UI=false
+    PUSH_OPERATOR=false; PUSH_APP=false; PUSH_BSSMAGIC=false; PUSH_SRE_BACKEND=false; PUSH_SRE_UI=false; PUSH_SRE_POSTGRES=false; PUSH_AI_ENGINE_API=false; PUSH_AI_ENGINE_UI=false; PUSH_ONTOLOGY_API=false; PUSH_ONTOLOGY_UI=false
     case "$ONLY_MODE" in
         operator)     PUSH_OPERATOR=true ;;
         app)          PUSH_APP=true ;;
@@ -175,6 +184,8 @@ if [ -n "$ONLY_MODE" ]; then
         sre-postgres) PUSH_SRE_POSTGRES=true ;;
         ai-engine)    PUSH_AI_ENGINE_API=true; PUSH_AI_ENGINE_UI=true ;;
         ai-engine-api) PUSH_AI_ENGINE_API=true ;;
+        ontology)     PUSH_ONTOLOGY_API=true; PUSH_ONTOLOGY_UI=true ;;
+        ontology-api) PUSH_ONTOLOGY_API=true ;;
     esac
 fi
 
@@ -201,6 +212,8 @@ echo "  nexus-sre-ui:       ${PUSH_SRE_UI}"
 echo "  nexus-sre-postgres: ${PUSH_SRE_POSTGRES}"
 echo "  nexus-ai-engine-api: ${PUSH_AI_ENGINE_API}"
 echo "  nexus-ai-engine-ui:  ${PUSH_AI_ENGINE_UI}"
+echo "  nexus-ontology-api:  ${PUSH_ONTOLOGY_API}"
+echo "  nexus-ontology-ui:   ${PUSH_ONTOLOGY_UI}"
 echo ""
 
 # ECR login
@@ -220,6 +233,8 @@ TOTAL=0
 [ "$PUSH_SRE_POSTGRES" = true ] && TOTAL=$((TOTAL+1))
 [ "$PUSH_AI_ENGINE_API" = true ] && TOTAL=$((TOTAL+1))
 [ "$PUSH_AI_ENGINE_UI" = true ] && TOTAL=$((TOTAL+1))
+[ "$PUSH_ONTOLOGY_API" = true ] && TOTAL=$((TOTAL+1))
+[ "$PUSH_ONTOLOGY_UI" = true ] && TOTAL=$((TOTAL+1))
 
 # ──────────────────────────────────────────────────────────────
 # Operator Image
@@ -501,6 +516,63 @@ fi
 
 if [ "$PUSH_AI_ENGINE_UI" = true ]; then
     ai_engine_push "nexus-ai-engine-ui" "${AI_ENGINE_DIR}/frontend" "nexus-ai-engine-ui.tar.gz" "${AI_ENGINE_DIR}/frontend/VERSION"
+fi
+
+# ──────────────────────────────────────────────────────────────
+# nexus-ontology API + UI
+# ──────────────────────────────────────────────────────────────
+ontology_push() {
+    local repo="$1" src_dir="$2" tar_name="$3" version_file="$4"
+    STEP=$((STEP+1))
+    echo -e "${CYAN}── [${STEP}/${TOTAL}] ${repo} ──${NC}"
+
+    _ver=$(cat "${version_file}" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+    _sha=$(cd "${ONTOLOGY_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    LIVE_TAG="${_ver}-${_sha}"
+    if [ -n "${ONTOLOGY_VERSION_OVERRIDE}" ]; then
+        TAG="${ONTOLOGY_VERSION_OVERRIDE}"
+        echo "  (using --ontology-version override: ${TAG})"
+    else
+        TAG="${LIVE_TAG}"
+    fi
+
+    HAS_TAR=false
+    [ -f "${ONTOLOGY_IMAGES_DIR}/${tar_name}" ] && HAS_TAR=true
+
+    if [ "$NO_CACHE" = true ] || [ "$HAS_TAR" = false ]; then
+        if [ ! -d "${src_dir}" ]; then
+            echo -e "${RED}  Source directory not available: ${src_dir}${NC}"
+            return 1
+        fi
+        echo "  Building from source: ${src_dir}"
+        docker build --no-cache -t "${repo}:latest" "${src_dir}"
+    else
+        echo "  Loading from tar: ${ONTOLOGY_IMAGES_DIR}/${tar_name}"
+        docker load -i "${ONTOLOGY_IMAGES_DIR}/${tar_name}"
+    fi
+
+    echo "  Version tag: ${TAG}"
+    echo "  Push plan:"
+    echo "    ${ECR_REGISTRY}/${repo}:${TAG}"
+    echo "    ${ECR_REGISTRY}/${repo}:latest"
+
+    aws ecr describe-repositories --repository-names "$repo" \
+        --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1 \
+    || aws ecr create-repository --repository-name "$repo" \
+        --region "${REGION}" --profile "${AWS_PROFILE}" \
+        --image-scanning-configuration scanOnPush=true > /dev/null 2>&1 \
+    || true
+
+    docker_dual_tag_push "${repo}:latest" "$repo" "$TAG"
+    echo ""
+}
+
+if [ "$PUSH_ONTOLOGY_API" = true ]; then
+    ontology_push "nexus-ontology-api" "${ONTOLOGY_DIR}/backend" "nexus-ontology-api.tar.gz" "${ONTOLOGY_DIR}/backend/VERSION"
+fi
+
+if [ "$PUSH_ONTOLOGY_UI" = true ]; then
+    ontology_push "nexus-ontology-ui" "${ONTOLOGY_DIR}/frontend" "nexus-ontology-ui.tar.gz" "${ONTOLOGY_DIR}/frontend/VERSION"
 fi
 
 # ──────────────────────────────────────────────────────────────

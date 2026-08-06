@@ -66,8 +66,13 @@ spec:
                   default: false
                 adminEmail:
                   type: string
-                  description: "Email for the initial admin user (created with temporary password)"
+                  description: "Email for the initial admin user (default admin@nexus.ai)"
                   format: email
+                  default: "admin@nexus.ai"
+                adminPassword:
+                  type: string
+                  description: "Permanent password for the initial admin user (default Pass123!)"
+                  default: "Pass123!"
                 frontend:
                   type: object
                   description: "Frontend deployment configuration"

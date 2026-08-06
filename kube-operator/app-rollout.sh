@@ -36,6 +36,7 @@ ENV="dev"
 NAMESPACE=""
 TIMEOUT=300
 SKIP_DIAGNOSTICS=0
+SKIP_ECR_VERIFY=0
 DIAGNOSTICS_ONLY=0
 JSON_MODE=0
 DRY_RUN=0
@@ -54,6 +55,9 @@ SRE_UI_VERSION=""
 SRE_POSTGRES_VERSION=""
 AI_ENGINE_API_VERSION=""
 AI_ENGINE_UI_VERSION=""
+ONTOLOGY_API_VERSION=""
+ONTOLOGY_UI_VERSION=""
+SIMULATOR_VERSION=""
 ROLLBACK_MODE=0
 ROLLBACK_TO_VERSION=""
 LIST_VERSIONS=0
@@ -79,6 +83,7 @@ while [ $# -gt 0 ]; do
         --namespace|-n)     NAMESPACE="$2"; shift 2 ;;
         --timeout)          TIMEOUT="$2"; shift 2 ;;
         --skip-diagnostics) SKIP_DIAGNOSTICS=1; shift ;;
+        --skip-ecr-verify)  SKIP_ECR_VERIFY=1; shift ;;
         --diagnostics-only) DIAGNOSTICS_ONLY=1; shift ;;
         --json|-j)          JSON_MODE=1; shift ;;
         --dry-run)          DRY_RUN=1; shift ;;
@@ -91,6 +96,9 @@ while [ $# -gt 0 ]; do
         --sre-ui-version)      SRE_UI_VERSION="$2"; shift 2 ;;
         --ai-engine-api-version) AI_ENGINE_API_VERSION="$2"; shift 2 ;;
         --ai-engine-ui-version)  AI_ENGINE_UI_VERSION="$2"; shift 2 ;;
+        --ontology-api-version) ONTOLOGY_API_VERSION="$2"; shift 2 ;;
+        --ontology-ui-version)  ONTOLOGY_UI_VERSION="$2"; shift 2 ;;
+        --simulator-version)    SIMULATOR_VERSION="$2"; shift 2 ;;
         --rollback)         ROLLBACK_MODE=1; shift ;;
         --rollback-to)      ROLLBACK_MODE=1; ROLLBACK_TO_VERSION="$2"; shift 2 ;;
         --list-versions)    LIST_VERSIONS=1; shift ;;
@@ -130,7 +138,8 @@ Options:
   --env ENV           Environment (default: dev)
   --namespace NS      Override namespace (default: {capability}-{env})
   --timeout SECS      Rollout timeout per component (default: 300)
-  --skip-diagnostics  Only rollout + wait, skip diagnostics
+  --skip-diagnostics  Rollout + kubectl rollout status only (skip extra pod wait/health exec)
+  --skip-ecr-verify   Skip ECR image existence check (use when image was just pushed)
   --diagnostics-only  Skip rollout, just run diagnostics
   --fix-keys          Sync frontend config.json apiKey from backend API_KEY
   --json              Output diagnostics as JSON
@@ -154,7 +163,7 @@ Ordering (when rolling out multiple):
 EOF
             exit 0
             ;;
-        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all)
+        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|simulator)
             COMPONENTS="${COMPONENTS} $1"; shift ;;
         *)
             echo "Unknown option: $1"; exit 1 ;;
@@ -163,6 +172,49 @@ done
 
 [ -z "$NAMESPACE" ] && NAMESPACE="${CAPABILITY}-${ENV}"
 [ -z "$COMPONENTS" ] && COMPONENTS="all"
+
+# Packaged image tags from package-images.sh / deploy-app-changes.sh.
+PACKAGED_BACKEND_TAG=""
+PACKAGED_FRONTEND_TAG=""
+PACKAGED_BSSMAGIC_TAG=""
+PACKAGED_AI_ENGINE_API_TAG=""
+PACKAGED_AI_ENGINE_UI_TAG=""
+PACKAGED_SRE_BACKEND_TAG=""
+PACKAGED_SRE_UI_TAG=""
+PACKAGED_SRE_POSTGRES_TAG=""
+PACKAGED_ONTOLOGY_API_TAG=""
+PACKAGED_ONTOLOGY_UI_TAG=""
+PACKAGED_SIMULATOR_TAG=""
+_NEXUS_VERSIONS="${SCRIPT_DIR}/images/nexus/versions.env"
+if [ -f "$_NEXUS_VERSIONS" ]; then
+    PACKAGED_BACKEND_TAG=$(. "$_NEXUS_VERSIONS" >/dev/null 2>&1; echo "${BACKEND_TAG:-}")
+    PACKAGED_FRONTEND_TAG=$(. "$_NEXUS_VERSIONS" >/dev/null 2>&1; echo "${FRONTEND_TAG:-}")
+fi
+_BSS_VERSIONS="${SCRIPT_DIR}/images/bssmagic/versions.env"
+if [ -f "$_BSS_VERSIONS" ]; then
+    PACKAGED_BSSMAGIC_TAG=$(. "$_BSS_VERSIONS" >/dev/null 2>&1; echo "${BSSMAGIC_TAG:-}")
+fi
+_AI_ENGINE_VERSIONS="${SCRIPT_DIR}/images/nexus-ai-engine/versions.env"
+if [ -f "$_AI_ENGINE_VERSIONS" ]; then
+    PACKAGED_AI_ENGINE_API_TAG=$(. "$_AI_ENGINE_VERSIONS" >/dev/null 2>&1; echo "${AI_ENGINE_API_TAG:-}")
+    PACKAGED_AI_ENGINE_UI_TAG=$(. "$_AI_ENGINE_VERSIONS" >/dev/null 2>&1; echo "${AI_ENGINE_UI_TAG:-}")
+fi
+_SRE_VERSIONS="${SCRIPT_DIR}/images/nexus-sre/versions.env"
+if [ -f "$_SRE_VERSIONS" ]; then
+    PACKAGED_SRE_BACKEND_TAG=$(. "$_SRE_VERSIONS" >/dev/null 2>&1; echo "${SRE_BACKEND_TAG:-}")
+    PACKAGED_SRE_UI_TAG=$(. "$_SRE_VERSIONS" >/dev/null 2>&1; echo "${SRE_UI_TAG:-}")
+    PACKAGED_SRE_POSTGRES_TAG=$(. "$_SRE_VERSIONS" >/dev/null 2>&1; echo "${SRE_POSTGRES_TAG:-}")
+fi
+_ONTOLOGY_VERSIONS="${SCRIPT_DIR}/images/nexus-ontology/versions.env"
+if [ -f "$_ONTOLOGY_VERSIONS" ]; then
+    PACKAGED_ONTOLOGY_API_TAG=$(. "$_ONTOLOGY_VERSIONS" >/dev/null 2>&1; echo "${ONTOLOGY_API_TAG:-}")
+    PACKAGED_ONTOLOGY_UI_TAG=$(. "$_ONTOLOGY_VERSIONS" >/dev/null 2>&1; echo "${ONTOLOGY_UI_TAG:-}")
+fi
+_SIMULATOR_VERSIONS="${SCRIPT_DIR}/images/nexus-simulator/versions.env"
+if [ -f "$_SIMULATOR_VERSIONS" ]; then
+    PACKAGED_SIMULATOR_TAG=$(. "$_SIMULATOR_VERSIONS" >/dev/null 2>&1; echo "${SIMULATOR_TAG:-}")
+fi
+unset _NEXUS_VERSIONS _BSS_VERSIONS _AI_ENGINE_VERSIONS _SRE_VERSIONS _ONTOLOGY_VERSIONS _SIMULATOR_VERSIONS
 
 # Expand "all" / "sre-all" / "ai-engine-all" into ordered lists.
 #
@@ -174,6 +226,7 @@ done
 case "$COMPONENTS" in
     *sre-all*)        COMPONENTS="sre-postgres sre-backend sre-ui" ;;
     *ai-engine-all*)  COMPONENTS="ai-engine-api ai-engine-ui" ;;
+    *ontology-all*)  COMPONENTS="ontology-api ontology-ui" ;;
     *all*)            COMPONENTS="bssmagic backend frontend" ;;
 esac
 
@@ -189,6 +242,9 @@ resource_name() {
         sre-postgres)    echo "nexus-sre-postgres" ;;
         ai-engine-api)   echo "nexus-ai-engine" ;;
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
+        ontology-api)    echo "${CAPABILITY}-${ENV}-backend" ;;
+        ontology-ui)     echo "${CAPABILITY}-${ENV}-frontend" ;;
+        simulator)       echo "nexus-simulator" ;;
         *)               echo "${CAPABILITY}-${ENV}-${1}" ;;
     esac
 }
@@ -210,6 +266,9 @@ ecr_repo() {
         sre-postgres)    echo "nexus-sre-postgres" ;;
         ai-engine-api)   echo "nexus-ai-engine-api" ;;
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
+        ontology-api)    echo "nexus-ontology-api" ;;
+        ontology-ui)     echo "nexus-ontology-ui" ;;
+        simulator)       echo "nexus-simulator" ;;
     esac
 }
 
@@ -223,6 +282,9 @@ container_name() {
         sre-postgres)    echo "postgres" ;;
         ai-engine-api)   echo "server" ;;
         ai-engine-ui)    echo "ui" ;;
+        ontology-api)    echo "backend" ;;
+        ontology-ui)     echo "frontend" ;;
+        simulator)       echo "server" ;;
     esac
 }
 
@@ -236,6 +298,9 @@ health_check_cmd() {
         sre-postgres)    echo "pg_isready -U nexus -d nexus_sre -q 2>/dev/null || echo fail" ;;
         ai-engine-api)   echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
         ai-engine-ui)    echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
+        ontology-api)    echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
+        ontology-ui)     echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
+        simulator)       echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
     esac
 }
 
@@ -249,18 +314,32 @@ target_version_for() {
         sre-postgres)    _tv="${SRE_POSTGRES_VERSION:-${TARGET_VERSION}}" ;;
         ai-engine-api)   _tv="${AI_ENGINE_API_VERSION:-${TARGET_VERSION}}" ;;
         ai-engine-ui)    _tv="${AI_ENGINE_UI_VERSION:-${TARGET_VERSION}}" ;;
+        ontology-api)    _tv="${ONTOLOGY_API_VERSION:-${TARGET_VERSION}}" ;;
+        ontology-ui)     _tv="${ONTOLOGY_UI_VERSION:-${TARGET_VERSION}}" ;;
+        simulator)       _tv="${SIMULATOR_VERSION:-${TARGET_VERSION}}" ;;
         *)               _tv="" ;;
     esac
     if [ -n "$_tv" ]; then
         echo "$_tv"
         return
     fi
-    # No explicit version: in rollback mode the dedicated path resolves the
-    # target separately; --restart-only opts out of auto-detect; otherwise
-    # fall back to the most recently pushed versioned tag in ECR so the
-    # planning table and Phase 0/1 drive a real upgrade by default.
+    # No explicit version: rollback/restart-only opt out; else prefer packaged
+    # tags from images/*/versions.env, then ECR auto-detect.
     [ "$ROLLBACK_MODE" = "1" ] && return
     [ "$RESTART_ONLY" = "1" ] && return
+    case "$1" in
+        backend)  [ -n "$PACKAGED_BACKEND_TAG" ]  && { echo "$PACKAGED_BACKEND_TAG";  return; } ;;
+        frontend) [ -n "$PACKAGED_FRONTEND_TAG" ] && { echo "$PACKAGED_FRONTEND_TAG"; return; } ;;
+        bssmagic) [ -n "$PACKAGED_BSSMAGIC_TAG" ] && { echo "$PACKAGED_BSSMAGIC_TAG"; return; } ;;
+        ai-engine-api)  [ -n "$PACKAGED_AI_ENGINE_API_TAG" ]  && { echo "$PACKAGED_AI_ENGINE_API_TAG";  return; } ;;
+        ai-engine-ui)   [ -n "$PACKAGED_AI_ENGINE_UI_TAG" ]   && { echo "$PACKAGED_AI_ENGINE_UI_TAG";   return; } ;;
+        sre-backend)    [ -n "$PACKAGED_SRE_BACKEND_TAG" ]    && { echo "$PACKAGED_SRE_BACKEND_TAG";    return; } ;;
+        sre-ui)         [ -n "$PACKAGED_SRE_UI_TAG" ]         && { echo "$PACKAGED_SRE_UI_TAG";         return; } ;;
+        sre-postgres)   [ -n "$PACKAGED_SRE_POSTGRES_TAG" ]   && { echo "$PACKAGED_SRE_POSTGRES_TAG";   return; } ;;
+        ontology-api)   [ -n "$PACKAGED_ONTOLOGY_API_TAG" ]   && { echo "$PACKAGED_ONTOLOGY_API_TAG";   return; } ;;
+        ontology-ui)    [ -n "$PACKAGED_ONTOLOGY_UI_TAG" ]    && { echo "$PACKAGED_ONTOLOGY_UI_TAG";    return; } ;;
+        simulator)      [ -n "$PACKAGED_SIMULATOR_TAG" ]      && { echo "$PACKAGED_SIMULATOR_TAG";      return; } ;;
+    esac
     latest_versioned_ecr_tag "$1"
 }
 
@@ -316,6 +395,9 @@ component_label() {
         bssmagic) echo "BSS Magic" ;;
         ai-engine-api) echo "AI Engine API" ;;
         ai-engine-ui)  echo "AI Engine UI" ;;
+        ontology-api) echo "Ontology API" ;;
+        ontology-ui)  echo "Ontology UI" ;;
+        simulator)    echo "Simulator" ;;
         *)             echo "$1" ;;
     esac
 }
@@ -453,18 +535,19 @@ get_previous_version_annotation() {
 }
 
 get_ecr_registry() {
-    ACCOUNT_ID=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query Account --output text 2>/dev/null || echo "")
-    if [ -z "$ACCOUNT_ID" ]; then
-        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+    if [ -n "${ECR_REGISTRY:-}" ]; then
+        echo "${ECR_REGISTRY}"
+        return 0
     fi
+    ACCOUNT_ID=$(nexus_aws_account_id)
     echo "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 }
 
 verify_image_exists() {
     _repo="$1"
     _tag="$2"
-    aws ecr describe-images --repository-name "${_repo}" --image-ids "imageTag=${_tag}" \
-        --region "${REGION}" --profile "${AWS_PROFILE}" > /dev/null 2>&1
+    aws_cli ecr describe-images --repository-name "${_repo}" --image-ids "imageTag=${_tag}" \
+        --region "${REGION}" > /dev/null 2>&1
 }
 
 # Per-component cache for ECR auto-detect (POSIX sh; no associative arrays).
@@ -601,6 +684,12 @@ fi
 [ -n "$BACKEND_VERSION" ] && printf "  Backend:   ${BOLD}${BACKEND_VERSION}${RESET}\n"
 [ -n "$FRONTEND_VERSION" ] && printf "  Frontend:  ${BOLD}${FRONTEND_VERSION}${RESET}\n"
 [ -n "$BSSMAGIC_VERSION" ] && printf "  BSS Magic: ${BOLD}${BSSMAGIC_VERSION}${RESET}\n"
+if [ -n "$PACKAGED_BACKEND_TAG" ] || [ -n "$PACKAGED_FRONTEND_TAG" ] || [ -n "$PACKAGED_BSSMAGIC_TAG" ]; then
+    printf "Packaged:    ${DIM}(from images/nexus/versions.env)${RESET}\n"
+    [ -n "$PACKAGED_BACKEND_TAG" ]  && printf "  Backend:   ${BOLD}%s${RESET}\n" "$PACKAGED_BACKEND_TAG"
+    [ -n "$PACKAGED_FRONTEND_TAG" ] && printf "  Frontend:  ${BOLD}%s${RESET}\n" "$PACKAGED_FRONTEND_TAG"
+    [ -n "$PACKAGED_BSSMAGIC_TAG" ] && printf "  BSS Magic: ${BOLD}%s${RESET}\n" "$PACKAGED_BSSMAGIC_TAG"
+fi
 if [ -z "$TARGET_VERSION" ] && [ -z "$BACKEND_VERSION" ] && [ -z "$FRONTEND_VERSION" ] \
     && [ -z "$BSSMAGIC_VERSION" ] && [ "$ROLLBACK_MODE" = "0" ] && [ "$RESTART_ONLY" = "0" ]; then
     printf "Target:      ${BOLD}ECR latest${RESET} ${DIM}(auto-detected; pass --version to pin or --restart-only to skip)${RESET}\n"
@@ -759,14 +848,18 @@ if [ "$DIAGNOSTICS_ONLY" = "0" ]; then
             printf "  Target:   ${BOLD}%s${RESET}\n" "${comp_version}"
 
             if [ "$DRY_RUN" = "0" ]; then
-                log_info "Verifying image ${repo}:${comp_version} exists in ECR..."
-                if ! verify_image_exists "$repo" "$comp_version"; then
-                    log_fail "Image ${repo}:${comp_version} NOT FOUND in ECR"
-                    log_info "Available tags: sh app-rollout.sh --list-versions ${comp}"
-                    OVERALL_EXIT=1
-                    continue
+                if [ "$SKIP_ECR_VERIFY" = "1" ]; then
+                    log_info "Skipping ECR verify (--skip-ecr-verify; image assumed present)"
+                else
+                    log_info "Verifying image ${repo}:${comp_version} exists in ECR..."
+                    if ! verify_image_exists "$repo" "$comp_version"; then
+                        log_fail "Image ${repo}:${comp_version} NOT FOUND in ECR"
+                        log_info "Available tags: sh app-rollout.sh --list-versions ${comp}"
+                        OVERALL_EXIT=1
+                        continue
+                    fi
+                    log_ok "Image verified in ECR"
                 fi
-                log_ok "Image verified in ECR"
             fi
 
             full_image="${ECR_REGISTRY}/${repo}:${comp_version}"
@@ -871,59 +964,65 @@ if [ "$DIAGNOSTICS_ONLY" = "0" ]; then
             log_ok "Version annotation updated (rolled back to ${comp_version})"
         fi
 
-        log_info "Verifying pod readiness..."
-        _hash=$(latest_rs_hash "$comp")
-        _wait_selector="app=${name}"
-        [ -n "$_hash" ] && _wait_selector="${_wait_selector},pod-template-hash=${_hash}"
-        if ! run_cmd "kubectl wait --for=condition=ready pod -l ${_wait_selector} -n ${NAMESPACE} --timeout=120s" && [ "$DRY_RUN" = "0" ]; then
-            log_warn "Pod readiness wait timed out"
-        else
-            [ "$DRY_RUN" = "0" ] && log_ok "Pod(s) ready"
-        fi
-
-        # HTTP/TCP health poll
-        if [ "$DRY_RUN" = "0" ]; then
-            pod=$(get_pod "$comp")
-            if [ -n "$pod" ]; then
-                hc=$(health_check_cmd "$comp")
-                _hc_container=$(container_name "$comp")
-                log_info "Health-checking ${comp} pod (${pod})..."
-                attempts=0
-                max_attempts=12
-                while [ $attempts -lt $max_attempts ]; do
-                    if [ -n "$_hc_container" ]; then
-                        result=$(kubectl exec "$pod" -n "$NAMESPACE" -c "$_hc_container" -- sh -c "$hc" 2>/dev/null) && break
-                    else
-                        result=$(kubectl exec "$pod" -n "$NAMESPACE" -- sh -c "$hc" 2>/dev/null) && break
-                    fi
-                    attempts=$((attempts + 1))
-                    sleep 5
-                done
-                if [ $attempts -lt $max_attempts ]; then
-                    log_ok "Health check passed for ${comp}"
-                else
-                    log_warn "Health check did not pass after ${max_attempts} attempts"
-                    if [ "$AUTO_ROLLBACK" = "1" ] && [ -n "$comp_version" ]; then
-                        log_phase "Auto-rollback (health failure) for ${comp}"
-                        if kubectl rollout undo "${kind}/${name}" -n "$NAMESPACE" 2>/dev/null; then
-                            kubectl rollout status "${kind}/${name}" -n "$NAMESPACE" --timeout=120s 2>/dev/null || true
-                            if [ -n "$current_version" ] && [ "$current_version" != "unknown" ]; then
-                                annotate_version "$comp" "$current_version" "$comp_version"
-                            fi
-                            log_warn "Rolled back due to health check failure"
-                        fi
-                        OVERALL_EXIT=1
-                        continue
-                    fi
-                fi
+        # When --skip-diagnostics is set, trust kubectl rollout status (Deployment
+        # Ready condition) and skip redundant pod wait + exec health polling.
+        if [ "$SKIP_DIAGNOSTICS" = "0" ]; then
+            log_info "Verifying pod readiness..."
+            _hash=$(latest_rs_hash "$comp")
+            _wait_selector="app=${name}"
+            [ -n "$_hash" ] && _wait_selector="${_wait_selector},pod-template-hash=${_hash}"
+            if ! run_cmd "kubectl wait --for=condition=ready pod -l ${_wait_selector} -n ${NAMESPACE} --timeout=120s" && [ "$DRY_RUN" = "0" ]; then
+                log_warn "Pod readiness wait timed out"
             else
-                log_warn "No running pod found for ${comp}"
+                [ "$DRY_RUN" = "0" ] && log_ok "Pod(s) ready"
+            fi
+
+            # HTTP/TCP health poll
+            if [ "$DRY_RUN" = "0" ]; then
+                pod=$(get_pod "$comp")
+                if [ -n "$pod" ]; then
+                    hc=$(health_check_cmd "$comp")
+                    _hc_container=$(container_name "$comp")
+                    log_info "Health-checking ${comp} pod (${pod})..."
+                    attempts=0
+                    max_attempts=12
+                    while [ $attempts -lt $max_attempts ]; do
+                        if [ -n "$_hc_container" ]; then
+                            result=$(kubectl exec "$pod" -n "$NAMESPACE" -c "$_hc_container" -- sh -c "$hc" 2>/dev/null) && break
+                        else
+                            result=$(kubectl exec "$pod" -n "$NAMESPACE" -- sh -c "$hc" 2>/dev/null) && break
+                        fi
+                        attempts=$((attempts + 1))
+                        sleep 5
+                    done
+                    if [ $attempts -lt $max_attempts ]; then
+                        log_ok "Health check passed for ${comp}"
+                    else
+                        log_warn "Health check did not pass after ${max_attempts} attempts"
+                        if [ "$AUTO_ROLLBACK" = "1" ] && [ -n "$comp_version" ]; then
+                            log_phase "Auto-rollback (health failure) for ${comp}"
+                            if kubectl rollout undo "${kind}/${name}" -n "$NAMESPACE" 2>/dev/null; then
+                                kubectl rollout status "${kind}/${name}" -n "$NAMESPACE" --timeout=120s 2>/dev/null || true
+                                if [ -n "$current_version" ] && [ "$current_version" != "unknown" ]; then
+                                    annotate_version "$comp" "$current_version" "$comp_version"
+                                fi
+                                log_warn "Rolled back due to health check failure"
+                            fi
+                            OVERALL_EXIT=1
+                            continue
+                        fi
+                    fi
+                else
+                    log_warn "No running pod found for ${comp}"
+                fi
             fi
         fi
 
-        printf "  ${DIM}Pod status:${RESET}\n"
-        run_cmd "kubectl get pods -l app=${name} -n ${NAMESPACE} -o wide 2>/dev/null | sed 's/^/    /'"
-        echo ""
+        if [ "$SKIP_DIAGNOSTICS" = "0" ]; then
+            printf "  ${DIM}Pod status:${RESET}\n"
+            run_cmd "kubectl get pods -l app=${name} -n ${NAMESPACE} -o wide 2>/dev/null | sed 's/^/    /'"
+            echo ""
+        fi
     done
 fi
 

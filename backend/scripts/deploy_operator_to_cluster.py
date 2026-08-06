@@ -187,8 +187,8 @@ class OperatorDeployer:
             response = eks_client.describe_cluster(name=self.cluster_name)
             cluster = response['cluster']
             
-            # Build kubeconfig entry
-            kubeconfig_path = os.path.expanduser('~/.kube/config')
+            # Build kubeconfig entry (respect project-local KUBECONFIG from kube-operator scripts)
+            kubeconfig_path = os.environ.get('KUBECONFIG') or os.path.expanduser('~/.kube/config')
             os.makedirs(os.path.dirname(kubeconfig_path), exist_ok=True)
             
             import yaml

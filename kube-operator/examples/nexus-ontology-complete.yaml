@@ -1,0 +1,68 @@
+# Nexus Ontology — first-time deploy via operator (NexusCapability CR)
+#
+#   ./operator.sh deploy
+#   ./deploy-capability.sh --product ontology --env dev
+#
+# Dev iteration:  ./deploy-app-changes.sh ontology --env dev
+# Prod rollout:   ./app-rollout.sh --capability ontology --env prod ontology-all
+#
+# Images:
+#   __ECR_REGISTRY__/nexus-ontology-api:<tag>
+#   __ECR_REGISTRY__/nexus-ontology-ui:<tag>
+#
+# Namespace: ontology-dev | ontology-prod
+
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: ontology-__ENV__
+  namespace: ontology-__ENV__
+  labels:
+    app.kubernetes.io/name: nexus-ontology
+    nexus.ai/capability: ontology
+    nexus.ai/environment: __ENV__
+spec:
+  capabilityName: ontology
+  version: "0.1.0"
+  environment: __ENV__
+  region: us-east-1
+  enableCognito: true
+  adminEmail: "admin@nexus.ai"
+  adminPassword: "Pass123!"
+  deletionPolicy: Retain
+
+  dataServices:
+    dynamodb:
+      enabled: false
+    s3:
+      enabled: false
+    glue:
+      enabled: false
+
+  backend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ontology-api:latest"
+
+  frontend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ontology-ui:latest"
+
+  bssmagic:
+    enabled: false
+
+  ingress:
+    enabled: true
+    scheme: internet-facing
+    healthCheckPath: /
+    # certificateArn: "arn:aws:acm:..."
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

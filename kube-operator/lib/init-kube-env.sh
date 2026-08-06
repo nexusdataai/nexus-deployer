@@ -9,6 +9,18 @@
 #   NEXUS_FORCE_LOCAL_KUBECONFIG=1 ./inspect-capability.sh --local
 
 if [ -n "${NEXUS_KUBE_ENV_INITIALIZED:-}" ]; then
+    # Parent script may have initialized kube env without loading aws-cli helpers.
+    if [ -n "${SCRIPT_DIR:-}" ] && [ -z "${NEXUS_AWS_LOGIN_DIR:-}" ]; then
+        _AWS_LOGIN_DIR="$(cd "${SCRIPT_DIR}/../aws-login" && pwd)"
+        # shellcheck source=../../aws-login/lib/kube-env.sh
+        . "${_AWS_LOGIN_DIR}/lib/kube-env.sh"
+        nexus_kube_env_init "${_AWS_LOGIN_DIR}"
+        unset _AWS_LOGIN_DIR
+    fi
+    if [ -n "${SCRIPT_DIR:-}" ] && ! type nexus_aws_account_id >/dev/null 2>&1; then
+        # shellcheck source=aws-cli.sh
+        . "${SCRIPT_DIR}/lib/aws-cli.sh"
+    fi
     return 0 2>/dev/null || exit 0
 fi
 
@@ -26,6 +38,8 @@ _AWS_LOGIN_DIR="$(cd "${SCRIPT_DIR}/../aws-login" && pwd)"
 # shellcheck source=../../aws-login/lib/kube-env.sh
 . "${_AWS_LOGIN_DIR}/lib/kube-env.sh"
 nexus_kube_env_init "${_AWS_LOGIN_DIR}"
+# shellcheck source=aws-cli.sh
+. "${SCRIPT_DIR}/lib/aws-cli.sh"
 
 export NEXUS_KUBE_ENV_INITIALIZED=1
 unset _AWS_LOGIN_DIR

@@ -1,234 +1,315 @@
-
 #!/bin/bash
 #
-# Deploy App Changes
-# Rebuilds and deploys backend + frontend images, restarts pods
+# deploy-app-changes.sh — Fast dev deploy path for Nexus product repos
+#
+# First-time deploy: operator + examples/*-complete.yaml descriptor
+# Dev iteration:     this script (build → ECR push → app-rollout)
+#
+# Products:
+#   nexus-ai      nexus-backend + nexus-ui (default)
+#   ai-engine     nexus-ai-engine API + UI
+#   sre           nexus-sre backend + UI (+ --postgres for postgres image)
+#   ontology      nexus-ontology API + UI
+#   simulator     nexus-simulator reference server
 #
 # Usage:
-#   ./deploy-app-changes.sh                        # Uses .env.local defaults (or dev if absent)
-#   ./deploy-app-changes.sh --env prod             # Deploy to prod (nexus-test)
-#   ./deploy-app-changes.sh --env stage            # Deploy to stage (nexus-stage)
-#   ./deploy-app-changes.sh --env dev --cluster X  # Deploy dev to custom cluster
+#   ./deploy-app-changes.sh ai-engine --env dev
+#   ./deploy-app-changes.sh --product sre --backend --env dev
+#   ./deploy-app-changes.sh ontology --ui --dry-run
+#   ./deploy-app-changes.sh                          # nexus-ai, auto-detect
 #
-# Reads defaults from .env.local (ENV, Branch, Cluster). CLI args override.
-#
-# Location: /opt/mycode/nexus/nexus-deployer/kube-operator/
-# Run from: This directory or anywhere
+# Options:
+#   PRODUCT             Positional product name (or --product NAME)
+#   --product NAME      nexus-ai | ai-engine | sre | ontology | simulator
+#   --env ENV           dev | stage | prod
+#   --cluster NAME      EKS cluster (default: .env.local Cluster= or nexus-{env})
+#   --namespace NS      Override target Kubernetes namespace
+#   --backend|--api     Force backend/API/server component
+#   --frontend|--ui     Force frontend/UI component
+#   --postgres          Force SRE postgres image (sre product only)
+#   --all|--both        Force all default components for the product
+#   --bump TYPE         patch | minor | major (default: patch)
+#   -m, --message MSG   Git commit message
+#   --commit            Commit before build (default: on)
+#   --no-commit         Skip git commits
+#   --push              Push commits after --commit
+#   --no-cache          docker build --no-cache
+#   --skip-build        Rollout only (tags from images/*/versions.env)
+#   --skip-rollout      Build + push only
+#   --sequential        Disable parallel build/rollout
+#   --conservative-rollout  Skip maxSurge strategy patch
+#   --dry-run           Show plan only
+#   --help              Show help
 
-set -eo pipefail
+set -euo pipefail
 
-# Optional: enable BuildKit if docker buildx is available (faster; otherwise legacy builder)
 if docker buildx version >/dev/null 2>&1; then
     export DOCKER_BUILDKIT=1
 fi
 
-# Determine directories relative to script location
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+dac_log_step() { printf "\n${CYAN}── %s ──${NC}\n" "$1"; }
+dac_log_ok()   { printf "${GREEN}✓${NC} %s\n" "$1"; }
+dac_log_warn() { printf "${YELLOW}!${NC} %s\n" "$1"; }
+dac_log_fail() { printf "${RED}✗${NC} %s\n" "$1"; }
+dac_log_info() { printf "  %s\n" "$1"; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/init-kube-env.sh
 . "${SCRIPT_DIR}/lib/init-kube-env.sh"
+# shellcheck source=lib/deploy-app-changes-common.sh
+. "${SCRIPT_DIR}/lib/deploy-app-changes-common.sh"
+# shellcheck source=lib/deploy-app-changes-products.sh
+. "${SCRIPT_DIR}/lib/deploy-app-changes-products.sh"
+
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NEXUS_ROOT="$(cd "$DEPLOYER_ROOT/.." && pwd)"
+REGION="${REGION:-us-east-1}"
 
-BACKEND_DIR="${NEXUS_ROOT}/nexus-backend"
-FRONTEND_DIR="${NEXUS_ROOT}/nexus-ui"
-DOCS_VENV="${DOCS_VENV:-/tmp/docs-venv}"
+_env_local="${SCRIPT_DIR}/.env.local"
+[ -f "$_env_local" ] && . "$_env_local"
 
-# Load defaults from .env.local (CLI args and env vars override these)
-_ENVLOCAL="${SCRIPT_DIR}/.env.local"
-_ENV_LOCAL_ENV=""
-_ENV_LOCAL_BRANCH=""
-_ENV_LOCAL_CLUSTER=""
-if [ -f "$_ENVLOCAL" ]; then
-    # grep returns 1 when key missing — must not abort under set -e
-    _ENV_LOCAL_ENV=$(grep '^ENV=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
-    _ENV_LOCAL_BRANCH=$(grep '^Branch=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
-    _ENV_LOCAL_CLUSTER=$(grep '^Cluster=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
-    _ENV_LOCAL_PROFILE=$(grep '^AWSProfile=' "$_ENVLOCAL" 2>/dev/null | cut -d= -f2-) || true
-fi
+PRODUCT="${PRODUCT:-nexus-ai}"
+DEPLOY_ENV="${DEPLOY_ENV:-${ENV:-dev}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${Cluster:-}}"
+NAMESPACE_OVERRIDE=""
+BUMP_TYPE="patch"
+COMMIT=true
+DO_PUSH=false
+NO_CACHE=false
+SKIP_BUILD=false
+SKIP_ROLLOUT=false
+PARALLEL=true
+FAST_ROLLOUT=true
+DRY_RUN=false
+COMMIT_MSG=""
+FORCE_BACKEND=false
+FORCE_FRONTEND=false
+FORCE_API=false
+FORCE_UI=false
+FORCE_POSTGRES=false
+FORCE_ALL=false
 
-DEPLOY_ENV="${DEPLOY_ENV:-${_ENV_LOCAL_ENV:-dev}}"
-CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-}}"
-GIT_BRANCH="${GIT_BRANCH:-${_ENV_LOCAL_BRANCH:-}}"
-AWS_PROFILE="${AWS_PROFILE:-${_ENV_LOCAL_PROFILE:-ptr-tech}}"
+show_help() {
+    sed -n '2,44p' "$0"
+    echo ""
+    echo "Products: $(dac_list_products)"
+}
 
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --env)      DEPLOY_ENV="$2"; shift 2 ;;
-        --cluster)  CLUSTER_NAME="$2"; shift 2 ;;
-        --help|-h)
-            echo "Usage: $0 [--env ENV] [--cluster NAME]"
-            echo ""
-            echo "Options:"
-            echo "  --env ENV        Target environment: dev, stage, prod (default: dev)"
-            echo "  --cluster NAME   EKS cluster name (default: from .env.local Cluster= or nexus-{env})"
-            exit 0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --product)         PRODUCT="$2"; shift 2 ;;
+        --env)             DEPLOY_ENV="$2"; shift 2 ;;
+        --cluster)         CLUSTER_NAME="$2"; shift 2 ;;
+        --namespace|-n)    NAMESPACE_OVERRIDE="$2"; shift 2 ;;
+        --backend)         FORCE_BACKEND=true; shift ;;
+        --frontend)        FORCE_FRONTEND=true; shift ;;
+        --api)             FORCE_API=true; shift ;;
+        --ui)              FORCE_UI=true; shift ;;
+        --postgres)        FORCE_POSTGRES=true; shift ;;
+        --all|--both)      FORCE_ALL=true; shift ;;
+        --bump)            BUMP_TYPE="$2"; shift 2 ;;
+        -m|--message)      COMMIT_MSG="$2"; shift 2 ;;
+        --commit)          COMMIT=true; shift ;;
+        --no-commit)       COMMIT=false; shift ;;
+        --push)            DO_PUSH=true; shift ;;
+        --no-cache)        NO_CACHE=true; shift ;;
+        --skip-build)      SKIP_BUILD=true; shift ;;
+        --skip-rollout)    SKIP_ROLLOUT=true; shift ;;
+        --sequential)      PARALLEL=false; shift ;;
+        --conservative-rollout) FAST_ROLLOUT=false; shift ;;
+        --dry-run)         DRY_RUN=true; shift ;;
+        --help|-h)         show_help; exit 0 ;;
+        nexus-ai|ai-engine|nexus-ai-engine|sre|nexus-sre|ontology|nexus-ontology|simulator|nexus-simulator)
+            PRODUCT="$1"; shift ;;
+        *)
+            dac_log_fail "Unknown option: $1"
+            show_help
+            exit 1
             ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-# Derive cluster from env if not explicitly set
-if [ -z "$CLUSTER_NAME" ]; then
-    case "$DEPLOY_ENV" in
-        prod)  CLUSTER_NAME="nexus-prod" ;;
-        dev)   CLUSTER_NAME="nexus-dev" ;;
-        *)     CLUSTER_NAME="nexus-${DEPLOY_ENV}" ;;
-    esac
+case "$DEPLOY_ENV" in
+    prod)  CLUSTER_NAME="${CLUSTER_NAME:-nexus-prod}" ;;
+    dev)   CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}" ;;
+    *)     CLUSTER_NAME="${CLUSTER_NAME:-nexus-${DEPLOY_ENV}}" ;;
+esac
+
+dac_load_product "$PRODUCT" || exit 1
+dac_validate_product_repos || exit 1
+
+if [ "$DRY_RUN" = false ]; then
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE:-}" >/dev/null 2>&1 \
+        || { dac_log_fail "Failed to configure kubectl for cluster '${CLUSTER_NAME}'"; exit 1; }
 fi
 
-NAMESPACE="nexus-ai-${DEPLOY_ENV}"
+ACCOUNT_ID="$(nexus_aws_account_id)"
+if [ -z "$ACCOUNT_ID" ] && [ "$DRY_RUN" = false ]; then
+    dac_log_fail "AWS credentials not available (run: source aws-login/.active-env)"
+    exit 1
+fi
+[ -z "$ACCOUNT_ID" ] && ACCOUNT_ID="<account>"
+ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-# Preflight: paths and tools (clear errors before long Docker builds)
-for _d in "$BACKEND_DIR" "$FRONTEND_DIR"; do
-    [ -d "$_d" ] || { echo "ERROR: Directory not found: $_d"; exit 1; }
+BUILD_FLAGS=""
+[ "$NO_CACHE" = true ] && BUILD_FLAGS="--no-cache"
+
+# ── Detect components to deploy ──────────────────────────────────
+declare -A DEPLOY_COMP=()
+declare -A COMP_SPEC=()
+
+for spec in "${DAC_COMPONENTS[@]}"; do
+    id=$(dac_comp_field "$spec" 1)
+    COMP_SPEC[$id]="$spec"
 done
-for _cmd in docker aws kubectl python3; do
-    command -v "$_cmd" >/dev/null || { echo "ERROR: Required command not on PATH: $_cmd"; exit 1; }
+
+if [ "$FORCE_ALL" = true ]; then
+    for id in $(dac_default_deploy_components); do
+        DEPLOY_COMP[$id]=true
+    done
+else
+    for spec in "${DAC_COMPONENTS[@]}"; do
+        id=$(dac_comp_field "$spec" 1)
+        # Skip postgres unless explicitly forced (SRE dev default)
+        [ "$id" = postgres ] && ! dac_component_force_requested postgres && continue
+        if dac_component_force_requested "$id"; then
+            DEPLOY_COMP[$id]=true
+        elif ! dac_component_force_requested "$id" \
+            && [ "$FORCE_BACKEND" = false ] && [ "$FORCE_FRONTEND" = false ] \
+            && [ "$FORCE_API" = false ] && [ "$FORCE_UI" = false ] \
+            && [ "$FORCE_POSTGRES" = false ]; then
+            dir=$(dac_comp_field "$spec" 2)
+            k8s_name=$(dac_comp_field "$spec" 8)
+            kind=$(dac_comp_field "$spec" 9)
+            dac_component_needs_deploy "$id" "$dir" "$k8s_name" "$kind" false && DEPLOY_COMP[$id]=true
+        fi
+    done
+fi
+
+if [ "${#DEPLOY_COMP[@]}" -eq 0 ]; then
+    dac_log_ok "Nothing to deploy — working trees match cluster (use --all or component flags to force)"
+    exit 0
+fi
+
+# ── Plan ─────────────────────────────────────────────────────────
+printf "\n${BOLD}Deploy App Changes${NC}\n"
+dac_log_info "Product:      ${PRODUCT} (${DAC_PRODUCT_LABEL})"
+dac_log_info "Environment:  ${DEPLOY_ENV}"
+dac_log_info "Namespace:    ${DAC_NAMESPACE}"
+dac_log_info "Cluster:      ${CLUSTER_NAME}"
+dac_log_info "ECR:          ${ECR_REGISTRY}"
+dac_log_info "Descriptor:   ${DAC_DESCRIPTOR}"
+dac_log_info "Components:   ${!DEPLOY_COMP[*]}"
+dac_log_info "Bump:         ${BUMP_TYPE}"
+dac_log_info "Commit:       ${COMMIT}$([ "$DO_PUSH" = true ] && echo ' + push')"
+[ "$DRY_RUN" = true ] && dac_log_warn "DRY RUN — no changes will be made"
+
+declare -A COMP_TAG=()
+declare -A COMP_VER=()
+declare -A COMP_SHA=()
+DAC_VERSION_ENTRIES=()
+
+# ── Phase 1: version bump + commit ───────────────────────────────
+if [ "$SKIP_BUILD" = true ] && [ -f "${DAC_IMAGES_DIR}/versions.env" ]; then
+    dac_log_step "Phase 1: Using tags from ${DAC_IMAGES_DIR}/versions.env"
+    for id in "${!DEPLOY_COMP[@]}"; do
+        spec="${COMP_SPEC[$id]}"
+        tag_key=$(dac_comp_field "$spec" 11)
+        ver_key=$(dac_comp_field "$spec" 12)
+        tag=$(dac_load_tags_from_versions_env "$tag_key")
+        ver=$(dac_load_tags_from_versions_env "$ver_key")
+        [ -z "$ver" ] && ver="${tag%%-*}"
+        COMP_TAG[$id]="$tag"
+        COMP_VER[$id]="$ver"
+        COMP_SHA[$id]="${tag##*-}"
+        dac_log_info "${id} tag: ${tag}"
+    done
+else
+    dac_log_step "Phase 1: Version bump + git"
+    for id in "${!DEPLOY_COMP[@]}"; do
+        spec="${COMP_SPEC[$id]}"
+        dir=$(dac_comp_field "$spec" 2)
+        ver_file=$(dac_comp_field "$spec" 3)
+        cur_ver="$(dac_read_version "$dir" "$ver_file" 2>/dev/null || echo "0.1.0")"
+        new_ver="$(dac_bump_semver "$cur_ver" "$BUMP_TYPE")"
+        COMP_VER[$id]="$new_ver"
+        dac_log_info "${id} VERSION: ${cur_ver} → ${new_ver}"
+        dac_bump_version_file "$dir" "$ver_file" "$new_ver"
+        dac_git_commit_repo "$dir" "$id" "$new_ver" "$COMMIT_MSG"
+        sha="$(dac_repo_git_sha "$dir")"
+        COMP_SHA[$id]="$sha"
+        COMP_TAG[$id]="${new_ver}-${sha}"
+        dac_log_info "${id} tag: ${COMP_TAG[$id]}"
+    done
+fi
+
+# ── Phase 2: build + push ────────────────────────────────────────
+if [ "$SKIP_BUILD" = false ]; then
+    dac_log_step "Phase 2: Build + push to ECR"
+    dac_ecr_login "$ACCOUNT_ID"
+    _build_jobs=()
+    for id in "${!DEPLOY_COMP[@]}"; do
+        spec="${COMP_SPEC[$id]}"
+        local_image=$(dac_comp_field "$spec" 4)
+        ecr_repo=$(dac_comp_field "$spec" 5)
+        dir=$(dac_comp_field "$spec" 2)
+        pre_build=$(dac_comp_field "$spec" 10)
+        tag="${COMP_TAG[$id]}"
+        sha="${COMP_SHA[$id]:-}"
+        _build_jobs+=("${id}|dac_build_and_push '${local_image}' '${ecr_repo}' '${tag}' '${sha}' '${BUILD_FLAGS}' '${dir}' '${pre_build}'")
+    done
+    dac_run_parallel_jobs "build+push" "${_build_jobs[@]}" || exit 1
+
+    for spec in "${DAC_COMPONENTS[@]}"; do
+        id=$(dac_comp_field "$spec" 1)
+        tag_key=$(dac_comp_field "$spec" 11)
+        ver_key=$(dac_comp_field "$spec" 12)
+        dir=$(dac_comp_field "$spec" 2)
+        k8s_name=$(dac_comp_field "$spec" 8)
+        kind=$(dac_comp_field "$spec" 9)
+        if [ "${DEPLOY_COMP[$id]+set}" = set ]; then
+            tag="${COMP_TAG[$id]}"
+            ver="${COMP_VER[$id]}"
+        else
+            tag=$(dac_resolve_persisted_tag "$tag_key" "$dir" "0.0.0" "$k8s_name" "$kind")
+            ver="${tag%%-*}"
+        fi
+        DAC_VERSION_ENTRIES+=("${tag_key}=${tag}")
+        DAC_VERSION_ENTRIES+=("${ver_key}=${ver}")
+    done
+    dac_write_versions_env
+    [ "$DRY_RUN" = false ] && dac_log_ok "Updated ${DAC_IMAGES_DIR}/versions.env"
+else
+    dac_log_step "Phase 2: Skipped (--skip-build)"
+fi
+
+# ── Phase 3: rollout ─────────────────────────────────────────────
+if [ "$SKIP_ROLLOUT" = false ]; then
+    dac_log_step "Phase 3: Kubernetes rollout (no diagnostics)"
+    _rollout_jobs=()
+    for id in "${!DEPLOY_COMP[@]}"; do
+        spec="${COMP_SPEC[$id]}"
+        rollout_comp=$(dac_comp_field "$spec" 6)
+        version_flag=$(dac_comp_field "$spec" 7)
+        k8s_name=$(dac_comp_field "$spec" 8)
+        kind=$(dac_comp_field "$spec" 9)
+        tag="${COMP_TAG[$id]}"
+        _rollout_jobs+=("${id}|dac_rollout_component '${rollout_comp}' '${version_flag}' '${tag}' '${k8s_name}' '${kind}'")
+    done
+    dac_run_parallel_jobs "rollout" "${_rollout_jobs[@]}" || exit 1
+else
+    dac_log_step "Phase 3: Skipped (--skip-rollout)"
+fi
+
+printf "\n${GREEN}${BOLD}✓ Deploy complete (${PRODUCT})${NC}\n"
+for id in "${!DEPLOY_COMP[@]}"; do
+    dac_log_info "${id}: ${COMP_TAG[$id]}"
 done
-
-# AWS Configuration
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile "${AWS_PROFILE}")
-REGION="us-east-1"
-ECR_BACKEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ai-job-engine:latest"
-ECR_FRONTEND="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/nexus-ui:latest"
-
-# Switch kubeconfig to target cluster
-nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" 2>/dev/null \
-    || { echo "Failed to update kubeconfig for cluster '${CLUSTER_NAME}'"; exit 1; }
-
-kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1 \
-    || { echo "ERROR: Namespace '${NAMESPACE}' not found in cluster '${CLUSTER_NAME}'. Check --env or .env.local ENV=."; exit 1; }
-
-echo "================================================"
-echo "  Deploying App Changes"
-echo "================================================"
-echo ""
-echo "Environment: ${DEPLOY_ENV}"
-echo "Cluster:     ${CLUSTER_NAME}"
-echo "Namespace:   ${NAMESPACE}"
-echo "Account:     ${ACCOUNT_ID}"
-echo "Region:      ${REGION}"
-echo ""
-echo "Directories:"
-echo "  Backend:  ${BACKEND_DIR}"
-echo "  Frontend: ${FRONTEND_DIR}"
-echo ""
-
-# ECR login
-echo "Logging in to ECR..."
-aws ecr get-login-password --region ${REGION} --profile "${AWS_PROFILE}" | \
-  docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
-
-echo ""
-echo "================================================"
-echo "  Building Backend"
-echo "================================================"
-cd "${BACKEND_DIR}"
-
-echo "Building ai-job-engine..."
-docker build --no-cache -t ai-job-engine:latest .
-
-echo "Tagging for ECR..."
-docker tag ai-job-engine:latest $ECR_BACKEND
-
-echo "Pushing to ECR..."
-docker push $ECR_BACKEND
-
-echo "✅ Backend image pushed"
-
-echo ""
-echo "================================================"
-echo "  Building Documentation"
-echo "================================================"
-DOCS_DIR="${NEXUS_ROOT}/nexus-docs"
-if [ -d "$DOCS_DIR" ]; then
-    cd "$DOCS_DIR"
-    # Self-heal venv if missing, broken, or mkdocs not importable (avoids stale /tmp/docs-venv)
-    if [ ! -x "${DOCS_VENV}/bin/python" ] || ! "${DOCS_VENV}/bin/python" -c "import mkdocs" 2>/dev/null; then
-        echo "Preparing docs Python venv at ${DOCS_VENV}..."
-        rm -rf "${DOCS_VENV}"
-        python3 -m venv "${DOCS_VENV}"
-    fi
-    [ -x "${DOCS_VENV}/bin/pip" ] || { echo "ERROR: Failed to create docs venv (no pip)"; exit 1; }
-    "${DOCS_VENV}/bin/pip" install -q -r requirements.txt
-    # python -m mkdocs avoids broken console-script entrypoints after partial installs
-    "${DOCS_VENV}/bin/python" -m mkdocs build -q
-    rm -rf "${FRONTEND_DIR}/docs-site"
-    cp -r site "${FRONTEND_DIR}/docs-site"
-    echo "✅ Docs built: $(find site -name 'index.html' 2>/dev/null | wc -l) pages"
-else
-    echo "⚠️  Docs repo not found at $DOCS_DIR, creating empty docs-site"
-    mkdir -p "${FRONTEND_DIR}/docs-site"
-    echo "<html><body><h1>Documentation not available</h1></body></html>" > "${FRONTEND_DIR}/docs-site/index.html"
-fi
-
-echo ""
-echo "================================================"
-echo "  Building Frontend"
-echo "================================================"
-cd "${FRONTEND_DIR}"
-
-echo "Building nexus-ui..."
-docker build --no-cache -t nexus-ui:latest .
-
-echo "Tagging for ECR..."
-docker tag nexus-ui:latest $ECR_FRONTEND
-
-echo "Pushing to ECR..."
-docker push $ECR_FRONTEND
-
-echo "✅ Frontend image pushed"
-
-echo ""
-echo "================================================"
-echo "  Deploying to Kubernetes"
-echo "================================================"
-
-echo "Restarting backend pods..."
-kubectl delete pods -l app=${NAMESPACE}-backend -n ${NAMESPACE}
-
-echo "Restarting frontend pods..."
-kubectl delete pods -l app=${NAMESPACE}-frontend -n ${NAMESPACE}
-
-echo ""
-echo "Waiting for backend pods to be ready..."
-kubectl wait --for=condition=ready pod -l app=${NAMESPACE}-backend -n ${NAMESPACE} --timeout=300s || echo "Backend pods still starting..."
-
-echo "Waiting for frontend pods to be ready..."
-kubectl wait --for=condition=ready pod -l app=${NAMESPACE}-frontend -n ${NAMESPACE} --timeout=300s || echo "Frontend pods still starting..."
-
-echo ""
-echo "Checking pod status..."
-kubectl get pods -n ${NAMESPACE}
-
-echo ""
-echo "================================================"
-echo "  ✅ Deployment Complete! (${DEPLOY_ENV})"
-echo "================================================"
-echo ""
-
-# Show ALB URLs (public + internal if present), detect HTTPS
-ALB_HOST=$(kubectl get ingress ${NAMESPACE}-app-ingress -n ${NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-ALB_CERT=$(kubectl get ingress ${NAMESPACE}-app-ingress -n ${NAMESPACE} -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/certificate-arn}' 2>/dev/null || echo "")
-ALB_SCHEME="http"
-[ -n "$ALB_CERT" ] && ALB_SCHEME="https"
-if [ -n "$ALB_HOST" ]; then
-    echo "Public Application URL: ${ALB_SCHEME}://${ALB_HOST}"
-    echo ""
-    echo "Test endpoints:"
-    echo "  curl ${ALB_SCHEME}://${ALB_HOST}/api/v1/auth/health"
-    echo "  curl ${ALB_SCHEME}://${ALB_HOST}/"
-else
-    echo "No ALB Ingress found. Checking services..."
-    kubectl get svc -n ${NAMESPACE}
-fi
-
-INTERNAL_ALB_HOST=$(kubectl get ingress ${NAMESPACE}-internal-ingress -n ${NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-INTERNAL_CERT=$(kubectl get ingress ${NAMESPACE}-internal-ingress -n ${NAMESPACE} -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/certificate-arn}' 2>/dev/null || echo "")
-INT_SCHEME="http"
-[ -n "$INTERNAL_CERT" ] && INT_SCHEME="https"
-if [ -n "$INTERNAL_ALB_HOST" ]; then
-    echo ""
-    echo "Internal (VPC-only) URL: ${INT_SCHEME}://${INTERNAL_ALB_HOST}"
-fi
 echo ""

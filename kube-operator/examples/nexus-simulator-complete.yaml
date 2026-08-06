@@ -1,0 +1,35 @@
+# Nexus Simulator operator notes (reference server)
+#
+# First-time deploy (operator / admin):
+#   ./deploy/admin/setup-admin-role.sh --region us-east-1
+#   kubectl apply -k nexus-simulator/deploy/k8s/   # after placeholder substitution
+#
+# Pipeline (full, via kube-operator):
+#   bump-version.sh simulator patch          # when wired
+#   package-images.sh --only-simulator-images
+#   create-ecr-images.sh --only-simulator-images
+#   app-rollout.sh --namespace nexus-simulator --version <tag> simulator
+#
+# Dev iteration (fast path):
+#   ./deploy-app-changes.sh simulator --env dev
+#
+# Images:
+#   __ECR_REGISTRY__/nexus-simulator:<tag>
+#
+# Namespace: nexus-simulator (fixed)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-simulator-operator-notes
+  namespace: nexus-simulator
+  labels:
+    app.kubernetes.io/name: nexus-simulator
+    nexus.ai/capability: simulator
+data:
+  deploy.md: |
+    First time: admin IAM (simulator-role) + kubectl apply -k nexus-simulator/deploy/k8s/
+    Dev updates: ./deploy-app-changes.sh simulator --env dev
+    Health: GET /health, GET /readiness
+    Source repo: nexus-simulator/
+    K8s manifests: nexus-simulator/deploy/k8s/

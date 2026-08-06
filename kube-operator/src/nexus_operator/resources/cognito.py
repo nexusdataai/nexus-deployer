@@ -18,6 +18,10 @@ from ..utils.naming import ResourceNaming
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_ADMIN_EMAIL = "admin@nexus.ai"
+DEFAULT_ADMIN_PASSWORD = "Pass123!"
+
+
 class CognitoProvisioner:
     """Provisions Cognito User Pools and App Clients."""
     
@@ -172,72 +176,68 @@ class CognitoProvisioner:
                 else:
                     logger.warning(f"Failed to create group {group_name}: {e}")
     
-    async def _create_admin_user(self, user_pool_id: str, admin_email: str) -> Dict[str, Any]:
+    async def _create_admin_user(
+        self, user_pool_id: str, admin_email: str, admin_password: str = DEFAULT_ADMIN_PASSWORD
+    ) -> Dict[str, Any]:
         """
-        Create initial admin user in the User Pool.
-        
-        The user is created with a temporary password and added to the Admin group.
-        On first login, Cognito will force a password change (FORCE_CHANGE_PASSWORD).
+        Create or update the initial admin user with a permanent password.
         """
-        import secrets
-        import string
-        
+        admin_password = admin_password or DEFAULT_ADMIN_PASSWORD
+
         try:
-            # Check if user already exists
+            user_exists = False
             try:
                 existing = self.client.admin_get_user(
                     UserPoolId=user_pool_id,
                     Username=admin_email
                 )
+                user_exists = True
                 status = existing.get("UserStatus", "UNKNOWN")
                 logger.info(f"Admin user already exists: {admin_email} (status: {status})")
-                return {
-                    "status": "exists",
-                    "email": admin_email,
-                    "user_status": status
-                }
             except ClientError as e:
                 if e.response['Error']['Code'] != 'UserNotFoundException':
                     raise
-            
-            # Hardcoded temporary password for predictable deployments.
-            # Cognito will force a password change on first login (FORCE_CHANGE_PASSWORD).
-            # Meets Cognito policy: 8+ chars, upper, lower, number, symbol.
-            temp_password = "CallSense2026!"
-            
-            # Create the admin user
-            logger.info(f"Creating admin user: {admin_email}")
-            self.client.admin_create_user(
+
+            if not user_exists:
+                logger.info(f"Creating admin user: {admin_email}")
+                self.client.admin_create_user(
+                    UserPoolId=user_pool_id,
+                    Username=admin_email,
+                    UserAttributes=[
+                        {"Name": "email", "Value": admin_email},
+                        {"Name": "email_verified", "Value": "true"},
+                        {"Name": "name", "Value": "Admin"},
+                    ],
+                    MessageAction="SUPPRESS",
+                )
+                try:
+                    self.client.admin_add_user_to_group(
+                        UserPoolId=user_pool_id,
+                        Username=admin_email,
+                        GroupName="Admin"
+                    )
+                except ClientError as group_err:
+                    if group_err.response['Error']['Code'] != 'ResourceNotFoundException':
+                        logger.warning(f"Could not add {admin_email} to Admin group: {group_err}")
+
+            # Set permanent password (no FORCE_CHANGE_PASSWORD on login)
+            self.client.admin_set_user_password(
                 UserPoolId=user_pool_id,
                 Username=admin_email,
-                UserAttributes=[
-                    {"Name": "email", "Value": admin_email},
-                    {"Name": "email_verified", "Value": "true"},
-                    {"Name": "name", "Value": "Admin"},
-                ],
-                TemporaryPassword=temp_password,
-                MessageAction="SUPPRESS",  # Don't send email, we log the temp password
+                Password=admin_password,
+                Permanent=True,
             )
-            
-            # Add user to Admin group
-            self.client.admin_add_user_to_group(
-                UserPoolId=user_pool_id,
-                Username=admin_email,
-                GroupName="Admin"
-            )
-            
-            logger.info(f"✅ Admin user created: {admin_email}")
-            logger.info(f"   Status: FORCE_CHANGE_PASSWORD (must change on first login)")
-            logger.info(f"   Temporary password: {temp_password}")
-            logger.info(f"   Group: Admin")
-            
+
+            logger.info(f"Admin user ready: {admin_email} (permanent password set)")
+
             return {
-                "status": "created",
+                "status": "created" if not user_exists else "updated",
                 "email": admin_email,
-                "temporary_password": temp_password,
-                "user_status": "FORCE_CHANGE_PASSWORD"
+                "password": admin_password,
+                "temporary_password": admin_password,
+                "user_status": "CONFIRMED",
             }
-            
+
         except ClientError as e:
             logger.error(f"Failed to create admin user {admin_email}: {e}")
             return {
@@ -455,6 +455,7 @@ class CognitoProvisioner:
     async def provision_all(
         self,
         admin_email: str = None,
+        admin_password: str = None,
         frontend_url: str = None,
         callback_urls: List[str] = None
     ) -> Dict[str, Any]:
@@ -540,7 +541,9 @@ class CognitoProvisioner:
             
             # Step 5: Create initial admin user if email provided
             if admin_email:
-                admin_result = await self._create_admin_user(user_pool_id, admin_email)
+                admin_result = await self._create_admin_user(
+                    user_pool_id, admin_email, admin_password or DEFAULT_ADMIN_PASSWORD
+                )
                 results["admin_user"] = admin_result
             
             logger.info(f"✅ Cognito provisioning complete for {self.naming.capability_name}-{self.naming.environment}")
