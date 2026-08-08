@@ -965,6 +965,14 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         if bssmagic_service_name:
             bssmagic_url = f"{bssmagic_service_name}.{namespace}.svc.cluster.local:8000"
 
+        patch.status["phase"] = "Running"
+        patch.status["message"] = "Deployment complete"
+        patch.status["frontendUrl"] = frontend_url
+        patch.status["backendUrl"] = backend_url
+        patch.status["bssmagicUrl"] = bssmagic_url
+        patch.status["resources"] = resources
+        patch.status["steps"] = list(steps)
+
         return {
             "phase": "Running",
             "message": "Deployment complete",
