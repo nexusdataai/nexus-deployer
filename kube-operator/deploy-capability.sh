@@ -13,7 +13,7 @@
 #
 # Products:
 #   nexus-ai      Full stack (BSS Magic, Cognito, DynamoDB/S3/Glue)
-#   ontology      Backend + UI (lightweight CR)
+#   ontology      Backend + UI + DynamoDB/S3/Glue (dataServices in CR)
 #   ai-engine     Backend + UI (lightweight CR)
 #   sre           Backend + UI (lightweight CR; postgres via app-rollout)
 #   simulator     API server only (lightweight CR)

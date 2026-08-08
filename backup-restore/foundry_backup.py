@@ -338,18 +338,27 @@ def cmd_restore(args: argparse.Namespace) -> int:
         print(f"  bundle rows: {len(bundle_items)}  ({dict(bundle_counts)})")
         print()
 
-        # Connect to target table
+        # Connect to target table (optional on dry-run if table not provisioned yet)
+        table_exists = False
+        table = None
         try:
             resource = _make_client(profile, region)
             table = resource.Table(table_name)
             table.load()
+            table_exists = True
         except ClientError as e:
-            print(f"  ERROR: cannot access target table: {e}")
-            return 2
+            code = e.response.get("Error", {}).get("Code", "")
+            if args.dry_run and code == "ResourceNotFoundException":
+                print(f"  WARNING: target table not found: {table_name}")
+                print("           Dry-run continues; provision the table before a real restore.")
+                print()
+            else:
+                print(f"  ERROR: cannot access target table: {e}")
+                return 2
 
         # Compute prune set (rows present in target but not in bundle)
         prune_keys: List[Tuple[str, str]] = []
-        if args.prune:
+        if args.prune and table_exists and table is not None:
             for item in _scan_full_table(table):
                 key = (str(item.get("PK", "")), str(item.get("SK", "")))
                 if key not in bundle_keys:
@@ -359,9 +368,18 @@ def cmd_restore(args: argparse.Namespace) -> int:
         if args.dry_run:
             print()
             print("  DRY-RUN summary:")
+            print(f"    Target table:   {table_name} ({'exists' if table_exists else 'MISSING'})")
             print(f"    PutItem ops:    {len(bundle_items)}")
             print(f"    DeleteItem ops: {len(prune_keys)} (only if --prune)")
+            if not table_exists:
+                print()
+                print("  NOTE: Enable DynamoDB on the target NexusCapability and wait for")
+                print(f"        operator to create {table_name} before running without --dry-run.")
             return 0
+
+        if not table_exists or table is None:
+            print(f"  ERROR: target table not found: {table_name}")
+            return 2
 
         # Apply writes
         written = 0

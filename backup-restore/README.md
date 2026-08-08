@@ -7,6 +7,9 @@ spec's five planes.
 
 **Preferred tool: `plane_backup.py`**
 
+For context-indexed backup/restore driven by `aws-login/environments.conf`,
+use **`context-dr.sh`** (see [Context DR](#context-dr-environmentsconf-indices) below).
+
 ```bash
 python3 plane_backup.py backup --all \
     --capability nexus-ai --env prod \
@@ -38,6 +41,50 @@ post-restore hooks (simulator hydrate, Knowledge Processor run, etc.).
 Legacy tools (`foundry_backup.py`, `simulator_backup.py`) are kept for
 back-compat and still work. The sections below describe them for
 reference; new deployments should adopt `plane_backup.py`.
+
+---
+
+## Context DR (environments.conf indices)
+
+Use **`context-dr.sh`** when source and target AWS/EKS contexts are already
+registered in `aws-login/environments.conf` (via `set-context.sh`).
+
+```bash
+cd nexus-deployer/backup-restore
+
+# Full pipeline: backup source index 5, restore target index 3
+./context-dr.sh --source 5 --target 3
+
+# Dry-run restore first (backup still runs)
+./context-dr.sh --source 5 --target 3 --dry-run
+
+# Cross-capability restore (source nexus-ai-prod -> target ontology-dev)
+./context-dr.sh --source 5 --target 3 \
+  --target-capability ontology --target-env dev
+
+# Backup only (tarball under ./out/)
+./context-dr.sh --backup-only --source 5
+
+# Restore a previous tarball
+./context-dr.sh --restore-only --target 3 \
+  --input ./out/foundry-nexus-ai-prod-Nexus-AI-20260807T....tar.gz \
+  --target-capability ontology --target-env dev
+```
+
+What it does:
+
+1. Runs `set-context.sh SOURCE` (ADFS or keys per row `auth_type`)
+2. `foundry_backup.py backup` → `./out/foundry-{cap}-{env}-{label}-{timestamp}.tar.gz`
+3. Runs `set-context.sh TARGET`
+4. `foundry_backup.py restore` into `{target-capability}-{target-env}-foundry-workspace`
+
+Capability/env default from the namespace column (`nexus-ai-prod` → `nexus-ai` /
+`prod`). Override with `--target-capability` / `--target-env` when the target
+namespace differs (e.g. restore into `ontology-dev` while using context index 3).
+
+Optional `--include-simulators` also runs `simulator_backup.py` backup/restore.
+
+List configured indices: `cd ../aws-login && ./set-context.sh --list`
 
 ---
 

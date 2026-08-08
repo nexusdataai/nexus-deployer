@@ -341,6 +341,7 @@ scratch/
 backup-restore/sim-backup-dev-20260614.tar.gz
 backup-restore/sim-backup-prod-20260707.tar.gz
 backup-restore/*.tar.gz
+backup-restore/out/
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-ui.tar.gz
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-api.tar.gz
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-ui.tar.gz

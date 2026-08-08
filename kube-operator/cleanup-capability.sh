@@ -18,7 +18,7 @@
 # Usage:
 #   ./cleanup-capability.sh                          # Dry run
 #   ./cleanup-capability.sh --confirm                # Delete (interactive confirm)
-#   ./cleanup-capability.sh --env dev --confirm
+#   ./cleanup-capability.sh --product ontology --env dev --confirm
 #   ./cleanup-capability.sh --local ...              # Force profile mode in a pod
 #
 
@@ -26,6 +26,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/lib/init-kube-env.sh"
+# shellcheck source=lib/deploy-capability-products.sh
+. "${SCRIPT_DIR}/lib/deploy-capability-products.sh"
 
 _ENVLOCAL="${SCRIPT_DIR}/.env.local"
 if [ -f "$_ENVLOCAL" ]; then
@@ -38,6 +40,7 @@ CLUSTER_NAME="${CLUSTER_NAME:-${_ENV_LOCAL_CLUSTER:-nexus-test}}"
 REGION="${REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-external-access}"
 INSPECT_FORCE_LOCAL="${INSPECT_FORCE_LOCAL:-0}"
+PRODUCT="${PRODUCT:-nexus-ai}"
 CONFIRM=false
 
 GREEN='\033[0;32m'
@@ -57,6 +60,7 @@ while [[ $# -gt 0 ]]; do
         --confirm) CONFIRM=true; shift ;;
         --env)     DEPLOY_ENV="$2"; shift 2 ;;
         --cluster) CLUSTER_NAME="$2"; shift 2 ;;
+        --product) PRODUCT="$2"; shift 2 ;;
         --local)   INSPECT_FORCE_LOCAL=1; shift ;;
         --help|-h)
             echo "Full Capability Cleanup"
@@ -65,9 +69,10 @@ while [[ $# -gt 0 ]]; do
             echo "DRY RUN by default — use --confirm to actually delete."
             echo ""
             echo "Usage:"
-            echo "  $0 [--local] [--env ENV] [--cluster NAME] [--confirm]"
+            echo "  $0 [--product NAME] [--local] [--env ENV] [--cluster NAME] [--confirm]"
             echo ""
             echo "Options:"
+            echo "  --product NAME   nexus-ai | ontology | ai-engine | sre | simulator (default: nexus-ai)"
             echo "  --confirm        Actually perform deletions (required)"
             echo "  --env ENV        Target environment (default: from .env.local)"
             echo "  --cluster NAME   EKS cluster name (local mode only)"
@@ -78,6 +83,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if ! dcap_load_product "$PRODUCT"; then
+    echo "Unknown product: $PRODUCT" >&2
+    exit 1
+fi
+
+CAP="$DCP_CAPABILITY_NAME"
+NS="$DCP_NAMESPACE"
+CAP_US="${CAP//-/_}_${DEPLOY_ENV//-/_}"
+
 USE_AWS_PROFILE=1
 RUN_MODE="local"
 if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && [ "${INSPECT_FORCE_LOCAL}" != "1" ]; then
@@ -86,10 +100,6 @@ if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && [ "${INSPECT_FORCE_LOCAL}" != "1" ];
     REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-${REGION}}}"
     CLUSTER_NAME="${EKS_CLUSTER_NAME:-${CLUSTER_NAME}}"
 fi
-
-CAP="nexus-ai"
-NS="${CAP}-${DEPLOY_ENV}"
-CAP_US="${CAP//-/_}_${DEPLOY_ENV//-/_}"
 
 # Timeout wrapper for AWS CLI (prevents hanging on unreachable services)
 AWS_TIMEOUT=10
@@ -111,6 +121,7 @@ fi
 echo -e "${RED}================================================================${NC}"
 echo ""
 echo "  Mode:        ${RUN_MODE}"
+echo "  Product:     ${PRODUCT}"
 echo "  Capability:  ${CAP}"
 echo "  Environment: ${DEPLOY_ENV}"
 echo "  Namespace:   ${NS}"

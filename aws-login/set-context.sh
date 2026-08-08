@@ -58,7 +58,15 @@ Environment variables:
   ENVIRONMENTS_CONF   Path to environments registry (default: ./environments.conf)
 
 Registry format (environments.conf):
-  index|label|aws_profile|role_index|role_arn|region|cluster|namespace|context_alias
+  Legacy (ADFS, 9 fields):
+    index|label|aws_profile|role_index|role_arn|region|cluster|namespace|context_alias
+  With auth type (10 fields):
+    index|label|auth_type|aws_profile|role_index|role_arn|region|cluster|namespace|context_alias
+
+  auth_type: adfs (default) | keys
+    adfs — federated login via aws-login.sh + ADFS (.env.local)
+    keys — long-term IAM access keys via aws-iam-login.sh (.env.iam.local)
+           role_index and role_arn are ignored for keys entries
 
 Examples:
   ./set-context.sh                    # menu
@@ -118,13 +126,51 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 
 # Parse registry into parallel arrays
-declare -a REG_IDX=() REG_LABEL=() REG_PROFILE=() REG_ROLE_IDX=()
+declare -a REG_IDX=() REG_LABEL=() REG_AUTH=() REG_PROFILE=() REG_ROLE_IDX=()
 declare -a REG_ROLE_ARN=() REG_REGION=() REG_CLUSTER=() REG_NAMESPACE=() REG_CTX=()
 
-while IFS='|' read -r idx label profile role_idx role_arn region cluster namespace ctx_alias; do
-    [[ "$idx" =~ ^#.*$ || -z "${idx// /}" ]] && continue
+_normalize_auth_type() {
+    case "$1" in
+        keys|key|iam) echo "keys" ;;
+        adfs|"")      echo "adfs" ;;
+        *)
+            echo "Unknown auth_type '$1' (expected adfs or keys)" >&2
+            return 1
+            ;;
+    esac
+}
+
+while IFS='|' read -r f0 f1 f2 f3 f4 f5 f6 f7 f8 f9; do
+    [[ "$f0" =~ ^#.*$ || -z "${f0// /}" ]] && continue
+
+    # 10-field when field 3 is an auth type keyword; otherwise legacy 9-field (ADFS).
+    if [[ "$f2" =~ ^(adfs|keys|key|iam)$ ]]; then
+        idx="$f0"
+        label="$f1"
+        auth_type="$(_normalize_auth_type "$f2")" || exit 1
+        profile="$f3"
+        role_idx="$f4"
+        role_arn="$f5"
+        region="$f6"
+        cluster="$f7"
+        namespace="$f8"
+        ctx_alias="$f9"
+    else
+        idx="$f0"
+        label="$f1"
+        auth_type="adfs"
+        profile="$f2"
+        role_idx="$f3"
+        role_arn="$f4"
+        region="$f5"
+        cluster="$f6"
+        namespace="$f7"
+        ctx_alias="$f8"
+    fi
+
     REG_IDX+=("$idx")
     REG_LABEL+=("$label")
+    REG_AUTH+=("$auth_type")
     REG_PROFILE+=("$profile")
     REG_ROLE_IDX+=("$role_idx")
     REG_ROLE_ARN+=("$role_arn")
@@ -142,9 +188,10 @@ fi
 if [[ "$LIST_MODE" -eq 1 ]]; then
     echo "Configured environments ($CONFIG_FILE):"
     for i in "${!REG_IDX[@]}"; do
-        printf "  %s) %s\n     profile=%s role_index=%s region=%s cluster=%s ns=%s ctx=%s\n" \
-            "${REG_IDX[$i]}" "${REG_LABEL[$i]}" "${REG_PROFILE[$i]}" "${REG_ROLE_IDX[$i]}" \
-            "${REG_REGION[$i]}" "${REG_CLUSTER[$i]}" "${REG_NAMESPACE[$i]}" "${REG_CTX[$i]}"
+        printf "  %s) %s\n     auth=%s profile=%s role_index=%s region=%s cluster=%s ns=%s ctx=%s\n" \
+            "${REG_IDX[$i]}" "${REG_LABEL[$i]}" "${REG_AUTH[$i]}" "${REG_PROFILE[$i]}" \
+            "${REG_ROLE_IDX[$i]}" "${REG_REGION[$i]}" "${REG_CLUSTER[$i]}" \
+            "${REG_NAMESPACE[$i]}" "${REG_CTX[$i]}"
     done
     exit 0
 fi
@@ -191,6 +238,7 @@ else
 fi
 
 SEL_LABEL="${REG_LABEL[$SELECTED_POS]}"
+SEL_AUTH="${REG_AUTH[$SELECTED_POS]}"
 SEL_PROFILE="${REG_PROFILE[$SELECTED_POS]}"
 SEL_ROLE_IDX="${REG_ROLE_IDX[$SELECTED_POS]}"
 SEL_ROLE_ARN="${REG_ROLE_ARN[$SELECTED_POS]}"
@@ -207,6 +255,7 @@ fi
 
 echo ""
 echo "Selected: [$SEL_INDEX] $SEL_LABEL"
+echo "  Auth type:    $SEL_AUTH"
 echo "  AWS profile:  $SEL_PROFILE"
 echo "  Region:       $SEL_REGION"
 echo "  Cluster:      $SEL_CLUSTER"
@@ -215,27 +264,47 @@ echo "  Context:      $SEL_CTX"
 echo "  KUBECONFIG:   ${SCRIPT_DIR}/.kube/config"
 echo ""
 
-# Load ADFS credentials from .env.local
-if [[ -f "${SCRIPT_DIR}/.env.local" ]]; then
-    set -o allexport
-    # shellcheck disable=SC1091
-    source "${SCRIPT_DIR}/.env.local"
-    set +o allexport
-fi
+# Ensure profile-based auth is not overridden by stale env credentials.
+nexus_aws_clear_env_credentials
 
-# AWS login
-LOGIN_ARGS=(--profile "$SEL_PROFILE" --region "$SEL_REGION")
-if [[ -n "$SEL_ROLE_ARN" ]]; then
-    LOGIN_ARGS+=(--role-arn "$SEL_ROLE_ARN")
-else
-    LOGIN_ARGS+=(--default-role "$SEL_ROLE_IDX")
-fi
+# AWS login — branch on auth type
+case "$SEL_AUTH" in
+    keys)
+        echo "Configuring AWS from IAM access keys (.env.iam.local)..."
+        if ! "${SCRIPT_DIR}/aws-iam-login.sh" --profile "$SEL_PROFILE"; then
+            echo "AWS IAM key login failed" >&2
+            echo "  Populate ${SCRIPT_DIR}/.env.iam.local with IAM_ACCOUNT_* entries" >&2
+            echo "  whose IAM_ACCOUNT_*_PROFILE matches: $SEL_PROFILE" >&2
+            exit 1
+        fi
+        ;;
+    adfs)
+        # Load ADFS credentials from .env.local
+        if [[ -f "${SCRIPT_DIR}/.env.local" ]]; then
+            set -o allexport
+            # shellcheck disable=SC1091
+            source "${SCRIPT_DIR}/.env.local"
+            set +o allexport
+        fi
 
-echo "Logging into AWS..."
-if ! "${SCRIPT_DIR}/aws-login.sh" "${LOGIN_ARGS[@]}"; then
-    echo "AWS login failed" >&2
-    exit 1
-fi
+        LOGIN_ARGS=(--profile "$SEL_PROFILE" --region "$SEL_REGION")
+        if [[ -n "$SEL_ROLE_ARN" ]]; then
+            LOGIN_ARGS+=(--role-arn "$SEL_ROLE_ARN")
+        else
+            LOGIN_ARGS+=(--default-role "$SEL_ROLE_IDX")
+        fi
+
+        echo "Logging into AWS via ADFS..."
+        if ! "${SCRIPT_DIR}/aws-login.sh" "${LOGIN_ARGS[@]}"; then
+            echo "AWS ADFS login failed" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Unsupported auth_type: $SEL_AUTH" >&2
+        exit 1
+        ;;
+esac
 
 export AWS_PROFILE="$SEL_PROFILE"
 export AWS_REGION="$SEL_REGION"
@@ -244,6 +313,8 @@ export AWS_REGION="$SEL_REGION"
 echo ""
 echo "Updating kubeconfig..."
 nexus_kube_env_init "$SCRIPT_DIR"
+nexus_aws_clear_env_credentials
+export AWS_PROFILE="$SEL_PROFILE"
 if ! nexus_eks_update_kubeconfig "$SEL_CLUSTER" "$SEL_REGION" "$SEL_PROFILE" "$SEL_CTX"; then
     echo "aws eks update-kubeconfig failed" >&2
     exit 1
@@ -253,13 +324,14 @@ nexus_kubectl_use_context "$SEL_CTX" "$SEL_NAMESPACE"
 
 # Persist
 nexus_write_active_env "$SCRIPT_DIR" "$SEL_INDEX" "$SEL_LABEL" "$SEL_PROFILE" \
-    "$SEL_REGION" "$SEL_CLUSTER" "$SEL_NAMESPACE" "$SEL_CTX"
+    "$SEL_REGION" "$SEL_CLUSTER" "$SEL_NAMESPACE" "$SEL_CTX" "$SEL_AUTH"
 echo "$SEL_INDEX" > "$CACHE_FILE"
 
 # Export for current shell if sourced
 export AWS_PROFILE AWS_REGION KUBECONFIG
 export NEXUS_ENV_INDEX="$SEL_INDEX"
 export NEXUS_ENV_LABEL="$SEL_LABEL"
+export NEXUS_AWS_AUTH_TYPE="$SEL_AUTH"
 export NEXUS_EKS_CLUSTER="$SEL_CLUSTER"
 export NEXUS_K8S_NAMESPACE="$SEL_NAMESPACE"
 export NEXUS_K8S_CONTEXT="$SEL_CTX"
@@ -274,6 +346,8 @@ fi
 # Smoke checks
 echo ""
 echo "Smoke checks..."
+nexus_aws_clear_env_credentials
+export AWS_PROFILE="$SEL_PROFILE"
 if aws sts get-caller-identity --profile "$AWS_PROFILE" >/dev/null 2>&1; then
     ACCT=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text)
     echo "  AWS account:       $ACCT"

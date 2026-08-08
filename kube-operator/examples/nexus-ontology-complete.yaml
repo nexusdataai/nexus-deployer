@@ -33,11 +33,11 @@ spec:
 
   dataServices:
     dynamodb:
-      enabled: false
+      enabled: true
     s3:
-      enabled: false
+      enabled: true
     glue:
-      enabled: false
+      enabled: true
 
   backend:
     enabled: true

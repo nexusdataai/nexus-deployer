@@ -158,6 +158,160 @@ def _update_step(steps: List[Dict], step_name: str, status: str,
     return steps
 
 
+def _data_services_flags(spec: dict) -> Dict[str, bool]:
+    """Return which data services are enabled in the CR spec."""
+    data_services = spec.get("dataServices", {})
+    return {
+        "dynamodb": data_services.get("dynamodb", {}).get("enabled", True),
+        "s3": data_services.get("s3", {}).get("enabled", True),
+        "glue": data_services.get("glue", {}).get("enabled", True),
+    }
+
+
+def _needs_data_services_reconcile(spec: dict, status: Optional[dict]) -> bool:
+    """True when data services are enabled in spec but missing from status.resources."""
+    flags = _data_services_flags(spec)
+    resources = (status or {}).get("resources") or {}
+    if flags["dynamodb"] and not resources.get("dynamodbTables"):
+        return True
+    if flags["s3"] and not resources.get("s3Buckets"):
+        return True
+    if flags["glue"] and not resources.get("glueDatabase"):
+        return True
+    return False
+
+
+def _restart_deployments(
+    k8s: Any,
+    naming: Any,
+    namespace: str,
+    components: List[str],
+    logger_: logging.Logger,
+) -> None:
+    """Rolling restart of named deployments (e.g. after SSM / IRSA changes)."""
+    restart_annotation = {"kubectl.kubernetes.io/restartedAt": _now_iso()}
+    for dep_component in components:
+        dep_name = naming.kubernetes_deployment(dep_component)
+        try:
+            dep = k8s.apps_api.read_namespaced_deployment(name=dep_name, namespace=namespace)
+            if dep.spec.template.metadata.annotations is None:
+                dep.spec.template.metadata.annotations = {}
+            dep.spec.template.metadata.annotations.update(restart_annotation)
+            k8s.apps_api.patch_namespaced_deployment(name=dep_name, namespace=namespace, body=dep)
+            logger_.info(f"Restarted Deployment {dep_name}")
+        except ApiException as restart_err:
+            if restart_err.status != 404:
+                logger_.warning(f"Failed to restart {dep_name}: {restart_err}")
+
+
+async def _provision_data_services(
+    spec: dict,
+    naming: Any,
+    region: str,
+    resources: dict,
+    steps: List[Dict],
+    patch: kopf.Patch,
+    logger_: logging.Logger,
+) -> bool:
+    """Provision DynamoDB, S3, and Glue when enabled. Returns True if anything was provisioned."""
+    from .resources import DynamoDBProvisioner, S3Provisioner, GlueProvisioner
+
+    flags = _data_services_flags(spec)
+    provisioned = False
+
+    if flags["dynamodb"]:
+        patch.status["phase"] = "ProvisioningDataServices"
+        patch.status["message"] = "Creating DynamoDB tables..."
+        _update_step(steps, "DynamoDB", "in_progress")
+        patch.status["steps"] = list(steps)
+
+        logger_.info("Provisioning DynamoDB tables...")
+        dynamodb = DynamoDBProvisioner(naming, region)
+        results = await dynamodb.provision_all()
+        resources["dynamodbTables"] = [r["name"] for r in results if r["status"] in ["created", "exists"]]
+
+        _update_step(steps, "DynamoDB", "done", resources=resources["dynamodbTables"])
+        patch.status["steps"] = list(steps)
+        logger_.info(f"DynamoDB done: {resources['dynamodbTables']}")
+        provisioned = True
+    else:
+        _update_step(steps, "DynamoDB", "skipped")
+        patch.status["steps"] = list(steps)
+
+    if flags["s3"]:
+        patch.status["message"] = "Creating S3 buckets..."
+        _update_step(steps, "S3", "in_progress")
+        patch.status["steps"] = list(steps)
+
+        logger_.info("Provisioning S3 buckets...")
+        s3 = S3Provisioner(naming, region)
+        results = await s3.provision_all()
+        resources["s3Buckets"] = [r["name"] for r in results if r["status"] in ["created", "exists"]]
+
+        _update_step(steps, "S3", "done", resources=resources["s3Buckets"])
+        patch.status["steps"] = list(steps)
+        logger_.info(f"S3 done: {resources['s3Buckets']}")
+        provisioned = True
+    else:
+        _update_step(steps, "S3", "skipped")
+        patch.status["steps"] = list(steps)
+
+    if flags["glue"]:
+        patch.status["message"] = "Creating Glue database..."
+        _update_step(steps, "Glue", "in_progress")
+        patch.status["steps"] = list(steps)
+
+        logger_.info("Provisioning Glue database...")
+        glue = GlueProvisioner(naming, region)
+        results = await glue.provision_all()
+        glue_resources = []
+        for r in results:
+            if r["status"] in ["created", "exists"]:
+                glue_resources.append(r["name"])
+            if r["type"] == "GlueDatabase" and r["status"] in ["created", "exists"]:
+                resources["glueDatabase"] = r["name"]
+
+        _update_step(steps, "Glue", "done", resources=glue_resources)
+        patch.status["steps"] = list(steps)
+        logger_.info(f"Glue done: {glue_resources}")
+        provisioned = True
+    else:
+        _update_step(steps, "Glue", "skipped")
+        patch.status["steps"] = list(steps)
+
+    if provisioned:
+        patch.status["resources"] = resources
+
+    return provisioned
+
+
+async def _provision_ssm_parameters(
+    naming: Any,
+    region: str,
+    resources: dict,
+    steps: List[Dict],
+    patch: kopf.Patch,
+    logger_: logging.Logger,
+) -> None:
+    """Write SSM parameters that reference provisioned AWS resource names."""
+    from .resources import SSMProvisioner
+
+    patch.status["phase"] = "ProvisioningSSM"
+    patch.status["message"] = "Creating SSM parameters..."
+    _update_step(steps, "SSM", "in_progress")
+    patch.status["steps"] = list(steps)
+
+    logger_.info("Provisioning SSM parameters...")
+    ssm = SSMProvisioner(naming, region)
+    ssm_results = await ssm.provision_all(resources)
+    resources["ssmParameters"] = [r["name"] for r in ssm_results if r["status"] in ["created", "exists"]]
+
+    _update_step(steps, "SSM", "done", resources=resources["ssmParameters"])
+    patch.status["steps"] = list(steps)
+    patch.status["resources"] = resources
+    logger_.info(f"SSM done: {len(resources['ssmParameters'])} parameters")
+
+
 # ══════════════════════════════════════════════════════════════════════
 # NexusNetworkConfig handlers -- topology validation / projection
 # ══════════════════════════════════════════════════════════════════════
@@ -361,10 +515,6 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     from .utils.naming import ResourceNaming
     from .resources import (
         VPCEndpointProvisioner,
-        DynamoDBProvisioner,
-        S3Provisioner,
-        GlueProvisioner,
-        SSMProvisioner,
         SecretsProvisioner,
         KubernetesResourceCreator,
         CognitoProvisioner,
@@ -435,68 +585,17 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
 
         patch.status["steps"] = list(steps)
 
-        # ── Step 1: DynamoDB ──
+        # ── Step 1–3: DynamoDB, S3, Glue ──
         data_services = spec.get("dataServices", {})
-        
-        if data_services.get("dynamodb", {}).get("enabled", True):
-            patch.status["phase"] = "ProvisioningDataServices"
-            patch.status["message"] = "Creating DynamoDB tables..."
-            _update_step(steps, "DynamoDB", "in_progress")
-            patch.status["steps"] = list(steps)
-            
-            logger.info("Provisioning DynamoDB tables...")
-            dynamodb = DynamoDBProvisioner(naming, region)
-            results = await dynamodb.provision_all()
-            resources["dynamodbTables"] = [r["name"] for r in results if r["status"] in ["created", "exists"]]
-            
-            _update_step(steps, "DynamoDB", "done", resources=resources["dynamodbTables"])
-            patch.status["steps"] = list(steps)
-            logger.info(f"DynamoDB done: {resources['dynamodbTables']}")
-        else:
-            _update_step(steps, "DynamoDB", "skipped")
-            patch.status["steps"] = list(steps)
-        
-        # ── Step 2: S3 ──
-        if data_services.get("s3", {}).get("enabled", True):
-            patch.status["message"] = "Creating S3 buckets..."
-            _update_step(steps, "S3", "in_progress")
-            patch.status["steps"] = list(steps)
-            
-            logger.info("Provisioning S3 buckets...")
-            s3 = S3Provisioner(naming, region)
-            results = await s3.provision_all()
-            resources["s3Buckets"] = [r["name"] for r in results if r["status"] in ["created", "exists"]]
-            
-            _update_step(steps, "S3", "done", resources=resources["s3Buckets"])
-            patch.status["steps"] = list(steps)
-            logger.info(f"S3 done: {resources['s3Buckets']}")
-        else:
-            _update_step(steps, "S3", "skipped")
-            patch.status["steps"] = list(steps)
-        
-        # ── Step 3: Glue ──
-        if data_services.get("glue", {}).get("enabled", True):
-            patch.status["message"] = "Creating Glue database..."
-            _update_step(steps, "Glue", "in_progress")
-            patch.status["steps"] = list(steps)
-            
-            logger.info("Provisioning Glue database...")
-            glue = GlueProvisioner(naming, region)
-            results = await glue.provision_all()
-            glue_resources = []
-            for r in results:
-                if r["status"] in ["created", "exists"]:
-                    glue_resources.append(r["name"])
-                if r["type"] == "GlueDatabase" and r["status"] in ["created", "exists"]:
-                    resources["glueDatabase"] = r["name"]
-            
-            _update_step(steps, "Glue", "done", resources=glue_resources)
-            patch.status["steps"] = list(steps)
-            logger.info(f"Glue done: {glue_resources}")
-        else:
-            _update_step(steps, "Glue", "skipped")
-            patch.status["steps"] = list(steps)
-        
+        resources.setdefault("dynamodbTables", [])
+        resources.setdefault("s3Buckets", [])
+        resources.setdefault("glueDatabase", None)
+        resources.setdefault("ssmParameters", [])
+
+        await _provision_data_services(
+            spec, naming, region, resources, steps, patch, logger,
+        )
+
         # ── Step 4: Cognito (optional) ──
         if spec.get("enableCognito", False) or spec.get("cognito"):
             patch.status["message"] = "Provisioning Cognito User Pool..."
@@ -580,19 +679,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             patch.status["steps"] = list(steps)
         
         # ── Step 5: SSM Parameters ──
-        patch.status["phase"] = "ProvisioningSSM"
-        patch.status["message"] = "Creating SSM parameters..."
-        _update_step(steps, "SSM", "in_progress")
-        patch.status["steps"] = list(steps)
-        
-        logger.info("Provisioning SSM parameters...")
-        ssm = SSMProvisioner(naming, region)
-        ssm_results = await ssm.provision_all(resources)
-        resources["ssmParameters"] = [r["name"] for r in ssm_results if r["status"] in ["created", "exists"]]
-        
-        _update_step(steps, "SSM", "done", resources=resources["ssmParameters"])
-        patch.status["steps"] = list(steps)
-        logger.info(f"SSM done: {len(resources['ssmParameters'])} parameters")
+        await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
         
         # ── Step 6: Secrets ──
         patch.status["phase"] = "ProvisioningSecrets"
@@ -859,19 +946,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         # ── Step 14: Restart workloads if SA annotation was updated ──
         if sa_was_updated:
             logger.info("ServiceAccount IRSA annotation was updated — restarting workloads for IRSA token injection")
-            restart_annotation = {"kubectl.kubernetes.io/restartedAt": _now_iso()}
-            for dep_component in ["backend", "frontend"]:
-                dep_name = naming.kubernetes_deployment(dep_component)
-                try:
-                    dep = k8s.apps_api.read_namespaced_deployment(name=dep_name, namespace=namespace)
-                    if dep.spec.template.metadata.annotations is None:
-                        dep.spec.template.metadata.annotations = {}
-                    dep.spec.template.metadata.annotations.update(restart_annotation)
-                    k8s.apps_api.patch_namespaced_deployment(name=dep_name, namespace=namespace, body=dep)
-                    logger.info(f"Restarted Deployment {dep_name} for IRSA injection")
-                except ApiException as restart_err:
-                    if restart_err.status != 404:
-                        logger.warning(f"Failed to restart {dep_name}: {restart_err}")
+            _restart_deployments(k8s, naming, namespace, ["backend", "frontend"], logger)
             _update_step(steps, "IRSARestart", "done", resources=["Workloads restarted for IRSA token injection"])
             patch.status["steps"] = list(steps)
         
@@ -925,11 +1000,12 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
 
 
 @kopf.on.update("nexus.ai", "v1", "nexuscapabilities")
-async def update_capability(spec: dict, name: str, namespace: str, status: dict, diff: kopf.Diff, logger: logging.Logger, **kwargs):
+async def update_capability(spec: dict, name: str, namespace: str, status: dict, diff: kopf.Diff, logger: logging.Logger, patch: kopf.Patch, **kwargs):
     """
     Handle NexusCapability updates.
     
     Performs rolling updates for configuration changes.
+    Provisions data services (DynamoDB/S3/Glue/SSM) when enabled or missing from status.
     
     Requirements: 4.10
     """
@@ -960,6 +1036,19 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     changed_fields = [change[1] for change in diff]
     logger.info(f"Changed fields: {changed_fields}")
     
+    steps: List[Dict[str, Any]] = list((status or {}).get("steps") or [])
+    resources: Dict[str, Any] = dict((status or {}).get("resources") or {})
+    resources.setdefault("dynamodbTables", [])
+    resources.setdefault("s3Buckets", [])
+    resources.setdefault("glueDatabase", None)
+    resources.setdefault("ssmParameters", [])
+    resources.setdefault("secrets", resources.get("secrets") or [])
+    resources.setdefault("iamRoles", resources.get("iamRoles") or [])
+
+    data_services_changed = any("dataServices" in str(f) for f in changed_fields)
+    needs_data_reconcile = _needs_data_services_reconcile(spec, status)
+    data_services_updated = False
+    
     # Pre-compute BSS Magic service name for FDW env var injection
     bssmagic_spec = spec.get("bssmagic", {})
     bssmagic_svc = (
@@ -973,6 +1062,20 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     redis_svc = "redis-svc" if redis_spec.get("enabled", True) else None
     
     try:
+        if data_services_changed or needs_data_reconcile:
+            reason = "spec change" if data_services_changed else "missing resources in status"
+            logger.info(f"Provisioning data services ({reason})...")
+            patch.status["phase"] = "ProvisioningDataServices"
+            patch.status["message"] = f"Provisioning data services ({reason})..."
+            data_services_updated = await _provision_data_services(
+                spec, naming, region, resources, steps, patch, logger,
+            )
+            if data_services_updated or needs_data_reconcile:
+                await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+                _restart_deployments(k8s, naming, namespace, ["backend"], logger)
+                _update_step(steps, "DataServicesRestart", "done", resources=["backend restarted after data plane update"])
+                patch.status["steps"] = list(steps)
+
         # If redis config changed, update Redis deployment
         if any("redis" in str(f) for f in changed_fields):
             if redis_spec.get("enabled", True):
@@ -1047,7 +1150,11 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
             message=f"Successfully updated {capability_name}"
         )
         
-        return {"phase": "Running", "message": "Update completed"}
+        result: Dict[str, Any] = {"phase": "Running", "message": "Update completed"}
+        if data_services_updated or needs_data_reconcile:
+            result["resources"] = resources
+            result["steps"] = steps
+        return result
         
     except Exception as e:
         logger.error(f"Failed to update capability {name}: {e}")
@@ -1058,6 +1165,63 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
             message=str(e)
         )
         return {"phase": "Failed", "message": str(e)}
+
+
+@kopf.on.timer("nexus.ai", "v1", "nexuscapabilities", interval=300, initial_delay=120)
+async def reconcile_capability_data_services(
+    spec: dict,
+    name: str,
+    namespace: str,
+    status: dict,
+    logger: logging.Logger,
+    patch: kopf.Patch,
+    **kwargs,
+):
+    """Re-provision data services when enabled in spec but absent from status (e.g. after cr-lite patch)."""
+    if not _needs_data_services_reconcile(spec, status):
+        return
+
+    phase = (status or {}).get("phase", "")
+    if phase == "Failed":
+        return
+
+    from .utils.naming import ResourceNaming
+    from .resources import KubernetesResourceCreator
+
+    capability_name = spec.get("capabilityName", "")
+    environment = spec.get("environment", "")
+    region = spec.get("region", "us-east-1")
+
+    sts_client = vpc_boto3_client("sts", region_name=region)
+    account_id = sts_client.get_caller_identity()["Account"]
+    naming = ResourceNaming(capability_name, environment, account_id=account_id)
+    k8s = KubernetesResourceCreator(namespace)
+
+    steps: List[Dict[str, Any]] = list((status or {}).get("steps") or [])
+    resources: Dict[str, Any] = dict((status or {}).get("resources") or {})
+    resources.setdefault("dynamodbTables", [])
+    resources.setdefault("s3Buckets", [])
+    resources.setdefault("glueDatabase", None)
+    resources.setdefault("ssmParameters", [])
+
+    logger.info(f"Timer reconcile: provisioning missing data services for {name}")
+    patch.status["message"] = "Reconciling missing data services..."
+
+    try:
+        updated = await _provision_data_services(
+            spec, naming, region, resources, steps, patch, logger,
+        )
+        if updated:
+            await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+            _restart_deployments(k8s, naming, namespace, ["backend"], logger)
+            _update_step(steps, "DataServicesReconcile", "done", resources=["data plane reconciled"])
+            patch.status["steps"] = list(steps)
+            patch.status["phase"] = "Running"
+            patch.status["message"] = "Data services reconciled"
+            return {"resources": resources, "steps": steps, "phase": "Running"}
+    except Exception as e:
+        logger.error(f"Data services reconcile failed for {name}: {e}")
+        patch.status["message"] = f"Data services reconcile failed: {e}"
 
 
 @kopf.on.delete("nexus.ai", "v1", "nexuscapabilities")

@@ -3,7 +3,7 @@
 #
 # Deploy modes:
 #   cr-full  — NexusCapability with BSS Magic, Cognito, SSM fixes (nexus-ai)
-#   cr-lite  — NexusCapability backend+frontend only (ontology, ai-engine, …)
+#   cr-lite  — Backend+frontend via operator; data plane from CR dataServices (ontology, ai-engine, …)
 #   cr-single — NexusCapability backend only (simulator)
 
 dcap_normalize_product() {
@@ -40,7 +40,7 @@ dcap_load_product() {
             DCP_WAIT_ALB=true
             ;;
         ontology)
-            DCP_LABEL="Nexus Ontology (operator CR — API + UI)"
+            DCP_LABEL="Nexus Ontology (operator CR — API + UI + data plane)"
             DCP_MODE="cr-lite"
             DCP_CAPABILITY_NAME="ontology"
             DCP_NAMESPACE="ontology-${DEPLOY_ENV}"
