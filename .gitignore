@@ -348,3 +348,4 @@ kube-operator/images/nexus-ai-engine/nexus-ai-engine-api.tar.gz
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-ui.tar.gz
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-api.tar.gz
 kube-operator/images/nexus-ai-engine/nexus-ai-engine-api.tar.gz
+local-k3s/.cluster-info
