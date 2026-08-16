@@ -1,0 +1,49 @@
+global:
+  namespace: nexus-local
+  storageClass: local-path
+  awsRegion: us-east-1
+  localAccountId: "000000000000"
+
+minio:
+  image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+  accessKey: minioadmin
+  secretKey: minioadmin
+  persistence:
+    size: 200Gi
+
+redis:
+  image: redis:7-alpine
+  persistence:
+    size: 2Gi
+  maxmemory: 2gb
+
+ministack:
+  image: ministackorg/ministack:latest
+  persistence:
+    size: 10Gi
+
+scylla:
+  image: scylladb/scylla:5.4
+  persistence:
+    size: 80Gi
+  resources:
+    limits:
+      memory: 2Gi
+    requests:
+      memory: 1Gi
+
+trino:
+  image: trinodb/trino:451
+  coordinator:
+    resources:
+      limits:
+        memory: 4Gi
+      requests:
+        memory: 2Gi
+
+init:
+  image: python:3.12-slim
+  capabilities:
+    - ontology
+    - nexus-ai
+  environment: local

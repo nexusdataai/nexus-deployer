@@ -1,0 +1,14 @@
+# K3s server config for Nexus local dev stack.
+# Installed via: INSTALL_K3S_EXEC="server --config /path/k3s-server.yaml"
+
+write-kubeconfig-mode: "644"
+tls-san:
+  - "127.0.0.1"
+  - "localhost"
+cluster-init: true
+disable:
+  - traefik
+kubelet-arg:
+  - "eviction-hard=memory.available<500Mi"
+  - "eviction-soft=memory.available<1Gi"
+  - "eviction-soft-grace-period=memory.available=2m"

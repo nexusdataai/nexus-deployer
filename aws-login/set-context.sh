@@ -63,10 +63,12 @@ Registry format (environments.conf):
   With auth type (10 fields):
     index|label|auth_type|aws_profile|role_index|role_arn|region|cluster|namespace|context_alias
 
-  auth_type: adfs (default) | keys
-    adfs — federated login via aws-login.sh + ADFS (.env.local)
-    keys — long-term IAM access keys via aws-iam-login.sh (.env.iam.local)
-           role_index and role_arn are ignored for keys entries
+  auth_type: adfs (default) | keys | local
+    adfs  — federated login via aws-login.sh + ADFS (.env.local)
+    keys  — long-term IAM access keys via aws-iam-login.sh (.env.iam.local)
+            role_index and role_arn are ignored for keys entries
+    local — localhost K3s cluster (no AWS login; refreshes project kubeconfig)
+            aws_profile/role fields ignored; see ../local-k3s/create-local-k3s-cluster.sh
 
 Examples:
   ./set-context.sh                    # menu
@@ -131,20 +133,38 @@ declare -a REG_ROLE_ARN=() REG_REGION=() REG_CLUSTER=() REG_NAMESPACE=() REG_CTX
 
 _normalize_auth_type() {
     case "$1" in
-        keys|key|iam) echo "keys" ;;
-        adfs|"")      echo "adfs" ;;
+        keys|key|iam)  echo "keys" ;;
+        local|k3s)     echo "local" ;;
+        adfs|"")       echo "adfs" ;;
         *)
-            echo "Unknown auth_type '$1' (expected adfs or keys)" >&2
+            echo "Unknown auth_type '$1' (expected adfs, keys, or local)" >&2
             return 1
             ;;
     esac
+}
+
+_load_local_k3s_cluster_info() {
+    local info_file="${SCRIPT_DIR}/../local-k3s/.cluster-info"
+    if [[ ! -f "$info_file" ]]; then
+        return 0
+    fi
+    # shellcheck disable=SC1090
+    source "$info_file"
+    if [[ -n "${CLUSTER_NAME:-}" ]]; then
+        SEL_CLUSTER="$CLUSTER_NAME"
+    fi
+    if [[ -n "${CONTEXT:-}" ]]; then
+        SEL_CTX="$CONTEXT"
+    elif [[ -n "${CLUSTER_NAME:-}" ]]; then
+        SEL_CTX="$CLUSTER_NAME"
+    fi
 }
 
 while IFS='|' read -r f0 f1 f2 f3 f4 f5 f6 f7 f8 f9; do
     [[ "$f0" =~ ^#.*$ || -z "${f0// /}" ]] && continue
 
     # 10-field when field 3 is an auth type keyword; otherwise legacy 9-field (ADFS).
-    if [[ "$f2" =~ ^(adfs|keys|key|iam)$ ]]; then
+    if [[ "$f2" =~ ^(adfs|keys|key|iam|local|k3s)$ ]]; then
         idx="$f0"
         label="$f1"
         auth_type="$(_normalize_auth_type "$f2")" || exit 1
@@ -221,6 +241,9 @@ else
         printf "  %s%s) %s — %s @ %s (ns: %s)\n" \
             "$marker" "${REG_IDX[$i]}" "${REG_LABEL[$i]}" "${REG_CLUSTER[$i]}" \
             "${REG_REGION[$i]}" "${REG_NAMESPACE[$i]}"
+        if [[ "${REG_AUTH[$i]}" == "local" ]]; then
+            printf "       (local K3s — no AWS login)\n"
+        fi
     done
     echo ""
     read -r -p "Choice [${DEFAULT_IDX}]: " CHOICE
@@ -253,16 +276,87 @@ if [[ "$SEL_CLUSTER" == CHANGE_ME* ]]; then
     exit 1
 fi
 
+if [[ "$SEL_AUTH" == "local" ]]; then
+    _load_local_k3s_cluster_info
+fi
+
 echo ""
 echo "Selected: [$SEL_INDEX] $SEL_LABEL"
 echo "  Auth type:    $SEL_AUTH"
-echo "  AWS profile:  $SEL_PROFILE"
+if [[ "$SEL_AUTH" != "local" ]]; then
+    echo "  AWS profile:  $SEL_PROFILE"
+fi
 echo "  Region:       $SEL_REGION"
 echo "  Cluster:      $SEL_CLUSTER"
 echo "  Namespace:    $SEL_NAMESPACE"
 echo "  Context:      $SEL_CTX"
 echo "  KUBECONFIG:   ${SCRIPT_DIR}/.kube/config"
 echo ""
+
+nexus_kube_env_init "$SCRIPT_DIR"
+
+if [[ "$SEL_AUTH" == "local" ]]; then
+    echo "Connecting to local K3s cluster..."
+    if ! nexus_local_k3s_refresh_kubeconfig "$SEL_CLUSTER" "$SEL_CTX"; then
+        exit 1
+    fi
+    nexus_kubectl_use_context "$SEL_CTX" "$SEL_NAMESPACE"
+
+    nexus_write_active_env "$SCRIPT_DIR" "$SEL_INDEX" "$SEL_LABEL" "$SEL_PROFILE" \
+        "$SEL_REGION" "$SEL_CLUSTER" "$SEL_NAMESPACE" "$SEL_CTX" "$SEL_AUTH"
+    echo "$SEL_INDEX" > "$CACHE_FILE"
+
+    export AWS_PROFILE="$SEL_PROFILE"
+    export AWS_REGION="$SEL_REGION"
+    export KUBECONFIG
+    export NEXUS_ENV_INDEX="$SEL_INDEX"
+    export NEXUS_ENV_LABEL="$SEL_LABEL"
+    export NEXUS_AWS_AUTH_TYPE="$SEL_AUTH"
+    export NEXUS_EKS_CLUSTER="$SEL_CLUSTER"
+    export NEXUS_K8S_NAMESPACE="$SEL_NAMESPACE"
+    export NEXUS_K8S_CONTEXT="$SEL_CTX"
+    export NEXUS_LOCAL_K3S=1
+    export CLUSTER_NAME="$SEL_CLUSTER"
+    export REGION="$SEL_REGION"
+    export AWS_ACCESS_KEY_ID=minioadmin
+    export AWS_SECRET_ACCESS_KEY=minioadmin
+    export AWS_DEFAULT_REGION="$SEL_REGION"
+
+    if [[ "$EXPORT_MODE" -eq 1 ]]; then
+        cat "${SCRIPT_DIR}/.active-env"
+        exit 0
+    fi
+
+    echo ""
+    echo "Smoke checks..."
+    if kubectl cluster-info --kubeconfig="$KUBECONFIG" >/dev/null 2>&1; then
+        echo "  cluster-info:      OK"
+    else
+        echo "  cluster-info:      FAILED"
+    fi
+    echo "  current-context:   $(kubectl config current-context --kubeconfig="$KUBECONFIG")"
+    if kubectl get ns "$SEL_NAMESPACE" --kubeconfig="$KUBECONFIG" >/dev/null 2>&1; then
+        echo "  namespace:         $SEL_NAMESPACE (reachable)"
+    else
+        echo "  namespace:         $SEL_NAMESPACE (not reachable — deploy local stack or create ns)"
+    fi
+
+    echo ""
+    echo "Context ready: [$SEL_INDEX] $SEL_LABEL (local K3s)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ "$SOURCE_MODE" -eq 0 ]]; then
+        echo "Export in this shell:"
+        echo "  source ${SCRIPT_DIR}/.active-env"
+        echo ""
+        echo "kube-operator scripts pick this up automatically via lib/init-kube-env.sh"
+    fi
+    echo ""
+    echo "Next:"
+    echo "  kubectl get pods -n ${SEL_NAMESPACE}"
+    echo "  cd ../kube-operator && ./deploy-local-aws-stack.sh --kube-context ${SEL_CTX}"
+    echo ""
+    exit 0
+fi
 
 # Ensure profile-based auth is not overridden by stale env credentials.
 nexus_aws_clear_env_credentials

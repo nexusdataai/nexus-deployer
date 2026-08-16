@@ -1,0 +1,67 @@
+# Nexus AI — local K3s deployment (shared nexus-local AWS stack)
+#
+# Deploy:
+#   ./deploy-capability.sh --product local-nexus-ai --env local --skip-images
+
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: nexus-ai-local
+  namespace: nexus-ai-local
+  labels:
+    app.kubernetes.io/name: nexus-ai
+    nexus.ai/environment: local
+spec:
+  capabilityName: nexus-ai
+  version: "2.5.0"
+  environment: local
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
+
+  localEmulation:
+    enabled: true
+    namespace: nexus-local
+    skipCognito: true
+    skipIam: true
+    skipSsmSecrets: true
+
+  dataServices:
+    dynamodb:
+      enabled: false
+    s3:
+      enabled: false
+    glue:
+      enabled: false
+
+  frontend:
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ui:latest"
+
+  backend:
+    replicas: 1
+    image: "__ECR_REGISTRY__/ai-job-engine:latest"
+
+  bssmagic:
+    enabled: false
+
+  mimir:
+    enabled: true
+    retentionDays: 30
+    storageSize: 5Gi
+    storageClass: local-path
+
+  redis:
+    enabled: false
+
+  ingress:
+    enabled: false
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

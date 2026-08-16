@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scylla-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: scylla
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: alternator
+    - port: 9042
+      targetPort: 9042
+      name: cql
+  selector:
+    app: scylla
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scylla
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: scylla
+spec:
+  serviceName: scylla-svc
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scylla
+  template:
+    metadata:
+      labels:
+        app: scylla
+    spec:
+      containers:
+        - name: scylla
+          image: {{ .Values.scylla.image }}
+          args:
+            - --developer-mode=1
+            - --smp=1
+            - --memory=400M
+            - --overprovisioned=1
+            - --alternator-port=8000
+            - --alternator-write-isolation=always
+          ports:
+            - containerPort: 8000
+              name: alternator
+            - containerPort: 9042
+              name: cql
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.scylla.resources | nindent 12 }}
+          volumeMounts:
+            - name: scylla-data
+              mountPath: /var/lib/scylla
+  volumeClaimTemplates:
+    - metadata:
+        name: scylla-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.global.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.scylla.persistence.size }}

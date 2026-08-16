@@ -121,9 +121,15 @@ class KubernetesResourceCreator:
         environment: str = "dev",
         region: str = "us-east-1",
         use_clusterip: bool = False,
+        use_nodeport: bool = False,
         bssmagic_service: Optional[str] = None,
+        postgres_service: Optional[str] = None,
+        postgres_database: str = "ontology_cp",
+        postgres_user: str = "nexus",
+        postgres_password: str = "nexus",
         redis_service: Optional[str] = None,
         aws_access_mode: str = "higher-cost",
+        local_emulation: Optional[Dict[str, str]] = None,
     ) -> str:
         """
         Deploy backend Deployment and Service.
@@ -222,10 +228,39 @@ class KubernetesResourceCreator:
                 client.V1EnvVar(name="LEGACY_FDW_SCHEMA", value=legacy_fdw_schema),
             ])
             logger.info(f"FDW integration enabled: {bssmagic_service}:5432/bssmagic")
+
+        if postgres_service and not bssmagic_service:
+            env_vars.extend([
+                client.V1EnvVar(name="FDW_PG_HOST", value=postgres_service),
+                client.V1EnvVar(name="FDW_PG_PORT", value="5432"),
+                client.V1EnvVar(name="FDW_PG_DATABASE", value=postgres_database),
+                client.V1EnvVar(name="FDW_PG_USER", value=postgres_user),
+                client.V1EnvVar(name="FDW_PG_PASSWORD", value=postgres_password),
+                client.V1EnvVar(name="FDW_PG_SCHEMA", value="public"),
+            ])
+            logger.info(f"pgvector integration enabled: {postgres_service}:5432/{postgres_database}")
         
         if redis_service:
             env_vars.append(client.V1EnvVar(name="REDIS_URL", value=f"redis://{redis_service}:6379/0"))
             logger.info(f"Redis cache enabled: {redis_service}:6379")
+
+        if local_emulation:
+            env_vars.extend([
+                client.V1EnvVar(name="USE_LOCALSTACK", value="true"),
+                client.V1EnvVar(name="LOCALSTACK_HOST", value=local_emulation["ministack_host"]),
+                client.V1EnvVar(name="LOCALSTACK_PORT", value="4566"),
+                client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value="test"),
+                client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value="test"),
+                client.V1EnvVar(name="AWS_ENDPOINT_URL_DYNAMODB", value=local_emulation["scylla_url"]),
+                client.V1EnvVar(name="AWS_ENDPOINT_URL_S3", value=local_emulation["minio_url"]),
+                client.V1EnvVar(name="AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS", value="false"),
+            ])
+            logger.info(
+                "Local emulation enabled: MiniStack=%s Scylla=%s MinIO=%s",
+                local_emulation["ministack_host"],
+                local_emulation["scylla_url"],
+                local_emulation["minio_url"],
+            )
 
         # Grafana Mimir - time-series storage for solution four-views KPI history.
         # The cluster service is deployed by MimirProvisioner alongside this backend.
@@ -321,10 +356,18 @@ class KubernetesResourceCreator:
         
         await self._apply_deployment(deployment_name, deployment)
         
-        # Determine service type: ClusterIP for ALB Ingress, LoadBalancer otherwise
-        service_type = "ClusterIP" if use_clusterip else "LoadBalancer"
-        
-        # Create Service
+        # Determine service type: ClusterIP for ALB Ingress, NodePort for local K3s, LoadBalancer otherwise
+        if use_clusterip:
+            service_type = "ClusterIP"
+        elif use_nodeport:
+            service_type = "NodePort"
+        else:
+            service_type = "LoadBalancer"
+
+        service_ports = [client.V1ServicePort(port=8000, target_port=8000, protocol="TCP", name="http")]
+        if use_nodeport:
+            service_ports[0].node_port = 30800
+
         service = client.V1Service(
             metadata=client.V1ObjectMeta(
                 name=service_name,
@@ -334,7 +377,7 @@ class KubernetesResourceCreator:
             spec=client.V1ServiceSpec(
                 type=service_type,
                 selector={"app": deployment_name},
-                ports=[client.V1ServicePort(port=8000, target_port=8000, protocol="TCP")],
+                ports=service_ports,
             ),
         )
         
@@ -733,6 +776,108 @@ class KubernetesResourceCreator:
         logger.info(f"Deployed Redis StatefulSet: {redis_sts_name}, service: {redis_service_name}")
         return redis_service_name
 
+    async def deploy_postgres(
+        self,
+        naming: ResourceNaming,
+        image: str,
+        storage_size: str = "5Gi",
+        storage_class: Optional[str] = "gp2",
+        database: str = "ontology_cp",
+        user: str = "nexus",
+        password: str = "nexus",
+    ) -> str:
+        """
+        Deploy pgvector Postgres for AI Control Plane embeddings (semantic_rag).
+
+        Returns the Postgres service name for FDW_PG_* injection.
+        """
+        pg_sts_name = "pgvector"
+        pg_service_name = "pgvector-svc"
+
+        statefulset = client.V1StatefulSet(
+            metadata=client.V1ObjectMeta(
+                name=pg_sts_name,
+                namespace=self.namespace,
+                labels={**self._common_labels(naming, "pgvector")},
+            ),
+            spec=client.V1StatefulSetSpec(
+                replicas=1,
+                service_name=pg_service_name,
+                selector=client.V1LabelSelector(match_labels={"app": pg_sts_name}),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels={"app": pg_sts_name, **self._common_labels(naming, "pgvector")}
+                    ),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name="postgres",
+                                image=image,
+                                ports=[client.V1ContainerPort(container_port=5432, name="postgres")],
+                                env=[
+                                    client.V1EnvVar(name="POSTGRES_USER", value=user),
+                                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=password),
+                                    client.V1EnvVar(name="POSTGRES_DB", value=database),
+                                    client.V1EnvVar(name="PGDATA", value="/var/lib/postgresql/data/pgdata"),
+                                ],
+                                resources=client.V1ResourceRequirements(
+                                    requests={"cpu": "100m", "memory": "256Mi"},
+                                    limits={"cpu": "500m", "memory": "1Gi"},
+                                ),
+                                readiness_probe=client.V1Probe(
+                                    _exec=client.V1ExecAction(
+                                        command=["pg_isready", "-U", user, "-d", database]
+                                    ),
+                                    initial_delay_seconds=5,
+                                    period_seconds=10,
+                                ),
+                                liveness_probe=client.V1Probe(
+                                    _exec=client.V1ExecAction(
+                                        command=["pg_isready", "-U", user, "-d", database]
+                                    ),
+                                    initial_delay_seconds=15,
+                                    period_seconds=20,
+                                ),
+                                volume_mounts=[
+                                    client.V1VolumeMount(name="pgvector-data", mount_path="/var/lib/postgresql/data")
+                                ],
+                            )
+                        ],
+                    ),
+                ),
+                volume_claim_templates=[
+                    client.V1PersistentVolumeClaim(
+                        metadata=client.V1ObjectMeta(name="pgvector-data"),
+                        spec=client.V1PersistentVolumeClaimSpec(
+                            access_modes=["ReadWriteOnce"],
+                            resources=client.V1VolumeResourceRequirements(
+                                requests={"storage": storage_size}
+                            ),
+                            **({"storage_class_name": storage_class} if storage_class else {}),
+                        ),
+                    )
+                ],
+            ),
+        )
+        await self._apply_statefulset(pg_sts_name, statefulset)
+
+        pg_service = client.V1Service(
+            metadata=client.V1ObjectMeta(
+                name=pg_service_name,
+                namespace=self.namespace,
+                labels=self._common_labels(naming, "pgvector"),
+            ),
+            spec=client.V1ServiceSpec(
+                type="ClusterIP",
+                selector={"app": pg_sts_name},
+                ports=[client.V1ServicePort(port=5432, target_port=5432, protocol="TCP", name="postgres")],
+            ),
+        )
+        await self._apply_service(pg_service_name, pg_service)
+
+        logger.info(f"Deployed pgvector StatefulSet: {pg_sts_name}, service: {pg_service_name}")
+        return pg_service_name
+
     def _fetch_axway_env_from_secret(self, secret_name: str, region: str) -> list:
         """
         Fetch Axway config from Secrets Manager and return as K8s env vars.
@@ -771,6 +916,7 @@ class KubernetesResourceCreator:
         backend_service: Optional[str] = None,
         bssmagic_service: Optional[str] = None,
         internal_ingress_config: Optional[Dict[str, Any]] = None,
+        use_nodeport: bool = False,
     ) -> str:
         """
         Deploy frontend Deployment and Service.
@@ -902,7 +1048,16 @@ class KubernetesResourceCreator:
         # Determine service type based on ingress config
         use_ingress = ingress_config and ingress_config.get("enabled", False)
         use_internal = internal_ingress_config and internal_ingress_config.get("enabled", False)
-        service_type = "ClusterIP" if (use_ingress or use_internal) else "LoadBalancer"
+        if use_ingress or use_internal:
+            service_type = "ClusterIP"
+        elif use_nodeport:
+            service_type = "NodePort"
+        else:
+            service_type = "LoadBalancer"
+
+        frontend_ports = [client.V1ServicePort(port=8080, target_port=8080, protocol="TCP", name="http")]
+        if use_nodeport:
+            frontend_ports[0].node_port = 30808
         
         # Create Service
         service = client.V1Service(
@@ -914,7 +1069,7 @@ class KubernetesResourceCreator:
             spec=client.V1ServiceSpec(
                 type=service_type,
                 selector={"app": deployment_name},
-                ports=[client.V1ServicePort(port=8080, target_port=8080, protocol="TCP")],
+                ports=frontend_ports,
             ),
         )
         

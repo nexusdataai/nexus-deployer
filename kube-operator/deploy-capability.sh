@@ -106,6 +106,7 @@ done
 dcap_load_product "$PRODUCT" || exit 1
 [ "${DCP_SKIP_CREDS_DEFAULT:-false}" = true ] && [ "$SKIP_CREDS" = false ] && SKIP_CREDS=true
 [ "${DCP_SKIP_SSM_FIX_DEFAULT:-false}" = true ] && [ "$SKIP_SSM_FIX" = false ] && SKIP_SSM_FIX=true
+[ "${DCP_SKIP_IAM_DEFAULT:-false}" = true ] && [ "$SKIP_IAM" = false ] && SKIP_IAM=true
 
 CURRENT_ACCOUNT=$(aws_cli sts get-caller-identity --query 'Account' --output text 2>/dev/null || true)
 [ -z "$CURRENT_ACCOUNT" ] && CURRENT_ACCOUNT=$(aws sts get-caller-identity --profile "${AWS_PROFILE}" --query 'Account' --output text 2>/dev/null || true)
@@ -118,15 +119,21 @@ if [ "$CLUSTER_EXPLICIT" = false ] && [ -z "$CLUSTER_NAME" ]; then
     case "$DEPLOY_ENV" in
         prod) CLUSTER_NAME="nexus-prod" ;;
         dev)  CLUSTER_NAME="nexus-dev" ;;
+        local) CLUSTER_NAME="local-cluster" ;;
         *)    CLUSTER_NAME="nexus-${DEPLOY_ENV}" ;;
     esac
 fi
 export CLUSTER_NAME DEPLOY_ENV REGION ECR_REGISTRY
 
-nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" >/dev/null 2>&1 \
-    || aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" \
-        --kubeconfig "${KUBECONFIG}" 2>/dev/null \
-    || { dcap_log_fail "Failed to update kubeconfig for cluster '${CLUSTER_NAME}'"; exit 1; }
+if [ "${CLUSTER_NAME}" = "local-cluster" ]; then
+    kubectl config use-context "${CLUSTER_NAME}" --kubeconfig "${KUBECONFIG}" >/dev/null 2>&1 \
+        || dcap_log_warn "Context ${CLUSTER_NAME} not in kubeconfig — run local-k3s/create-local-k3s-cluster.sh"
+else
+    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE}" >/dev/null 2>&1 \
+        || aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" --profile "${AWS_PROFILE}" \
+            --kubeconfig "${KUBECONFIG}" 2>/dev/null \
+        || { dcap_log_fail "Failed to update kubeconfig for cluster '${CLUSTER_NAME}'"; exit 1; }
+fi
 
 kubectl get nodes >/dev/null 2>&1 || { dcap_log_fail "kubectl cannot connect to cluster"; exit 1; }
 

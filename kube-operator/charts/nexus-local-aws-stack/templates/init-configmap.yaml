@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-local-init-script
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: nexus-local-init
+data:
+  local_init_aws.py: |
+{{ .Files.Get "files/local_init_aws.py" | indent 4 }}

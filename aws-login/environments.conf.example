@@ -9,6 +9,7 @@
 #   adfs  — federated login via aws-login.sh (.env.local + ADFS)
 #   keys  — long-term IAM access keys via aws-iam-login.sh (.env.iam.local)
 #           role_index and role_arn are ignored for keys entries
+#   local — localhost K3s cluster (no AWS login; uses local-k3s + project kubeconfig)
 #
 # role_arn: when non-empty, overrides role_index for aws-login.sh (ADFS only)
 # context_alias: unique kubectl context name (use when cluster names repeat across accounts)
@@ -34,3 +35,6 @@
 
 # Example: source account with plain access keys (uncomment and edit)
 # 5|Nexus AI Source|keys|source-nexus-ai|||us-east-1|source-eks-cluster|nexus-ai-prod|source-nexus-prod
+
+# Local K3s on this host (install via ../local-k3s/create-local-k3s-cluster.sh)
+# 6|Local K3s|local|local|||us-east-1|local-cluster|nexus-local|local-cluster

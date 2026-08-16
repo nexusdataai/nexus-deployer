@@ -168,6 +168,29 @@ def _data_services_flags(spec: dict) -> Dict[str, bool]:
     }
 
 
+def _is_local_emulation(spec: dict) -> bool:
+    """True when the capability uses the shared nexus-local AWS emulation stack."""
+    return bool((spec.get("localEmulation") or {}).get("enabled"))
+
+
+def _local_emulation_config(spec: dict) -> Dict[str, Any]:
+    """Resolved endpoints and credentials for localEmulation mode."""
+    le = spec.get("localEmulation") or {}
+    ns = le.get("namespace", "nexus-local")
+    return {
+        "namespace": ns,
+        "ministack_host": le.get("ministackService", f"ministack-svc.{ns}.svc.cluster.local"),
+        "minio_url": le.get("minioService", f"http://minio-svc.{ns}.svc.cluster.local:9000"),
+        "scylla_url": le.get("scyllaService", f"http://scylla-svc.{ns}.svc.cluster.local:8000"),
+        "redis_host": le.get("redisService", f"redis-svc.{ns}.svc.cluster.local"),
+        "minio_access_key": le.get("minioAccessKey", "minioadmin"),
+        "minio_secret_key": le.get("minioSecretKey", "minioadmin"),
+        "skip_cognito": le.get("skipCognito", True),
+        "skip_iam": le.get("skipIam", True),
+        "skip_ssm_secrets": le.get("skipSsmSecrets", True),
+    }
+
+
 def _needs_data_services_reconcile(spec: dict, status: Optional[dict]) -> bool:
     """True when data services are enabled in spec but missing from status.resources."""
     flags = _data_services_flags(spec)
@@ -529,11 +552,18 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     region = spec.get("region", "us-east-1")
 
     aws_access_mode = _resolve_aws_access_mode()
-    logger.info(f"Capability: {capability_name} v{version} ({environment}) in {region} [awsAccessMode={aws_access_mode}]")
+    local_mode = _is_local_emulation(spec)
+    local_cfg = _local_emulation_config(spec) if local_mode else {}
+    mode_label = "localEmulation" if local_mode else aws_access_mode
+    logger.info(f"Capability: {capability_name} v{version} ({environment}) in {region} [mode={mode_label}]")
     
     # Resolve account ID for globally unique resource names (S3 buckets)
-    sts_client = vpc_boto3_client("sts", region_name=region)
-    account_id = sts_client.get_caller_identity()["Account"]
+    if local_mode:
+        account_id = os.getenv("LOCAL_AWS_ACCOUNT_ID", "000000000000")
+        logger.info(f"Local emulation: using account_id={account_id}")
+    else:
+        sts_client = vpc_boto3_client("sts", region_name=region)
+        account_id = sts_client.get_caller_identity()["Account"]
     
     # Initialize naming utility
     naming = ResourceNaming(capability_name, environment, account_id=account_id)
@@ -553,37 +583,42 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
     
     try:
         # ── Step 0: Verify VPC Endpoints (reads NexusNetworkConfig status) ──
-        _update_step(steps, "VPCEndpoints", "in_progress")
-        patch.status["steps"] = list(steps)
+        if local_mode:
+            _update_step(steps, "VPCEndpoints", "skipped", resources=["localEmulation"])
+            patch.status["steps"] = list(steps)
+        else:
+            _update_step(steps, "VPCEndpoints", "in_progress")
+            patch.status["steps"] = list(steps)
 
-        try:
-            from .utils.k8s_client import authed_custom_objects_api
-            crd_api = authed_custom_objects_api()
-            nc = crd_api.get_cluster_custom_object("nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints")
-            nc_status = nc.get("status", {})
-            nc_phase = nc_status.get("phase", "Unknown")
-            nc_healthy = nc_status.get("healthyEndpoints", 0)
-            nc_total = nc_status.get("totalEndpoints", 0)
+        if not local_mode:
+            try:
+                from .utils.k8s_client import authed_custom_objects_api
+                crd_api = authed_custom_objects_api()
+                nc = crd_api.get_cluster_custom_object("nexus.ai", "v1", "nexusnetworkconfigs", "vpc-endpoints")
+                nc_status = nc.get("status", {})
+                nc_phase = nc_status.get("phase", "Unknown")
+                nc_healthy = nc_status.get("healthyEndpoints", 0)
+                nc_total = nc_status.get("totalEndpoints", 0)
 
-            if nc_phase == "Ready":
-                logger.info(f"VPC Endpoints verified via NexusNetworkConfig: {nc_healthy}/{nc_total} healthy")
-                for ep in nc_status.get("endpoints", []):
-                    state_str = "OK" if ep.get("state") in ("exists", "created") else ep.get("state", "unknown")
-                    logger.info(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {state_str}")
-                _update_step(steps, "VPCEndpoints", "done", resources=[f"{nc_healthy}/{nc_total} healthy"])
-            else:
-                logger.warning(f"VPC Endpoints not ready (phase={nc_phase}). Some services may be unreachable.")
-                for ep in nc_status.get("endpoints", []):
-                    if ep.get("state") not in ("exists", "created", "available"):
-                        logger.warning(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {ep.get('state', 'unknown')}")
-                _update_step(steps, "VPCEndpoints", "done", resources=[f"phase={nc_phase}"])
+                if nc_phase == "Ready":
+                    logger.info(f"VPC Endpoints verified via NexusNetworkConfig: {nc_healthy}/{nc_total} healthy")
+                    for ep in nc_status.get("endpoints", []):
+                        state_str = "OK" if ep.get("state") in ("exists", "created") else ep.get("state", "unknown")
+                        logger.info(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {state_str}")
+                    _update_step(steps, "VPCEndpoints", "done", resources=[f"{nc_healthy}/{nc_total} healthy"])
+                else:
+                    logger.warning(f"VPC Endpoints not ready (phase={nc_phase}). Some services may be unreachable.")
+                    for ep in nc_status.get("endpoints", []):
+                        if ep.get("state") not in ("exists", "created", "available"):
+                            logger.warning(f"  [{ep.get('type', '?')}] {ep.get('service', '?')}: {ep.get('state', 'unknown')}")
+                    _update_step(steps, "VPCEndpoints", "done", resources=[f"phase={nc_phase}"])
 
-        except Exception as nc_err:
-            logger.warning(f"NexusNetworkConfig 'vpc-endpoints' not found — skipping endpoint verification ({nc_err})")
-            logger.warning("Apply examples/network-config.yaml to enable VPC endpoint management")
-            _update_step(steps, "VPCEndpoints", "skipped")
+            except Exception as nc_err:
+                logger.warning(f"NexusNetworkConfig 'vpc-endpoints' not found — skipping endpoint verification ({nc_err})")
+                logger.warning("Apply examples/network-config.yaml to enable VPC endpoint management")
+                _update_step(steps, "VPCEndpoints", "skipped")
 
-        patch.status["steps"] = list(steps)
+            patch.status["steps"] = list(steps)
 
         # ── Step 1–3: DynamoDB, S3, Glue ──
         data_services = spec.get("dataServices", {})
@@ -597,7 +632,11 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         )
 
         # ── Step 4: Cognito (optional) ──
-        if spec.get("enableCognito", False) or spec.get("cognito"):
+        skip_cognito = local_mode and local_cfg.get("skip_cognito", True)
+        if skip_cognito:
+            _update_step(steps, "Cognito", "skipped", resources=["localEmulation"])
+            patch.status["steps"] = list(steps)
+        elif spec.get("enableCognito", False) or spec.get("cognito"):
             patch.status["message"] = "Provisioning Cognito User Pool..."
             _update_step(steps, "Cognito", "in_progress")
             patch.status["steps"] = list(steps)
@@ -679,49 +718,64 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             patch.status["steps"] = list(steps)
         
         # ── Step 5: SSM Parameters ──
-        await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+        if local_mode and local_cfg.get("skip_ssm_secrets", True):
+            _update_step(steps, "SSM", "skipped", resources=["localEmulation"])
+            patch.status["steps"] = list(steps)
+        else:
+            await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
         
         # ── Step 6: Secrets ──
-        patch.status["phase"] = "ProvisioningSecrets"
-        patch.status["message"] = "Creating Secrets Manager secrets..."
-        _update_step(steps, "Secrets", "in_progress")
-        patch.status["steps"] = list(steps)
-        
-        logger.info("Provisioning Secrets Manager secrets...")
-        secrets = SecretsProvisioner(naming, region)
-        secrets_results = await secrets.provision_all()
-        resources["secrets"] = [r["name"] for r in secrets_results if r["status"] in ["created", "exists"]]
-        
-        _update_step(steps, "Secrets", "done", resources=resources["secrets"])
-        patch.status["steps"] = list(steps)
-        logger.info(f"Secrets done: {len(resources['secrets'])} secrets")
+        if local_mode and local_cfg.get("skip_ssm_secrets", True):
+            _update_step(steps, "Secrets", "skipped", resources=["localEmulation"])
+            patch.status["steps"] = list(steps)
+        else:
+            patch.status["phase"] = "ProvisioningSecrets"
+            patch.status["message"] = "Creating Secrets Manager secrets..."
+            _update_step(steps, "Secrets", "in_progress")
+            patch.status["steps"] = list(steps)
+            
+            logger.info("Provisioning Secrets Manager secrets...")
+            secrets = SecretsProvisioner(naming, region)
+            secrets_results = await secrets.provision_all()
+            resources["secrets"] = [r["name"] for r in secrets_results if r["status"] in ["created", "exists"]]
+            
+            _update_step(steps, "Secrets", "done", resources=resources["secrets"])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Secrets done: {len(resources['secrets'])} secrets")
         
         # ── Step 7: IAM Role ──
-        patch.status["phase"] = "ProvisioningIAM"
-        patch.status["message"] = "Creating IAM role with IRSA..."
-        _update_step(steps, "IAM", "in_progress")
-        patch.status["steps"] = list(steps)
-        
-        logger.info("Creating application IAM role...")
-        
-        from .utils.eks_utils import get_oidc_provider_for_irsa, verify_oidc_provider_exists
-        oidc_provider, cluster_name = get_oidc_provider_for_irsa(region)
-        
-        if oidc_provider:
-            if verify_oidc_provider_exists(oidc_provider, account_id, region):
-                logger.info(f"IRSA enabled with OIDC provider: {oidc_provider}")
-            else:
-                logger.warning("OIDC provider not configured on cluster - IRSA may not work")
+        if local_mode and local_cfg.get("skip_iam", True):
+            role_arn = ""
+            resources["iamRoles"] = []
+            _update_step(steps, "IAM", "skipped", resources=["localEmulation"])
+            patch.status["steps"] = list(steps)
+            logger.info("Local emulation: skipping IAM/IRSA provisioning")
         else:
-            logger.warning("No OIDC provider found - IRSA may not work")
+            patch.status["phase"] = "ProvisioningIAM"
+            patch.status["message"] = "Creating IAM role with IRSA..."
+            _update_step(steps, "IAM", "in_progress")
+            patch.status["steps"] = list(steps)
+            
+            logger.info("Creating application IAM role...")
+            
+            from .utils.eks_utils import get_oidc_provider_for_irsa, verify_oidc_provider_exists
+            oidc_provider, cluster_name = get_oidc_provider_for_irsa(region)
+            
+            if oidc_provider:
+                if verify_oidc_provider_exists(oidc_provider, account_id, region):
+                    logger.info(f"IRSA enabled with OIDC provider: {oidc_provider}")
+                else:
+                    logger.warning("OIDC provider not configured on cluster - IRSA may not work")
+            else:
+                logger.warning("No OIDC provider found - IRSA may not work")
 
-        role_arn = f"arn:aws:iam::{account_id}:role/{naming.application_role()}"
-        resources["iamRoles"] = [role_arn]
-        logger.info(f"Using pre-created app role: {role_arn}")
+            role_arn = f"arn:aws:iam::{account_id}:role/{naming.application_role()}"
+            resources["iamRoles"] = [role_arn]
+            logger.info(f"Using pre-created app role: {role_arn}")
 
-        _update_step(steps, "IAM", "done", resources=resources["iamRoles"])
-        patch.status["steps"] = list(steps)
-        logger.info(f"IAM done: {resources['iamRoles']}")
+            _update_step(steps, "IAM", "done", resources=resources["iamRoles"])
+            patch.status["steps"] = list(steps)
+            logger.info(f"IAM done: {resources['iamRoles']}")
         
         # ── Step 8: Namespace ──
         patch.status["phase"] = "Deploying"
@@ -742,7 +796,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         patch.status["steps"] = list(steps)
         
         role_arn = resources["iamRoles"][0] if resources["iamRoles"] else ""
-        if not role_arn:
+        if local_mode:
+            role_arn = ""
+        elif not role_arn:
             role_arn = f"arn:aws:iam::{account_id}:role/{naming.application_role()}"
             logger.warning(f"IAM role ARN not available from provisioning, using convention: {role_arn}")
         sa_result = await k8s.create_service_account(naming, role_arn)
@@ -754,7 +810,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         # ── Step 10a: Redis Cache (optional; skipped for lightweight capabilities) ──
         redis_spec = spec.get("redis", {})
         data_services = spec.get("dataServices", {})
-        _lightweight = (
+        _lightweight = False if local_mode else (
             not data_services.get("dynamodb", {}).get("enabled", True)
             and not data_services.get("s3", {}).get("enabled", True)
             and not data_services.get("glue", {}).get("enabled", True)
@@ -779,6 +835,11 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             _update_step(steps, "Redis", "done", resources=["redis", "redis-svc"])
             patch.status["steps"] = list(steps)
             logger.info(f"Redis done: {redis_service_name}")
+        elif local_mode:
+            redis_service_name = local_cfg["redis_host"]
+            _update_step(steps, "Redis", "done", resources=[redis_service_name])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Redis using shared nexus-local: {redis_service_name}")
         else:
             _update_step(steps, "Redis", "skipped")
             patch.status["steps"] = list(steps)
@@ -798,8 +859,11 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 mimir_result = await mimir.provision(
                     retention_days=mimir_spec.get("retentionDays", 90),
                     storage_size=mimir_spec.get("storageSize", "5Gi"),
-                    storage_class=mimir_spec.get("storageClass"),
+                    storage_class=mimir_spec.get("storageClass") or ("local-path" if local_mode else None),
                     service_account=naming.kubernetes_service_account(),
+                    local_s3_endpoint=local_cfg.get("minio_url") if local_mode else None,
+                    local_s3_access_key=local_cfg.get("minio_access_key") if local_mode else None,
+                    local_s3_secret_key=local_cfg.get("minio_secret_key") if local_mode else None,
                 )
                 mimir_status = mimir_result.get("status", "unknown")
                 mimir_components = [c.get("name") for c in mimir_result.get("components", [])]
@@ -834,6 +898,39 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             if bssmagic_spec.get("enabled", False) and bssmagic_spec.get("image")
             else None
         )
+
+        # Pre-compute pgvector Postgres service (semantic_rag embeddings)
+        postgres_spec = spec.get("postgres", {})
+        postgres_svc_for_backend = None
+        postgres_database = postgres_spec.get("database", "ontology_cp")
+        postgres_user = postgres_spec.get("user", "nexus")
+        postgres_password = postgres_spec.get("password", "nexus")
+        if (
+            postgres_spec.get("enabled", False)
+            and postgres_spec.get("image")
+            and not bssmagic_svc_for_backend
+        ):
+            patch.status["phase"] = "DeployingPostgres"
+            patch.status["message"] = "Deploying pgvector Postgres for semantic_rag..."
+            _update_step(steps, "Postgres", "in_progress")
+            patch.status["steps"] = list(steps)
+
+            logger.info("Deploying pgvector Postgres...")
+            postgres_svc_for_backend = await k8s.deploy_postgres(
+                naming=naming,
+                image=postgres_spec["image"],
+                storage_size=postgres_spec.get("storageSize", "5Gi"),
+                storage_class=postgres_spec.get("storageClass"),
+                database=postgres_database,
+                user=postgres_user,
+                password=postgres_password,
+            )
+            _update_step(steps, "Postgres", "done", resources=["pgvector", "pgvector-svc"])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Postgres done: {postgres_svc_for_backend}")
+        else:
+            _update_step(steps, "Postgres", "skipped")
+            patch.status["steps"] = list(steps)
         
         if backend_image:
             patch.status["phase"] = "DeployingBackend"
@@ -850,9 +947,15 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 environment=environment,
                 region=region,
                 use_clusterip=use_ingress,
+                use_nodeport=local_mode and not use_ingress,
                 bssmagic_service=bssmagic_svc_for_backend,
+                postgres_service=postgres_svc_for_backend,
+                postgres_database=postgres_database,
+                postgres_user=postgres_user,
+                postgres_password=postgres_password,
                 redis_service=redis_service_name,
                 aws_access_mode=aws_access_mode,
+                local_emulation=local_cfg if local_mode else None,
             )
             
             _update_step(steps, "Backend", "done", resources=[
@@ -920,6 +1023,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 backend_service=backend_service_name if (use_ingress or use_internal_ingress) else None,
                 bssmagic_service=bssmagic_service_name if (use_ingress or use_internal_ingress) else None,
                 internal_ingress_config=internal_ingress_config if use_internal_ingress else None,
+                use_nodeport=local_mode and not use_ingress,
             )
             
             frontend_resources = [
@@ -1068,6 +1172,16 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     # Pre-compute Redis service name
     redis_spec = spec.get("redis", {})
     redis_svc = "redis-svc" if redis_spec.get("enabled", True) else None
+
+    postgres_spec = spec.get("postgres", {})
+    postgres_svc = (
+        "pgvector-svc"
+        if postgres_spec.get("enabled", False) and postgres_spec.get("image") and not bssmagic_svc
+        else None
+    )
+    postgres_database = postgres_spec.get("database", "ontology_cp")
+    postgres_user = postgres_spec.get("user", "nexus")
+    postgres_password = postgres_spec.get("password", "nexus")
     
     try:
         if data_services_changed or needs_data_reconcile:
@@ -1095,6 +1209,20 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     storage_class=redis_spec.get("storageClass", "gp2"),
                 )
 
+        # If postgres config changed, update pgvector deployment
+        if any("postgres" in str(f) for f in changed_fields):
+            if postgres_spec.get("enabled", False) and postgres_spec.get("image") and not bssmagic_svc:
+                logger.info("Updating pgvector Postgres deployment...")
+                await k8s.deploy_postgres(
+                    naming=naming,
+                    image=postgres_spec["image"],
+                    storage_size=postgres_spec.get("storageSize", "5Gi"),
+                    storage_class=postgres_spec.get("storageClass"),
+                    database=postgres_database,
+                    user=postgres_user,
+                    password=postgres_password,
+                )
+
         # If backend config changed, update backend deployment
         if any("backend" in str(f) for f in changed_fields):
             backend_spec = spec.get("backend", {})
@@ -1110,6 +1238,10 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     region=region,
                     use_clusterip=use_ingress,
                     bssmagic_service=bssmagic_svc,
+                    postgres_service=postgres_svc,
+                    postgres_database=postgres_database,
+                    postgres_user=postgres_user,
+                    postgres_password=postgres_password,
                     redis_service=redis_svc,
                     aws_access_mode=aws_access_mode,
                 )

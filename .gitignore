@@ -24,6 +24,7 @@ lib/
 !frontend/src/lib/
 !aws-login/lib/
 !kube-operator/lib/
+!local-k3s/lib/
 lib64/
 parts/
 sdist/

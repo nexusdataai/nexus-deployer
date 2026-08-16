@@ -1,0 +1,84 @@
+# Nexus Ontology — local K3s deployment (shared nexus-local AWS stack)
+#
+# Prerequisites:
+#   ./local-k3s/create-local-k3s-cluster.sh
+#   ./kube-operator/operator.sh deploy
+#   ./kube-operator/deploy-local-aws-stack.sh
+#
+# Deploy:
+#   ./deploy-capability.sh --product local-ontology --env local --skip-images
+
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: ontology-local
+  namespace: ontology-local
+  labels:
+    app.kubernetes.io/name: nexus-ontology
+    nexus.ai/capability: ontology
+    nexus.ai/environment: local
+spec:
+  capabilityName: ontology
+  version: "0.1.0"
+  environment: local
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
+
+  localEmulation:
+    enabled: true
+    namespace: nexus-local
+    skipCognito: true
+    skipIam: true
+    skipSsmSecrets: true
+
+  dataServices:
+    dynamodb:
+      enabled: false
+    s3:
+      enabled: false
+    glue:
+      enabled: false
+
+  backend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ontology-api:latest"
+
+  frontend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ontology-ui:latest"
+
+  bssmagic:
+    enabled: false
+
+  postgres:
+    enabled: true
+    image: "pgvector/pgvector:pg16"
+    storageSize: 5Gi
+    storageClass: local-path
+    database: ontology_cp
+    user: nexus
+    password: nexus
+
+  mimir:
+    enabled: true
+    retentionDays: 30
+    storageSize: 5Gi
+    storageClass: local-path
+
+  redis:
+    enabled: false
+
+  ingress:
+    enabled: false
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

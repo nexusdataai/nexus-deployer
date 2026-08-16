@@ -34,7 +34,22 @@ MIMIR_HTTP_PORT = 8080
 MIMIR_GRPC_PORT = 9095
 
 
-def _build_config_yaml(bucket: str, region: str, retention_days: int) -> str:
+def _build_config_yaml(
+    bucket: str,
+    region: str,
+    retention_days: int,
+    local_s3_endpoint: Optional[str] = None,
+    local_s3_access_key: Optional[str] = None,
+    local_s3_secret_key: Optional[str] = None,
+) -> str:
+    s3_block = f"""      bucket_name: {bucket}
+      region: {region}"""
+    if local_s3_endpoint:
+        s3_block += f"""
+      endpoint: {local_s3_endpoint}
+      access_key_id: {local_s3_access_key or "minioadmin"}
+      secret_access_key: {local_s3_secret_key or "minioadmin"}
+      insecure: true"""
     return f"""# Grafana Mimir monolithic configuration (managed by nexus-operator)
 target: all
 multitenancy_enabled: true
@@ -48,14 +63,12 @@ common:
   storage:
     backend: s3
     s3:
-      bucket_name: {bucket}
-      region: {region}
+{s3_block}
 
 blocks_storage:
   backend: s3
   s3:
-    bucket_name: {bucket}
-    region: {region}
+{s3_block}
   bucket_store:
     sync_dir: /data/tsdb-sync
   tsdb:
@@ -65,14 +78,12 @@ blocks_storage:
 alertmanager_storage:
   backend: s3
   s3:
-    bucket_name: {bucket}
-    region: {region}
+{s3_block}
 
 ruler_storage:
   backend: s3
   s3:
-    bucket_name: {bucket}
-    region: {region}
+{s3_block}
 
 ingester:
   ring:
@@ -151,13 +162,26 @@ class MimirProvisioner:
         storage_size: str = "5Gi",
         storage_class: Optional[str] = None,
         service_account: Optional[str] = None,
+        local_s3_endpoint: Optional[str] = None,
+        local_s3_access_key: Optional[str] = None,
+        local_s3_secret_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         bucket = self.naming.mimir_blocks_bucket()
         sa = service_account or self.naming.kubernetes_service_account()
         results: Dict[str, Any] = {"name": self.NAME, "type": "Mimir", "components": []}
         try:
-            results["components"].append(await self._apply_configmap(bucket, retention_days))
-            results["components"].append(await self._apply_statefulset(sa, storage_size, storage_class))
+            results["components"].append(await self._apply_configmap(
+                bucket, retention_days,
+                local_s3_endpoint=local_s3_endpoint,
+                local_s3_access_key=local_s3_access_key,
+                local_s3_secret_key=local_s3_secret_key,
+            ))
+            results["components"].append(await self._apply_statefulset(
+                sa, storage_size, storage_class,
+                local_s3_endpoint=local_s3_endpoint,
+                local_s3_access_key=local_s3_access_key,
+                local_s3_secret_key=local_s3_secret_key,
+            ))
             results["components"].append(await self._apply_service())
             results["status"] = "created"
             results["url"] = f"http://{self.SERVICE_NAME}.{self.namespace}.svc.cluster.local:{MIMIR_HTTP_PORT}"
@@ -169,8 +193,20 @@ class MimirProvisioner:
             results["error"] = str(e)
             return results
 
-    async def _apply_configmap(self, bucket: str, retention_days: int) -> Dict[str, Any]:
-        config_yaml = _build_config_yaml(bucket, self.region, retention_days)
+    async def _apply_configmap(
+        self,
+        bucket: str,
+        retention_days: int,
+        local_s3_endpoint: Optional[str] = None,
+        local_s3_access_key: Optional[str] = None,
+        local_s3_secret_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        config_yaml = _build_config_yaml(
+            bucket, self.region, retention_days,
+            local_s3_endpoint=local_s3_endpoint,
+            local_s3_access_key=local_s3_access_key,
+            local_s3_secret_key=local_s3_secret_key,
+        )
         cm = client.V1ConfigMap(
             metadata=client.V1ObjectMeta(
                 name=self.CONFIGMAP_NAME,
@@ -189,7 +225,15 @@ class MimirProvisioner:
             self.core_api.create_namespaced_config_map(self.namespace, cm)
             return {"name": self.CONFIGMAP_NAME, "status": "created", "type": "ConfigMap"}
 
-    async def _apply_statefulset(self, service_account: str, storage_size: str, storage_class: Optional[str]) -> Dict[str, Any]:
+    async def _apply_statefulset(
+        self,
+        service_account: str,
+        storage_size: str,
+        storage_class: Optional[str],
+        local_s3_endpoint: Optional[str] = None,
+        local_s3_access_key: Optional[str] = None,
+        local_s3_secret_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         labels = self._common_labels()
         pvc_spec_kwargs: Dict[str, Any] = {
             "access_modes": ["ReadWriteOnce"],
@@ -197,6 +241,13 @@ class MimirProvisioner:
         }
         if storage_class:
             pvc_spec_kwargs["storage_class_name"] = storage_class
+        mimir_env = []
+        if local_s3_endpoint:
+            mimir_env = [
+                client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value=local_s3_access_key or "minioadmin"),
+                client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value=local_s3_secret_key or "minioadmin"),
+                client.V1EnvVar(name="AWS_ENDPOINT_URL_S3", value=local_s3_endpoint),
+            ]
         statefulset = client.V1StatefulSet(
             metadata=client.V1ObjectMeta(name=self.NAME, namespace=self.namespace, labels=labels),
             spec=client.V1StatefulSetSpec(
@@ -212,6 +263,7 @@ class MimirProvisioner:
                                 name=self.NAME,
                                 image=MIMIR_IMAGE,
                                 args=["-config.file=/etc/mimir/config.yaml"],
+                                env=mimir_env or None,
                                 ports=[
                                     client.V1ContainerPort(container_port=MIMIR_HTTP_PORT, name="http"),
                                     client.V1ContainerPort(container_port=MIMIR_GRPC_PORT, name="grpc"),

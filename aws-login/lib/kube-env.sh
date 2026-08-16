@@ -66,6 +66,14 @@ export NEXUS_K8S_CONTEXT=${_ctx}
 export CLUSTER_NAME=${_cluster}
 export REGION=${_region}
 EOF
+    if [ "$_auth" = "local" ]; then
+        cat >> "${_dir}/.active-env" <<EOF
+export NEXUS_LOCAL_K3S=1
+export AWS_ACCESS_KEY_ID=minioadmin
+export AWS_SECRET_ACCESS_KEY=minioadmin
+export AWS_DEFAULT_REGION=${_region}
+EOF
+    fi
 }
 
 # Merge EKS cluster credentials into the project-local kubeconfig.
@@ -111,6 +119,56 @@ nexus_kubectl_use_context() {
     fi
 }
 
+# Merge localhost K3s credentials into the project kubeconfig.
+# Args: cluster_name  [context_alias]
+nexus_local_k3s_refresh_kubeconfig() {
+    _cluster="$1"
+    _ctx="${2:-$_cluster}"
+    _k3s_src="/etc/rancher/k3s/k3s.yaml"
+
+    if [ -z "$NEXUS_AWS_LOGIN_DIR" ]; then
+        echo "nexus_local_k3s_refresh_kubeconfig: call nexus_kube_env_init first" >&2
+        return 1
+    fi
+
+    nexus_kube_env_init "$NEXUS_AWS_LOGIN_DIR"
+
+    if [ ! -r "$_k3s_src" ]; then
+        if command -v sudo >/dev/null 2>&1 && sudo test -r "$_k3s_src" 2>/dev/null; then
+            :
+        elif kubectl config get-contexts "$_ctx" --kubeconfig="$KUBECONFIG" >/dev/null 2>&1; then
+            echo "Using existing kubeconfig context: $_ctx"
+            return 0
+        else
+            echo "K3s kubeconfig not found at $_k3s_src" >&2
+            echo "Install K3s first: ${NEXUS_AWS_LOGIN_DIR}/../local-k3s/create-local-k3s-cluster.sh" >&2
+            return 1
+        fi
+    fi
+
+    _tmp="$(mktemp)"
+    if [ -r "$_k3s_src" ]; then
+        cat "$_k3s_src" >"$_tmp"
+    else
+        sudo cat "$_k3s_src" >"$_tmp"
+    fi
+
+    sed "s/name: default/name: ${_cluster}/g" "$_tmp" | \
+        sed "s/cluster: default/cluster: ${_cluster}/g" | \
+        sed "s/user: default/user: ${_cluster}/g" | \
+        sed "s/current-context: default/current-context: ${_ctx}/g" >"${_tmp}.renamed"
+    mv "${_tmp}.renamed" "$_tmp"
+
+    if [ -f "$KUBECONFIG" ]; then
+        KUBECONFIG="${_tmp}:${KUBECONFIG}" kubectl config view --flatten >"${KUBECONFIG}.merged"
+        mv "${KUBECONFIG}.merged" "$KUBECONFIG"
+    else
+        mv "$_tmp" "$KUBECONFIG"
+    fi
+    rm -f "$_tmp"
+    chmod 600 "$KUBECONFIG" 2>/dev/null || true
+}
+
 # Print current kube/AWS context summary.
 nexus_kube_env_status() {
     if [ -z "$NEXUS_AWS_LOGIN_DIR" ]; then
@@ -127,6 +185,9 @@ nexus_kube_env_status() {
         echo "Cluster:        ${NEXUS_EKS_CLUSTER:-?}"
         echo "Namespace:      ${NEXUS_K8S_NAMESPACE:-?}"
         echo "Context:        ${NEXUS_K8S_CONTEXT:-?}"
+        if [ "${NEXUS_AWS_AUTH_TYPE:-}" = "local" ] || [ "${NEXUS_LOCAL_K3S:-}" = "1" ]; then
+            echo "Cluster type:   local K3s"
+        fi
     fi
     if command -v kubectl >/dev/null 2>&1 && [ -n "${KUBECONFIG:-}" ]; then
         echo "current-context: $(kubectl config current-context --kubeconfig="$KUBECONFIG" 2>/dev/null || echo '?')"

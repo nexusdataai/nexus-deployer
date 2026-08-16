@@ -13,12 +13,14 @@ dcap_normalize_product() {
         ai-engine|nexus-ai-engine) echo "ai-engine" ;;
         sre|nexus-sre)            echo "sre" ;;
         simulator|nexus-simulator) echo "simulator" ;;
+        local-ontology|local_ontology) echo "local-ontology" ;;
+        local-nexus-ai|local_nexus_ai|local-ai) echo "local-nexus-ai" ;;
         *)                        echo "$1" ;;
     esac
 }
 
 dcap_list_products() {
-    echo "nexus-ai ontology ai-engine sre simulator"
+    echo "nexus-ai ontology ai-engine sre simulator local-ontology local-nexus-ai"
 }
 
 dcap_load_product() {
@@ -94,6 +96,37 @@ dcap_load_product() {
             DCP_SKIP_CREDS_DEFAULT=true
             DCP_SKIP_SSM_FIX_DEFAULT=true
             DCP_WAIT_ALB=false
+            ;;
+        local-ontology)
+            DCP_LABEL="Nexus Ontology (local K3s — nexus-local AWS stack)"
+            DCP_MODE="cr-lite"
+            DCP_CAPABILITY_NAME="ontology"
+            DCP_NAMESPACE="ontology-${DEPLOY_ENV}"
+            DCP_CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ontology-local.yaml"
+            DCP_ECR_MODE="script"
+            DCP_ECR_SCRIPT=(create-ecr-images.sh)
+            DCP_ECR_ARGS=(--only-ontology-images)
+            DCP_PRE_BUILD_UI=true
+            DCP_SKIP_CREDS_DEFAULT=true
+            DCP_SKIP_SSM_FIX_DEFAULT=true
+            DCP_SKIP_IAM_DEFAULT=true
+            DCP_WAIT_ALB=false
+            CLUSTER_NAME="${CLUSTER_NAME:-local-cluster}"
+            ;;
+        local-nexus-ai)
+            DCP_LABEL="Nexus AI (local K3s — nexus-local AWS stack)"
+            DCP_MODE="cr-lite"
+            DCP_CAPABILITY_NAME="nexus-ai"
+            DCP_NAMESPACE="nexus-ai-${DEPLOY_ENV}"
+            DCP_CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ai-local.yaml"
+            DCP_ECR_MODE="callsense"
+            DCP_ECR_SCRIPT=(create-ecr-images.sh)
+            DCP_ECR_ARGS=()
+            DCP_SKIP_CREDS_DEFAULT=true
+            DCP_SKIP_SSM_FIX_DEFAULT=true
+            DCP_SKIP_IAM_DEFAULT=true
+            DCP_WAIT_ALB=false
+            CLUSTER_NAME="${CLUSTER_NAME:-local-cluster}"
             ;;
         *)
             dcap_log_fail "Unknown product: ${product}"

@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ministack-svc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: ministack
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4566
+      targetPort: 4566
+      name: gateway
+  selector:
+    app: ministack
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ministack
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: ministack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ministack
+  template:
+    metadata:
+      labels:
+        app: ministack
+    spec:
+      containers:
+        - name: ministack
+          image: {{ .Values.ministack.image }}
+          ports:
+            - containerPort: 4566
+              name: gateway
+          env:
+            - name: GATEWAY_PORT
+              value: "4566"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: S3_PERSIST
+              value: "1"
+            - name: S3_DATA_DIR
+              value: /tmp/ministack-data/s3
+            - name: REDIS_HOST
+              value: redis-svc
+            - name: REDIS_PORT
+              value: "6379"
+          readinessProbe:
+            httpGet:
+              path: /_ministack/health
+              port: 4566
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_ministack/health
+              port: 4566
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: ministack-data
+              mountPath: /tmp/ministack-data
+      volumes:
+        - name: ministack-data
+          persistentVolumeClaim:
+            claimName: ministack-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ministack-data
+  namespace: {{ .Values.global.namespace }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.ministack.persistence.size }}

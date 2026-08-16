@@ -74,7 +74,9 @@ Options:
   --skip-irsa-fix         Skip IRSA check during deploy
 
 Prerequisites (managed by separate scripts):
-  Cluster setup:    deploy/eks/create-hardened-eks-cluster.sh
+  Cluster setup:    aws-eks/create-hardened-eks-cluster.sh  (EKS prod)
+                    local-k3s/create-local-k3s-cluster.sh   (local K3s dev)
+  Local AWS stack:  ./deploy-local-aws-stack.sh
   Cluster checks:   ./cluster-access.sh check
   Cluster fix:      ./cluster-access.sh fix
   Cluster delete:   deploy/eks/delete-eks-cluster.sh

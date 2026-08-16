@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nexus-local-aws-stack
+description: Shared local AWS emulation stack (MiniStack, MinIO, Scylla, Trino, Redis)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

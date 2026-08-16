@@ -1,0 +1,17 @@
+# K3s overrides — use with: helm upgrade -f values-k3s.yaml
+global:
+  storageClass: local-path
+
+minio:
+  persistence:
+    size: 200Gi
+
+scylla:
+  persistence:
+    size: 80Gi
+
+trino:
+  coordinator:
+    resources:
+      limits:
+        memory: 4Gi
