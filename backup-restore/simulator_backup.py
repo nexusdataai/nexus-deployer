@@ -682,6 +682,113 @@ def _wait_for_load(
     return False, last
 
 
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Compare live S3 key counts on target to tarball manifest."""
+    in_path = os.path.abspath(args.input)
+    capability = args.target_capability or args.capability
+    env = args.target_env or args.env
+    if not env:
+        print("  ERROR: verify requires --target-env or --env")
+        return 2
+    profile = args.target_profile or args.profile
+    region = args.region or "us-east-1"
+    tolerance = args.tolerance
+
+    with tempfile.TemporaryDirectory(prefix="nexus-sim-vf-") as tmp:
+        with tarfile.open(in_path, "r:gz") as tar:
+            manifest_member = None
+            for m in tar.getmembers():
+                if m.name.endswith("manifest.json") and m.isfile():
+                    manifest_member = m
+                    break
+            if manifest_member is None:
+                print("  ERROR: tarball missing manifest.json")
+                return 2
+            manifest = json.loads(tar.extractfile(manifest_member).read().decode("utf-8"))
+
+    session = make_session(profile, region)
+    s3 = session.client("s3")
+    sts = session.client("sts")
+    account_id = sts.get_caller_identity()["Account"]
+
+    print(f"  tarball:   {in_path}")
+    print(f"  target:    {capability}-{env} (account {account_id})")
+    print()
+
+    failed = 0
+    warned = 0
+    for ent in manifest.get("simulators") or []:
+        name = ent.get("name", "")
+        expected = int(ent.get("key_count") or 0)
+        sim = next((s for s in SIMULATORS if s["name"] == name), None)
+        if not sim:
+            continue
+        bucket = resolve_bucket_name(s3, capability, env, sim["suffix"], account_id)
+        if bucket is None:
+            if expected == 0:
+                print(f"  OK    {name:24s} not provisioned (expected 0 keys)")
+            else:
+                print(f"  FAIL  {name:24s} bucket missing (expected {expected} keys)")
+                failed += 1
+            continue
+        keys = list_all_keys(s3, bucket)
+        actual = len(keys)
+        if expected == 0:
+            print(f"  OK    {name:24s} keys={actual} (source empty)")
+            continue
+        min_ok = int(expected * (1.0 - tolerance))
+        if actual >= min_ok:
+            print(f"  OK    {name:24s} keys={actual}  expected>={min_ok} (~{expected})")
+        elif actual >= min_ok * 0.5:
+            print(f"  WARN  {name:24s} keys={actual}  expected>={min_ok}")
+            warned += 1
+        else:
+            print(f"  FAIL  {name:24s} keys={actual}  expected>={min_ok}")
+            failed += 1
+
+    if args.namespace and args.deployment:
+        print()
+        print("  Simulator API status (kubectl):")
+        namespace = args.namespace
+        deployment = args.deployment
+        for name, api_path in HYDRATE_ENDPOINTS.items():
+            pod = _find_backend_pod(namespace, f"app={capability}-{env}-backend")
+            if not pod:
+                print(f"  WARN  {name:24s} no running backend pod")
+                warned += 1
+                continue
+            rc, out = _exec_curl(
+                namespace, pod,
+                f"http://localhost:8000/api/v1/{api_path}/status",
+            )
+            if rc != 0:
+                print(f"  WARN  {name:24s} curl failed")
+                warned += 1
+                continue
+            try:
+                body = out.split("\n__HTTP_STATUS=")[0].strip()
+                status = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                status = {}
+            loaded = status.get("loaded")
+            tables = status.get("tables_with_data") or 0
+            if loaded:
+                print(f"  OK    {name:24s} loaded=true tables_with_data={tables}")
+            else:
+                print(f"  WARN  {name:24s} loaded={loaded}")
+                warned += 1
+
+    print()
+    if failed:
+        print(f"  Simulator verify: FAILED ({failed} errors, {warned} warnings)")
+        return 1
+    print(f"  Simulator verify: PASSED ({warned} warnings)")
+    return 0
+
+
 def cmd_hydrate(args: argparse.Namespace) -> int:
     if shutil.which("kubectl") is None:
         raise SystemExit("  ERROR: kubectl not found on PATH. hydrate requires kubectl access to the target cluster.")
@@ -824,6 +931,26 @@ def build_parser() -> argparse.ArgumentParser:
     ph.add_argument("--no-wait", action="store_true",
                     help="Fire POST /load and return immediately, do not poll status")
     ph.set_defaults(func=cmd_hydrate)
+
+    pv = sub.add_parser(
+        "verify",
+        help="Compare target S3 key counts and optional API status to tarball manifest.",
+    )
+    pv.add_argument("-i", "--input", required=True, help="Source .tar.gz from backup")
+    pv.add_argument("--capability", default=CAPABILITY_DEFAULT)
+    pv.add_argument("--target-capability", default=None)
+    pv.add_argument("--target-env", default=None)
+    pv.add_argument("--env", default=None, help="Target env if --target-env omitted")
+    pv.add_argument("--target-profile", default=None)
+    pv.add_argument("--profile", default=None)
+    pv.add_argument("--region", default=None)
+    pv.add_argument("--namespace", default=None, help="K8s namespace for API status checks")
+    pv.add_argument("--deployment", default=None, help="Backend deployment name")
+    pv.add_argument(
+        "--tolerance", type=float, default=0.10,
+        help="Allowed key-count shortfall fraction (default 0.10)",
+    )
+    pv.set_defaults(func=cmd_verify)
 
     return p
 

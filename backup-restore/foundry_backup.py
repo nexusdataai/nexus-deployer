@@ -87,6 +87,7 @@ KNOWN_PREFIXES = (
     "CONNECTOR",
     "CONNECTORSETTING",
     "DATAPLANE",
+    "SOLUTIONYAML",
 )
 
 
@@ -410,6 +411,101 @@ def cmd_restore(args: argparse.Namespace) -> int:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _scan_item_count(table: Any) -> int:
+    """Paginated scan Select=COUNT (accurate; DescribeTable ItemCount is stale)."""
+    total = 0
+    kwargs: Dict[str, Any] = {"Select": "COUNT"}
+    while True:
+        resp = table.scan(**kwargs)
+        total += int(resp.get("Count", 0))
+        lek = resp.get("LastEvaluatedKey")
+        if not lek:
+            break
+        kwargs["ExclusiveStartKey"] = lek
+    return total
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Compare tarball manifest row count with a live scan of the target table."""
+    in_path = os.path.abspath(args.input)
+    if not os.path.isfile(in_path):
+        print(f"  ERROR: not a file: {in_path}")
+        return 2
+
+    capability = args.target_capability or args.capability
+    env = args.target_env or args.env
+    profile = args.target_profile or args.profile
+    region = args.target_region or args.region
+    table_name = args.target_table or _resolve_table_name(capability, env)
+    expected = args.expected_rows
+
+    tmpdir = tempfile.mkdtemp(prefix="foundry-vf-")
+    try:
+        with tarfile.open(in_path, "r:gz") as tar:
+            tar.extractall(tmpdir)
+        manifest_path = os.path.join(tmpdir, "manifest.json")
+        if not os.path.isfile(manifest_path):
+            print("  ERROR: tarball missing manifest.json")
+            return 2
+        manifest = json.load(open(manifest_path, "r", encoding="utf-8"))
+        manifest_counts = manifest.get("counts") or {}
+        if expected is None:
+            expected = int(manifest.get("total") or sum(manifest_counts.values()))
+
+        print(f"  tarball:      {in_path}")
+        print(f"  target table: {table_name}")
+        print(f"  expected:     {expected} rows (from manifest)")
+        print()
+
+        ddb = _make_client(profile, region)
+        try:
+            table = ddb.Table(table_name)
+            table.load()
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code == "ResourceNotFoundException":
+                print(f"  ERROR: target table not found: {table_name}")
+                return 2
+            raise
+
+        actual = _scan_item_count(table)
+        print(f"  actual scan:  {actual} rows")
+        prefix_fail = 0
+        if getattr(args, "by_prefix", False) and manifest_counts:
+            live_counts: Counter = Counter()
+            for item in _scan_full_table(table):
+                live_counts[_classify(str(item.get("PK", "")))] += 1
+            check_prefixes = (
+                "SOLUTIONYAML", "SOLUTION", "VDLENTITY", "MAPPINGRULE", "DATAPLANE",
+            )
+            print()
+            print("  Per-prefix counts:")
+            for prefix in check_prefixes:
+                exp = int(manifest_counts.get(prefix, 0))
+                got = int(live_counts.get(prefix, 0))
+                if exp == 0 and got == 0:
+                    continue
+                if got >= exp:
+                    print(f"    OK    {prefix:16s} live={got}  expected>={exp}")
+                else:
+                    print(f"    FAIL  {prefix:16s} live={got}  expected>={exp}")
+                    prefix_fail += 1
+
+        if actual < expected:
+            print(f"  FAIL: table has {actual} rows, expected at least {expected}")
+            return 1
+        if prefix_fail:
+            print(f"  FAIL: {prefix_fail} prefix count mismatch(es)")
+            return 1
+        if actual > expected:
+            print(f"  OK: table has {actual} rows (additive merge; manifest had {expected})")
+        else:
+            print("  OK: row count matches manifest")
+        return 0
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 # ----------------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------------
@@ -474,6 +570,34 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="Delete target rows whose PK/SK is absent from the bundle "
                          "(default: additive merge).")
     pr.set_defaults(func=cmd_restore)
+
+    # ---- verify ----
+    pv = sp.add_parser(
+        "verify",
+        help="Scan target foundry-workspace table and compare row count to tarball manifest",
+    )
+    pv.add_argument("-i", "--input", required=True)
+    pv.add_argument("--capability", default=CAPABILITY_DEFAULT)
+    pv.add_argument("--env", required=False, default=None)
+    pv.add_argument("--profile", default=None)
+    pv.add_argument("--region", default="us-east-1")
+    pv.add_argument("--target-capability", default=None)
+    pv.add_argument("--target-env", default=None)
+    pv.add_argument("--target-profile", default=None)
+    pv.add_argument("--target-region", default=None)
+    pv.add_argument("--target-table", default=None)
+    pv.add_argument(
+        "--expected-rows",
+        type=int,
+        default=None,
+        help="Override expected row count (default: manifest total)",
+    )
+    pv.add_argument(
+        "--by-prefix",
+        action="store_true",
+        help="Also compare live per-prefix counts to manifest counts",
+    )
+    pv.set_defaults(func=cmd_verify)
 
     args = p.parse_args(argv)
 

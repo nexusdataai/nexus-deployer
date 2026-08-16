@@ -46,43 +46,95 @@ reference; new deployments should adopt `plane_backup.py`.
 
 ## Context DR (environments.conf indices)
 
-Use **`context-dr.sh`** when source and target AWS/EKS contexts are already
-registered in `aws-login/environments.conf` (via `set-context.sh`).
+Use **`context-dr.sh`** for a **full environment mimic**: backup source context,
+restore target, run Knowledge Processor (`semantic_rag`), and verify tiers 1–5.
 
 ```bash
 cd nexus-deployer/backup-restore
 
-# Full pipeline: backup source index 5, restore target index 3
-./context-dr.sh --source 5 --target 3
-
-# Dry-run restore first (backup still runs)
-./context-dr.sh --source 5 --target 3 --dry-run
-
-# Cross-capability restore (source nexus-ai-prod -> target ontology-dev)
+# Full pipeline (simulators included by default)
 ./context-dr.sh --source 5 --target 3 \
   --target-capability ontology --target-env dev
 
-# Backup only (tarball under ./out/)
-./context-dr.sh --backup-only --source 5
+# Destructive exact mirror (DDB prune + sim prefix clean)
+./context-dr.sh --source 5 --target 3 \
+  --target-capability ontology --target-env dev --mirror
 
-# Restore a previous tarball
+# Validate target readiness only
+./context-dr.sh --preflight-only --target 3 \
+  --target-capability ontology --target-env dev
+
+# Dry-run restore first
+./context-dr.sh --source 5 --target 3 --dry-run
+
+# Restore a previous tarball set
 ./context-dr.sh --restore-only --target 3 \
-  --input ./out/foundry-nexus-ai-prod-Nexus-AI-20260807T....tar.gz \
+  --input ./out/foundry-nexus-ai-prod-....tar.gz \
   --target-capability ontology --target-env dev
 ```
 
-What it does:
+### Pipeline phases
 
-1. Runs `set-context.sh SOURCE` (ADFS or keys per row `auth_type`)
-2. `foundry_backup.py backup` → `./out/foundry-{cap}-{env}-{label}-{timestamp}.tar.gz`
-3. Runs `set-context.sh TARGET`
-4. `foundry_backup.py restore` into `{target-capability}-{target-env}-foundry-workspace`
+| Phase | What runs |
+|-------|-----------|
+| **0 Preflight** | `dr_preflight.py` — AWS, kubectl, DDB tables, journey-logs S3, simulator buckets |
+| **1 Backup** | `foundry_backup.py`, `transformation_backup.py`, `simulator_backup.py` (default) |
+| **2 Restore** | Same tools into target; `--mirror` adds DDB `--prune` |
+| **3 Post-restore** | Backend rollout restart + `POST /api/v1/control-plane/entities/refresh` |
+| **4 semantic_rag** | `dr_semantic_rag.py` — discover KP journey, run job, poll to completion |
+| **5 Verify** | Tier 1: DDB + sim S3; Tiers 2–5: `dr_verify.py` (APIs, `/onto/stats`, sim status, RAG metrics) |
+| **6 Report** | Summary + `./out/dr-report-{timestamp}.json` |
+
+### CLI flags
+
+| Flag | Purpose |
+|------|---------|
+| `--mirror` | Destructive exact match (DDB `--prune`; simulator prefix clean is default on restore) |
+| `--skip-simulators` | Skip simulator S3 backup/restore (included by default) |
+| `--skip-journeys` | Skip `transformation-system` backup/restore |
+| `--skip-semantic-rag` | Skip Knowledge Processor run |
+| `--skip-preflight` | Skip target preflight |
+| `--preflight-only` | Validate target only |
+| `--no-verify` | Skip all verification |
+| `--verify-tier N` | Run API/index verification tiers 2..N (default 5) |
+| `--ui-smoke` | Optional ALB HTTP checks |
+
+### Verification tiers
+
+| Tier | Tool | Checks |
+|------|------|--------|
+| **1** | `foundry_backup.py verify --by-prefix`, `transformation_backup.py verify`, `simulator_backup.py verify` | DDB row counts + key prefixes; sim S3 key counts |
+| **2** | `dr_verify.py` | REST APIs: solution-catalog, solutions, dashboards, views, mapping-rules, journeys, knowledge-pipelines, entities |
+| **3** | `dr_verify.py` | `GET /onto/stats` — pgvector embeddings after semantic_rag |
+| **4** | `dr_verify.py` | Simulator `/status` endpoints (loaded, tables_with_data) |
+| **5** | `dr_verify.py` | semantic_rag validation score from job result JSON |
+
+### Prerequisites (target cluster)
+
+1. Deploy capability with **`dataServices` enabled** (see `kube-operator/examples/nexus-ontology-complete.yaml`)
+2. Operator reconciled: DDB tables, S3 buckets (including **journey-logs**), SSM, backend Running
+3. Contexts registered in `aws-login/environments.conf`
+
+### Out of scope (rebuilt or operator-managed)
+
+- **pgvector + Apache AGE** — rebuilt by semantic_rag (not in tarballs)
+- **Simulator Redis** — rehydrated from S3 via restore + `/load` endpoints
+- **TPM / sourcing simulators** — synthetic Redis-only; regenerate on pod boot
+- **Cognito, SSM, Glue, historical journey-logs S3** — operator CR; journey-logs bucket must exist for semantic_rag
+
+### Tarball outputs (under `./out/`)
+
+| File | Contents |
+|------|----------|
+| `foundry-{cap}-{env}-{label}-{ts}.tar.gz` | `{cap}-{env}-foundry-workspace` DDB |
+| `transformation-{cap}-{env}-{label}-{ts}.tar.gz` | `{cap}-{env}-transformation-system` DDB (journeys) |
+| `sim-{cap}-{env}-{label}-{ts}.tar.gz` | Simulator S3 buckets |
+| `semantic-rag-{ts}.json` | Knowledge Processor job result |
+| `dr-report-{ts}.json` | Pipeline summary for automation |
 
 Capability/env default from the namespace column (`nexus-ai-prod` → `nexus-ai` /
 `prod`). Override with `--target-capability` / `--target-env` when the target
 namespace differs (e.g. restore into `ontology-dev` while using context index 3).
-
-Optional `--include-simulators` also runs `simulator_backup.py` backup/restore.
 
 List configured indices: `cd ../aws-login && ./set-context.sh --list`
 

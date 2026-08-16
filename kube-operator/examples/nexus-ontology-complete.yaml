@@ -52,6 +52,15 @@ spec:
   bssmagic:
     enabled: false
 
+  postgres:
+    enabled: true
+    image: "pgvector/pgvector:pg16"
+    storageSize: 5Gi
+    storageClass: gp2
+    database: ontology_cp
+    user: nexus
+    password: nexus
+
   ingress:
     enabled: true
     scheme: internet-facing
