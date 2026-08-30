@@ -41,9 +41,32 @@ trino:
       requests:
         memory: 2Gi
 
+# Shared Grafana Mimir (TSDB blocks in MinIO). Capabilities set mimir.enabled: false.
+mimir:
+  enabled: true
+  image: grafana/mimir:2.13.0
+  retentionDays: 30
+  blocksBucket: shared-local-mimir-blocks-000000000000
+  persistence:
+    size: 5Gi
+
+# Shared Postgres + pgvector + Apache AGE (nexus-sre-postgres is required for local K3s).
+postgres:
+  enabled: true
+  image: nexus-sre-postgres:latest
+  imagePullPolicy: IfNotPresent
+  database: ontology_cp
+  user: nexus
+  password: nexus
+  persistence:
+    size: 5Gi
+  initExtensions: true
+  ageGraphName: enterprise_onto
+
 init:
   image: python:3.12-slim
   capabilities:
     - ontology
     - nexus-ai
+    - ai-engine
   environment: local

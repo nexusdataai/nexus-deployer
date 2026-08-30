@@ -47,3 +47,72 @@ lk3s_verify_addons() {
         lk3s_warn "StorageClass local-path missing — check K3s install"
     fi
 }
+
+# Resolve the K3s uninstall script for this host.
+# create-local-k3s-cluster.sh installs with INSTALL_K3S_NAME=$LK3S_CLUSTER_NAME, which
+# produces k3s-<name>-uninstall.sh (not k3s-uninstall.sh).
+lk3s_find_uninstall_script() {
+    local -a candidates=()
+    local svc base script
+
+    candidates+=("/usr/local/bin/k3s-${LK3S_CLUSTER_NAME}-uninstall.sh")
+    candidates+=("/usr/local/bin/k3s-uninstall.sh")
+
+    for svc in /etc/systemd/system/k3s*.service; do
+        [ -f "${svc}" ] || continue
+        base=$(basename "${svc}" .service)
+        candidates+=("/usr/local/bin/${base}-uninstall.sh")
+    done
+
+    for script in /usr/local/bin/k3s-*-uninstall.sh; do
+        [ -f "${script}" ] || continue
+        candidates+=("${script}")
+    done
+
+    local seen=" "
+    for script in "${candidates[@]}"; do
+        case "${seen}" in
+            *" ${script} "*) continue ;;
+        esac
+        seen="${seen}${script} "
+        if [ -x "${script}" ]; then
+            echo "${script}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+lk3s_is_installed() {
+    [ -x /usr/local/bin/k3s ] || return 1
+    compgen -G '/etc/systemd/system/k3s*.service' >/dev/null 2>&1 && return 0
+    pgrep -x k3s >/dev/null 2>&1 && return 0
+    return 1
+}
+
+# Run the upstream K3s uninstall script with less terminal noise.
+# The stock script uses set -x and may print benign stderr such as
+# "Cannot find device" or "Unit ... not loaded" while tearing down CNI.
+lk3s_run_uninstall_script() {
+    local script="$1"
+    local verbose="${2:-false}"
+
+    if [ "${verbose}" = true ]; then
+        lk3s_sudo "${script}"
+        return $?
+    fi
+
+    local output rc
+    output=$(mktemp)
+    if lk3s_sudo "${script}" >"${output}" 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
+
+    grep -vE \
+        '^(Cannot find device|Failed to reset failed state of unit|Unit .+ not loaded\.|\+\s)' \
+        "${output}" >&2 || true
+    rm -f "${output}"
+    return "${rc}"
+}

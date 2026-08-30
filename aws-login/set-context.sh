@@ -353,7 +353,7 @@ if [[ "$SEL_AUTH" == "local" ]]; then
     echo ""
     echo "Next:"
     echo "  kubectl get pods -n ${SEL_NAMESPACE}"
-    echo "  cd ../kube-operator && ./deploy-local-aws-stack.sh --kube-context ${SEL_CTX}"
+    echo "  cd ../local-k3s && ./deploy-local-aws-stack.sh --kube-context ${SEL_CTX}"
     echo ""
     exit 0
 fi

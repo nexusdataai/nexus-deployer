@@ -24,6 +24,7 @@ from typing import Dict, Any, Optional
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 
+from ..utils.k8s_client import authed_api_client
 from ..utils.naming import ResourceNaming
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,11 @@ logger = logging.getLogger(__name__)
 MIMIR_IMAGE = "grafana/mimir:2.13.0"
 MIMIR_HTTP_PORT = 8080
 MIMIR_GRPC_PORT = 9095
+
+
+def _normalize_s3_endpoint(endpoint: str) -> str:
+    """Mimir/thanos S3 expects host:port, not a URL with scheme."""
+    return endpoint.removeprefix("https://").removeprefix("http://").rstrip("/")
 
 
 def _build_config_yaml(
@@ -45,14 +51,18 @@ def _build_config_yaml(
     s3_block = f"""      bucket_name: {bucket}
       region: {region}"""
     if local_s3_endpoint:
+        s3_host = _normalize_s3_endpoint(local_s3_endpoint)
         s3_block += f"""
-      endpoint: {local_s3_endpoint}
+      endpoint: {s3_host}
       access_key_id: {local_s3_access_key or "minioadmin"}
       secret_access_key: {local_s3_secret_key or "minioadmin"}
       insecure: true"""
     return f"""# Grafana Mimir monolithic configuration (managed by nexus-operator)
 target: all
 multitenancy_enabled: true
+
+usage_stats:
+  enabled: false
 
 server:
   http_listen_port: {MIMIR_HTTP_PORT}
@@ -67,6 +77,7 @@ common:
 
 blocks_storage:
   backend: s3
+  storage_prefix: blocks
   s3:
 {s3_block}
   bucket_store:
@@ -77,11 +88,13 @@ blocks_storage:
 
 alertmanager_storage:
   backend: s3
+  storage_prefix: alertmanager
   s3:
 {s3_block}
 
 ruler_storage:
   backend: s3
+  storage_prefix: ruler
   s3:
 {s3_block}
 
@@ -110,8 +123,7 @@ compactor:
     kvstore:
       store: memberlist
   compaction_interval: 30m
-  retention_delete_delay: 2h
-  blocks_retention_period: {retention_days}d
+  deletion_delay: 2h
 
 ruler:
   rule_path: /data/ruler
@@ -129,6 +141,7 @@ limits:
   max_global_series_per_metric: 10000
   max_label_names_per_series: 30
   max_label_value_length: 2048
+  compactor_blocks_retention_period: {retention_days}d
 """
 
 
@@ -143,8 +156,9 @@ class MimirProvisioner:
         self.namespace = namespace
         self.naming = naming
         self.region = region
-        self.core_api = client.CoreV1Api()
-        self.apps_api = client.AppsV1Api()
+        api_client = authed_api_client()
+        self.core_api = client.CoreV1Api(api_client=api_client)
+        self.apps_api = client.AppsV1Api(api_client=api_client)
 
     def _common_labels(self) -> Dict[str, str]:
         return {

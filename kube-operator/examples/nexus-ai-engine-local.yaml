@@ -1,0 +1,96 @@
+# Nexus AI Engine — local K3s in-cluster (API + UI pods, shared nexus-local AWS stack)
+#
+# Prerequisites:
+#   ./local-k3s/create-local-k3s-cluster.sh
+#   ./kube-operator/operator.sh deploy
+#   ../local-k3s/deploy-local-aws-stack.sh --kube-context local-cluster
+#
+# Deploy:
+#   ./deploy-capability.sh --product local-ai-engine --env local --skip-iam --skip-creds
+# Or auto-applied by: ./deploy-app-changes.sh ai-engine --env local --all
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-engine-local
+  labels:
+    app.kubernetes.io/name: nexus-ai-engine
+    nexus.ai/capability: ai-engine
+    nexus.ai/environment: local
+---
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: ai-engine-local
+  namespace: ai-engine-local
+  labels:
+    app.kubernetes.io/name: nexus-ai-engine
+    nexus.ai/capability: ai-engine
+    nexus.ai/environment: local
+spec:
+  capabilityName: ai-engine
+  version: "0.1.0"
+  environment: local
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
+
+  localEmulation:
+    enabled: true
+    namespace: nexus-local
+    skipCognito: true
+    skipIam: true
+    # Provision SSM + Secrets Manager via MiniStack (same bootstrap path as remote EKS).
+    # Set skipSsmSecrets: true only for host-run dev (local-dev-deps product).
+    skipSsmSecrets: false
+
+  dataServices:
+    dynamodb:
+      enabled: false
+    s3:
+      enabled: false
+    glue:
+      enabled: false
+
+  backend:
+    enabled: true
+    replicas: 1
+    image: "__API_IMAGE__"
+
+  frontend:
+    enabled: true
+    replicas: 1
+    image: "__UI_IMAGE__"
+
+  bssmagic:
+    enabled: false
+
+  postgres:
+    enabled: false
+
+  mimir:
+    enabled: false
+
+  redis:
+    enabled: true
+
+  jobWorker:
+    enabled: true
+    replicas: 1
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 5
+      lagThreshold: 3
+
+  ingress:
+    enabled: false
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

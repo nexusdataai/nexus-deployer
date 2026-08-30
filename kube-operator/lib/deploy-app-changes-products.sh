@@ -14,6 +14,7 @@
 #  10 pre_build      empty | docs
 #  11 tag_env_key    versions.env key for image tag
 #  12 version_env_key versions.env key for semver
+#  13 dockerfile     Dockerfile path relative to dir (default: Dockerfile)
 
 dac_normalize_product() {
     case "$1" in
@@ -60,8 +61,9 @@ dac_load_product() {
             esac
             local _ae="${AI_ENGINE_DIR:-${NEXUS_ROOT}/nexus-ai-engine}"
             DAC_COMPONENTS=(
-                "api|${_ae}|backend/VERSION|nexus-ai-engine-api|nexus-ai-engine-api|ai-engine-api|--ai-engine-api-version|nexus-ai-engine|deployment||AI_ENGINE_API_TAG|AI_ENGINE_API_VERSION"
-                "ui|${_ae}/frontend|VERSION|nexus-ai-engine-ui|nexus-ai-engine-ui|ai-engine-ui|--ai-engine-ui-version|nexus-ai-engine-ui|deployment||AI_ENGINE_UI_TAG|AI_ENGINE_UI_VERSION"
+                "api|${_ae}|backend/VERSION|nexus-ai-engine-api|nexus-ai-engine-api|ai-engine-api|--ai-engine-api-version|ai-engine-${DEPLOY_ENV}-backend|deployment||AI_ENGINE_API_TAG|AI_ENGINE_API_VERSION|backend/Dockerfile"
+                "worker|${_ae}|backend/VERSION|nexus-ai-engine-api|nexus-ai-engine-api|ai-engine-worker|--ai-engine-worker-version|ai-engine-${DEPLOY_ENV}-job-worker|deployment||AI_ENGINE_WORKER_TAG|AI_ENGINE_API_VERSION|backend/Dockerfile"
+                "ui|${_ae}/frontend|VERSION|nexus-ai-engine-ui|nexus-ai-engine-ui|ai-engine-ui|--ai-engine-ui-version|ai-engine-${DEPLOY_ENV}-frontend|deployment||AI_ENGINE_UI_TAG|AI_ENGINE_UI_VERSION"
             )
             ;;
         sre)
@@ -150,15 +152,15 @@ dac_default_deploy_components() {
 }
 
 dac_validate_product_repos() {
-    local spec id dir
+    local spec id dir dockerfile ver_file
     for spec in "${DAC_COMPONENTS[@]}"; do
         id=$(dac_comp_field "$spec" 1)
         dir=$(dac_comp_field "$spec" 2)
-        if [ ! -d "$dir" ] || [ ! -f "${dir}/Dockerfile" ]; then
-            dac_log_fail "${id}: Dockerfile not found at ${dir}"
+        dockerfile=$(dac_comp_dockerfile "$spec")
+        if [ ! -d "$dir" ] || [ ! -f "${dir}/${dockerfile}" ]; then
+            dac_log_fail "${id}: Dockerfile not found at ${dir}/${dockerfile}"
             return 1
         fi
-        local ver_file
         ver_file=$(dac_comp_field "$spec" 3)
         if [ ! -f "${dir}/${ver_file}" ]; then
             dac_log_warn "${id}: ${dir}/${ver_file} missing — will create on bump"

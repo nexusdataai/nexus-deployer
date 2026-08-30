@@ -1,6 +1,9 @@
 # Nexus AI Engine capability (operator pipeline target)
 #
-# First-time deploy: operator + this descriptor; kubectl apply -k nexus-ai-engine/deploy/k8s/
+# First-time deploy:
+#   ./operator.sh deploy
+#   ./deploy-capability.sh --product ai-engine --env dev
+#
 # Dev iteration:     ./deploy-app-changes.sh ai-engine --env dev
 #
 # Full pipeline (jumpbox / release):
@@ -9,42 +12,81 @@
 #   create-ecr-images.sh --only-ai-engine-images
 #   app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-all
 #
-# v0.2.0-alpha: API image only (embedded dev UI ships inside the API container).
-# React SPA (`ai-engine-ui`) joins the pipeline from Sprint 11.
-#
-# Full NexusCapability CR reconcile (like nexus-ai-complete.yaml) is a follow-up;
-# today AI Engine lives in deploy/k8s manifests + operator rollout scripts.
-#
 # Images:
 #   __ECR_REGISTRY__/nexus-ai-engine-api:<tag>
+#   __ECR_REGISTRY__/nexus-ai-engine-ui:<tag>
 #
 # Namespaces:
 #   dev      -> ai-engine-dev
 #   staging  -> ai-engine-staging
 #   prod     -> ai-engine
-apiVersion: v1
-kind: ConfigMap
+
+apiVersion: nexus.ai/v1
+kind: NexusCapability
 metadata:
-  name: nexus-ai-engine-operator-notes
-  namespace: ai-engine-dev
+  name: ai-engine-__ENV__
+  namespace: ai-engine-__ENV__
   labels:
     app.kubernetes.io/name: nexus-ai-engine
     nexus.ai/capability: ai-engine
-data:
-  deploy.md: |
-    First time: kubectl apply -k nexus-ai-engine/deploy/k8s/ (after operator/admin setup)
-    Dev updates: ./deploy-app-changes.sh ai-engine --env dev
+    nexus.ai/environment: __ENV__
+spec:
+  capabilityName: ai-engine
+  version: "0.2.0"
+  environment: __ENV__
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
 
-    Full release pipeline:
-      ./bump-version.sh ai-engine-all patch
-      ./package-images.sh --only-ai-engine-images
-      ./create-ecr-images.sh --only-ai-engine-images
-      ./app-rollout.sh --capability ai-engine --env dev --version <tag> ai-engine-all
+  dataServices:
+    dynamodb:
+      enabled: true
+    s3:
+      enabled: true
+    glue:
+      enabled: false
 
-    Health gates:
-      GET /health     -> 200
-      GET /readiness  -> 200 (from v0.2.0-alpha)
+  backend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ai-engine-api:latest"
 
-    Source repo: nexus-ai-engine/
-    K8s manifests: nexus-ai-engine/deploy/k8s/
-    Reference: docs/dev-plan/040-kube-operator-integration.md
+  frontend:
+    enabled: true
+    replicas: 1
+    image: "__ECR_REGISTRY__/nexus-ai-engine-ui:latest"
+
+  bssmagic:
+    enabled: false
+
+  postgres:
+    enabled: false
+
+  mimir:
+    enabled: false
+
+  redis:
+    enabled: true
+
+  jobWorker:
+    enabled: true
+    replicas: 1
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 10
+      lagThreshold: 5
+
+  ingress:
+    enabled: true
+    scheme: internet-facing
+    healthCheckPath: /health
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

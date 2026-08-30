@@ -6,8 +6,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-. "${SCRIPT_DIR}/lib/common.sh"
+LK3S_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "${LK3S_ROOT}/lib/common.sh"
 
 FAIL=0
 
@@ -26,10 +27,17 @@ export KUBECONFIG="${LK3S_KUBECONFIG}"
 check lk3s_kubectl cluster-info
 check lk3s_kubectl get nodes
 check lk3s_kubectl get storageclass local-path
-check lk3s_kubectl run lk3s-verify --image=busybox:1.36 --restart=Never --rm -i --command -- echo ok 2>/dev/null || \
-    lk3s_kubectl run lk3s-verify --image=busybox:1.36 --restart=Never -- sleep 5 && \
-    lk3s_kubectl wait --for=condition=Ready pod/lk3s-verify --timeout=60s && \
-    lk3s_kubectl delete pod lk3s-verify --ignore-not-found
+
+verify_sample_pod() {
+    local pod="lk3s-verify-$$"
+    lk3s_kubectl run "${pod}" \
+        --restart=Never \
+        --image=busybox:1.36 \
+        --command -- sleep 15
+    lk3s_kubectl wait --for=condition=Ready "pod/${pod}" --timeout=60s
+    lk3s_kubectl delete pod "${pod}" --ignore-not-found --wait=false >/dev/null
+}
+check verify_sample_pod
 
 if [ "${FAIL}" -eq 0 ]; then
     lk3s_ok "K3s verification passed"

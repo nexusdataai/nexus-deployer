@@ -307,6 +307,36 @@ kubectl apply -f test-capability-updated.yaml
 
 The operator will perform a rolling update of changed resources.
 
+## AI Engine job workers and KEDA autoscaling
+
+When `spec.jobWorker.enabled: true` and Redis is enabled, the operator deploys
+`ai-engine-{env}-job-worker` and optionally a KEDA `ScaledObject` when
+`spec.jobWorker.autoscaling.enabled: true`.
+
+**Prerequisite:** install [KEDA](https://keda.sh/) in the cluster before enabling autoscaling:
+
+```bash
+helm repo add kedacore https://kedacore.github.io/charts
+helm install keda kedacore/keda --namespace keda --create-namespace
+```
+
+Example autoscaling block:
+
+```yaml
+jobWorker:
+  enabled: true
+  replicas: 1
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    lagThreshold: 3
+```
+
+Manual replica changes and autoscaling can be managed from Journey Studio **Workers**
+(`PATCH /api/v1/workers/scale` and `/api/v1/workers/autoscaling`) when the API pod
+has in-cluster RBAC (created automatically in queue mode).
+
 ## Deleting a Capability
 
 ```bash

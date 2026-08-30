@@ -139,6 +139,7 @@ done
 case "$DEPLOY_ENV" in
     prod)  CLUSTER_NAME="${CLUSTER_NAME:-nexus-prod}" ;;
     dev)   CLUSTER_NAME="${CLUSTER_NAME:-nexus-dev}" ;;
+    local) CLUSTER_NAME="${CLUSTER_NAME:-local-cluster}" ;;
     *)     CLUSTER_NAME="${CLUSTER_NAME:-nexus-${DEPLOY_ENV}}" ;;
 esac
 
@@ -146,17 +147,55 @@ dac_load_product "$PRODUCT" || exit 1
 dac_validate_product_repos || exit 1
 
 if [ "$DRY_RUN" = false ]; then
-    nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE:-}" >/dev/null 2>&1 \
-        || { dac_log_fail "Failed to configure kubectl for cluster '${CLUSTER_NAME}'"; exit 1; }
+    if [ "${CLUSTER_NAME}" = "local-cluster" ]; then
+        if ! kubectl config use-context "${CLUSTER_NAME}" --kubeconfig "${KUBECONFIG}" >/dev/null 2>&1; then
+            nexus_local_k3s_refresh_kubeconfig "${CLUSTER_NAME}" "${CLUSTER_NAME}" >/dev/null 2>&1 \
+                || dac_log_warn "Context ${CLUSTER_NAME} not in kubeconfig — run local-k3s/create-local-k3s-cluster.sh"
+            kubectl config use-context "${CLUSTER_NAME}" --kubeconfig "${KUBECONFIG}" >/dev/null 2>&1 \
+                || { dac_log_fail "Failed to configure kubectl for local K3s ('${CLUSTER_NAME}')"; exit 1; }
+        fi
+    else
+        nexus_eks_update_kubeconfig "${CLUSTER_NAME}" "${REGION}" "${AWS_PROFILE:-}" >/dev/null 2>&1 \
+            || aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" \
+                --profile "${AWS_PROFILE:-}" --kubeconfig "${KUBECONFIG}" >/dev/null 2>&1 \
+            || { dac_log_fail "Failed to configure kubectl for cluster '${CLUSTER_NAME}'"; exit 1; }
+    fi
+    kubectl get nodes >/dev/null 2>&1 \
+        || { dac_log_fail "kubectl cannot connect to cluster '${CLUSTER_NAME}'"; exit 1; }
 fi
 
-ACCOUNT_ID="$(nexus_aws_account_id)"
-if [ -z "$ACCOUNT_ID" ] && [ "$DRY_RUN" = false ]; then
-    dac_log_fail "AWS credentials not available (run: source aws-login/.active-env)"
-    exit 1
+if [ "$DRY_RUN" = false ]; then
+    dac_prepare_ecr_aws_env
 fi
+
+LOCAL_K3S_IMAGES=false
+ACCOUNT_ID="$(nexus_aws_account_id)"
+if [ -z "$ACCOUNT_ID" ]; then
+    if { [ "${CLUSTER_NAME}" = "local-cluster" ] || [ "${DEPLOY_ENV}" = "local" ]; }; then
+        LOCAL_K3S_IMAGES=true
+        [ "$DRY_RUN" = false ] \
+            && dac_log_warn "No AWS credentials for ECR — building locally and importing into K3s"
+        ACCOUNT_ID="local"
+    elif [ "$DRY_RUN" = false ]; then
+        dac_log_fail "AWS credentials not available for ECR (run: aws sts get-caller-identity, or use --env local on K3s)"
+        exit 1
+    fi
+fi
+export LOCAL_K3S_IMAGES
 [ -z "$ACCOUNT_ID" ] && ACCOUNT_ID="<account>"
-ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+
+# local-cluster only runs ai-engine-local workloads (not ai-engine-dev).
+if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ai-engine" ] && [ "$DEPLOY_ENV" != "local" ]; then
+    dac_log_warn "local-cluster uses ai-engine-local — remapping --env ${DEPLOY_ENV} → local"
+    DEPLOY_ENV=local
+    dac_load_product "$PRODUCT" || exit 1
+fi
+
+if [ "$LOCAL_K3S_IMAGES" = true ]; then
+    ECR_REGISTRY="local-k3s"
+else
+    ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+fi
 
 BUILD_FLAGS=""
 [ "$NO_CACHE" = true ] && BUILD_FLAGS="--no-cache"
@@ -204,7 +243,7 @@ dac_log_info "Product:      ${PRODUCT} (${DAC_PRODUCT_LABEL})"
 dac_log_info "Environment:  ${DEPLOY_ENV}"
 dac_log_info "Namespace:    ${DAC_NAMESPACE}"
 dac_log_info "Cluster:      ${CLUSTER_NAME}"
-dac_log_info "ECR:          ${ECR_REGISTRY}"
+dac_log_info "ECR:          ${ECR_REGISTRY}$([ "$LOCAL_K3S_IMAGES" = true ] && echo ' (local import, no push)')"
 dac_log_info "Descriptor:   ${DAC_DESCRIPTOR}"
 dac_log_info "Components:   ${!DEPLOY_COMP[*]}"
 dac_log_info "Bump:         ${BUMP_TYPE}"
@@ -252,8 +291,12 @@ fi
 
 # ── Phase 2: build + push ────────────────────────────────────────
 if [ "$SKIP_BUILD" = false ]; then
-    dac_log_step "Phase 2: Build + push to ECR"
-    dac_ecr_login "$ACCOUNT_ID"
+    if [ "$LOCAL_K3S_IMAGES" = true ]; then
+        dac_log_step "Phase 2: Build + import into K3s"
+    else
+        dac_log_step "Phase 2: Build + push to ECR"
+        dac_ecr_login "$ACCOUNT_ID"
+    fi
     _build_jobs=()
     for id in "${!DEPLOY_COMP[@]}"; do
         spec="${COMP_SPEC[$id]}"
@@ -261,9 +304,10 @@ if [ "$SKIP_BUILD" = false ]; then
         ecr_repo=$(dac_comp_field "$spec" 5)
         dir=$(dac_comp_field "$spec" 2)
         pre_build=$(dac_comp_field "$spec" 10)
+        dockerfile=$(dac_comp_dockerfile "$spec")
         tag="${COMP_TAG[$id]}"
         sha="${COMP_SHA[$id]:-}"
-        _build_jobs+=("${id}|dac_build_and_push '${local_image}' '${ecr_repo}' '${tag}' '${sha}' '${BUILD_FLAGS}' '${dir}' '${pre_build}'")
+        _build_jobs+=("${id}|dac_build_and_push '${local_image}' '${ecr_repo}' '${tag}' '${sha}' '${BUILD_FLAGS}' '${dir}' '${pre_build}' '${dockerfile}'")
     done
     dac_run_parallel_jobs "build+push" "${_build_jobs[@]}" || exit 1
 
@@ -292,6 +336,9 @@ fi
 
 # ── Phase 3: rollout ─────────────────────────────────────────────
 if [ "$SKIP_ROLLOUT" = false ]; then
+    if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ai-engine" ]; then
+        dac_ensure_local_ai_engine_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
+    fi
     dac_log_step "Phase 3: Kubernetes rollout (no diagnostics)"
     _rollout_jobs=()
     for id in "${!DEPLOY_COMP[@]}"; do
@@ -300,8 +347,9 @@ if [ "$SKIP_ROLLOUT" = false ]; then
         version_flag=$(dac_comp_field "$spec" 7)
         k8s_name=$(dac_comp_field "$spec" 8)
         kind=$(dac_comp_field "$spec" 9)
+        local_image=$(dac_comp_field "$spec" 4)
         tag="${COMP_TAG[$id]}"
-        _rollout_jobs+=("${id}|dac_rollout_component '${rollout_comp}' '${version_flag}' '${tag}' '${k8s_name}' '${kind}'")
+        _rollout_jobs+=("${id}|dac_rollout_component '${rollout_comp}' '${version_flag}' '${tag}' '${k8s_name}' '${kind}' '${local_image}'")
     done
     dac_run_parallel_jobs "rollout" "${_rollout_jobs[@]}" || exit 1
 else

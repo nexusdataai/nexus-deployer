@@ -488,7 +488,11 @@ ai_engine_push() {
             return 1
         fi
         echo "  Building from source: ${src_dir}"
-        docker build --no-cache -t "${repo}:latest" "${src_dir}"
+        if [ "$repo" = "nexus-ai-engine-api" ]; then
+            docker build --no-cache -f backend/Dockerfile -t "${repo}:latest" "${src_dir}"
+        else
+            docker build --no-cache -t "${repo}:latest" "${src_dir}"
+        fi
     else
         echo "  Loading from tar: ${AI_ENGINE_IMAGES_DIR}/${tar_name}"
         docker load -i "${AI_ENGINE_IMAGES_DIR}/${tar_name}"

@@ -163,7 +163,7 @@ Ordering (when rolling out multiple):
 EOF
             exit 0
             ;;
-        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|simulator)
+        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-worker|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|simulator)
             COMPONENTS="${COMPONENTS} $1"; shift ;;
         *)
             echo "Unknown option: $1"; exit 1 ;;
@@ -225,7 +225,7 @@ unset _NEXUS_VERSIONS _BSS_VERSIONS _AI_ENGINE_VERSIONS _SRE_VERSIONS _ONTOLOGY_
 #   ai-engine    -> ai-engine-all
 case "$COMPONENTS" in
     *sre-all*)        COMPONENTS="sre-postgres sre-backend sre-ui" ;;
-    *ai-engine-all*)  COMPONENTS="ai-engine-api ai-engine-ui" ;;
+    *ai-engine-all*)  COMPONENTS="ai-engine-api ai-engine-worker ai-engine-ui" ;;
     *ontology-all*)  COMPONENTS="ontology-api ontology-ui" ;;
     *all*)            COMPONENTS="bssmagic backend frontend" ;;
 esac
@@ -241,6 +241,7 @@ resource_name() {
         sre-ui)          echo "nexus-sre-ui" ;;
         sre-postgres)    echo "nexus-sre-postgres" ;;
         ai-engine-api)   echo "nexus-ai-engine" ;;
+        ai-engine-worker) echo "ai-engine-${ENV}-job-worker" ;;
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
         ontology-api)    echo "${CAPABILITY}-${ENV}-backend" ;;
         ontology-ui)     echo "${CAPABILITY}-${ENV}-frontend" ;;
@@ -265,6 +266,7 @@ ecr_repo() {
         sre-ui)          echo "nexus-sre-ui" ;;
         sre-postgres)    echo "nexus-sre-postgres" ;;
         ai-engine-api)   echo "nexus-ai-engine-api" ;;
+        ai-engine-worker) echo "nexus-ai-engine-api" ;;
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
         ontology-api)    echo "nexus-ontology-api" ;;
         ontology-ui)     echo "nexus-ontology-ui" ;;
@@ -281,6 +283,7 @@ container_name() {
         sre-ui)          echo "ui" ;;
         sre-postgres)    echo "postgres" ;;
         ai-engine-api)   echo "server" ;;
+        ai-engine-worker) echo "job-worker" ;;
         ai-engine-ui)    echo "ui" ;;
         ontology-api)    echo "backend" ;;
         ontology-ui)     echo "frontend" ;;
@@ -297,6 +300,7 @@ health_check_cmd() {
         sre-ui)       echo "wget -qO- --timeout=5 http://127.0.0.1:8080/healthz >/dev/null 2>&1" ;;
         sre-postgres)    echo "pg_isready -U nexus -d nexus_sre -q 2>/dev/null || echo fail" ;;
         ai-engine-api)   echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
+        ai-engine-worker) echo "curl -sf --max-time 5 http://127.0.0.1:8081/live" ;;
         ai-engine-ui)    echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
         ontology-api)    echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
         ontology-ui)     echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
@@ -313,6 +317,7 @@ target_version_for() {
         sre-ui)          _tv="${SRE_UI_VERSION:-${TARGET_VERSION}}" ;;
         sre-postgres)    _tv="${SRE_POSTGRES_VERSION:-${TARGET_VERSION}}" ;;
         ai-engine-api)   _tv="${AI_ENGINE_API_VERSION:-${TARGET_VERSION}}" ;;
+        ai-engine-worker) _tv="${AI_ENGINE_WORKER_VERSION:-${AI_ENGINE_API_VERSION:-${TARGET_VERSION}}}" ;;
         ai-engine-ui)    _tv="${AI_ENGINE_UI_VERSION:-${TARGET_VERSION}}" ;;
         ontology-api)    _tv="${ONTOLOGY_API_VERSION:-${TARGET_VERSION}}" ;;
         ontology-ui)     _tv="${ONTOLOGY_UI_VERSION:-${TARGET_VERSION}}" ;;
@@ -332,6 +337,10 @@ target_version_for() {
         frontend) [ -n "$PACKAGED_FRONTEND_TAG" ] && { echo "$PACKAGED_FRONTEND_TAG"; return; } ;;
         bssmagic) [ -n "$PACKAGED_BSSMAGIC_TAG" ] && { echo "$PACKAGED_BSSMAGIC_TAG"; return; } ;;
         ai-engine-api)  [ -n "$PACKAGED_AI_ENGINE_API_TAG" ]  && { echo "$PACKAGED_AI_ENGINE_API_TAG";  return; } ;;
+        ai-engine-worker)
+            [ -n "$PACKAGED_AI_ENGINE_WORKER_TAG" ] && { echo "$PACKAGED_AI_ENGINE_WORKER_TAG"; return; }
+            [ -n "$PACKAGED_AI_ENGINE_API_TAG" ] && { echo "$PACKAGED_AI_ENGINE_API_TAG"; return; }
+            ;;
         ai-engine-ui)   [ -n "$PACKAGED_AI_ENGINE_UI_TAG" ]   && { echo "$PACKAGED_AI_ENGINE_UI_TAG";   return; } ;;
         sre-backend)    [ -n "$PACKAGED_SRE_BACKEND_TAG" ]    && { echo "$PACKAGED_SRE_BACKEND_TAG";    return; } ;;
         sre-ui)         [ -n "$PACKAGED_SRE_UI_TAG" ]         && { echo "$PACKAGED_SRE_UI_TAG";         return; } ;;
@@ -394,6 +403,7 @@ component_label() {
         backend)  echo "backend (API)" ;;
         bssmagic) echo "BSS Magic" ;;
         ai-engine-api) echo "AI Engine API" ;;
+        ai-engine-worker) echo "AI Engine Job Worker" ;;
         ai-engine-ui)  echo "AI Engine UI" ;;
         ontology-api) echo "Ontology API" ;;
         ontology-ui)  echo "Ontology UI" ;;

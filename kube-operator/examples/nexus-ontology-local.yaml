@@ -3,7 +3,7 @@
 # Prerequisites:
 #   ./local-k3s/create-local-k3s-cluster.sh
 #   ./kube-operator/operator.sh deploy
-#   ./kube-operator/deploy-local-aws-stack.sh
+#   ../local-k3s/deploy-local-aws-stack.sh --kube-context local-cluster
 #
 # Deploy:
 #   ./deploy-capability.sh --product local-ontology --env local --skip-images
@@ -54,19 +54,10 @@ spec:
     enabled: false
 
   postgres:
-    enabled: true
-    image: "pgvector/pgvector:pg16"
-    storageSize: 5Gi
-    storageClass: local-path
-    database: ontology_cp
-    user: nexus
-    password: nexus
+    enabled: false
 
   mimir:
-    enabled: true
-    retentionDays: 30
-    storageSize: 5Gi
-    storageClass: local-path
+    enabled: false
 
   redis:
     enabled: false

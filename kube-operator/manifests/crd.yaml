@@ -396,6 +396,48 @@ spec:
                       description: "Additional ALB annotations for internal ingress"
                       additionalProperties:
                         type: string
+                jobWorker:
+                  type: object
+                  description: "Redis Streams job worker for ai-engine queue mode"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                      minimum: 0
+                      maximum: 20
+                      default: 1
+                    resources:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                        cpuLimit:
+                          type: string
+                        memoryLimit:
+                          type: string
+                    autoscaling:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        minReplicas:
+                          type: integer
+                          minimum: 0
+                          default: 1
+                        maxReplicas:
+                          type: integer
+                          minimum: 1
+                          default: 10
+                        lagThreshold:
+                          type: integer
+                          minimum: 1
+                          default: 5
+                          description: "Scale out when Redis stream lag reaches this count"
                 hpa:
                   type: object
                   description: "Horizontal Pod Autoscaler configuration"

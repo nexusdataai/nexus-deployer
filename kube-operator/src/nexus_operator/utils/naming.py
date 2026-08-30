@@ -184,6 +184,26 @@ class ResourceNaming:
         """Get the journey reports bucket name."""
         return self.s3_bucket("journey-reports")
 
+    # Legacy CloudFormation names for ai-engine remote AWS (ai-engine-{purpose}-{env})
+    def ai_engine_journeys_table(self) -> str:
+        return f"ai-engine-journeys-{self.environment}"
+
+    def ai_engine_executions_table(self) -> str:
+        return f"ai-engine-executions-{self.environment}"
+
+    def ai_engine_prompts_table(self) -> str:
+        return f"ai-engine-prompts-{self.environment}"
+
+    def ai_engine_journey_logs_bucket(self) -> str:
+        return f"ai-engine-journey-logs-{self.environment}"
+
+    def ai_engine_journey_reports_bucket(self) -> str:
+        return f"ai-engine-journey-reports-{self.environment}"
+
+    def ai_engine_ssm_parameter(self, key: str) -> str:
+        """Flat SSM path used by nexus-ai-engine serve --ssm-prefix."""
+        return f"/{self.capability_name}/{self.environment}/{key}"
+
     def mimir_blocks_bucket(self) -> str:
         """Get the Mimir TSDB blocks storage bucket name."""
         return self.s3_bucket("mimir-blocks")

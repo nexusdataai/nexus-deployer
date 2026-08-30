@@ -239,8 +239,8 @@ fi
 
 # Validate AI Engine dirs only if we intend to package them
 if [ "$AI_ENGINE_MODE" = true ] || [ "$SKIP_AI_ENGINE" = false ]; then
-    if [ "$SKIP_AI_ENGINE_API" != true ] && [ "$ONLY_AI_ENGINE_UI" != true ] && [ ! -f "${AI_ENGINE_DIR}/Dockerfile" ]; then
-        echo "ERROR: nexus-ai-engine Dockerfile not found at ${AI_ENGINE_DIR}/Dockerfile"
+    if [ "$SKIP_AI_ENGINE_API" != true ] && [ "$ONLY_AI_ENGINE_UI" != true ] && [ ! -f "${AI_ENGINE_DIR}/backend/Dockerfile" ]; then
+        echo "ERROR: nexus-ai-engine Dockerfile not found at ${AI_ENGINE_DIR}/backend/Dockerfile"
         echo "  Use --ai-engine-dir to specify the nexus-ai-engine repository root"
         exit 1
     fi
@@ -543,7 +543,7 @@ fi
 if [ "$PACKAGE_AI_ENGINE_API" = true ]; then
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo "=== [${CURRENT_STEP}/${TOTAL_STEPS}] Building nexus-ai-engine API image: ${AI_ENGINE_API_IMAGE} ==="
-    docker build -t "${AI_ENGINE_API_IMAGE}" "${AI_ENGINE_DIR}"
+    docker build -f backend/Dockerfile -t "${AI_ENGINE_API_IMAGE}" "${AI_ENGINE_DIR}"
     echo "  Done."
     echo ""
 

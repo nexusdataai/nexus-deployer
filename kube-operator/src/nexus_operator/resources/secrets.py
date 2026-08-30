@@ -6,8 +6,9 @@ Requirements: 4.7
 """
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
+import boto3
 from botocore.exceptions import ClientError
 
 from ..utils.aws_vpc_endpoints import vpc_boto3_client
@@ -41,10 +42,24 @@ class SecretsProvisioner:
     # BSS Magic secrets (auto-created with defaults on first deploy)
     BSSMAGIC_SECRET_TYPES = ["bssmagic-credentials", "bssmagic-axway-config"]
     
-    def __init__(self, naming: ResourceNaming, region: str):
+    def __init__(
+        self,
+        naming: ResourceNaming,
+        region: str,
+        endpoint_url: Optional[str] = None,
+    ):
         self.naming = naming
         self.region = region
-        self.client = vpc_boto3_client("secretsmanager", region_name=region)
+        if endpoint_url:
+            self.client = boto3.client(
+                "secretsmanager",
+                region_name=region,
+                endpoint_url=endpoint_url,
+                aws_access_key_id="test",
+                aws_secret_access_key="test",
+            )
+        else:
+            self.client = vpc_boto3_client("secretsmanager", region_name=region)
     
     async def provision_all(self) -> List[Dict[str, Any]]:
         """Provision all required secrets with placeholder/default values."""

@@ -36,3 +36,14 @@ lk3s_export_kubeconfig() {
     kubectl config use-context "${LK3S_CLUSTER_NAME}" >/dev/null 2>&1 || true
     lk3s_ok "Kubeconfig exported to ${LK3S_KUBECONFIG} (context: ${LK3S_CLUSTER_NAME})"
 }
+
+lk3s_remove_kubeconfig_context() {
+    if [ ! -f "${LK3S_KUBECONFIG}" ]; then
+        return 0
+    fi
+    export KUBECONFIG="${LK3S_KUBECONFIG}"
+    kubectl config delete-context "${LK3S_CLUSTER_NAME}" >/dev/null 2>&1 || true
+    kubectl config delete-cluster "${LK3S_CLUSTER_NAME}" >/dev/null 2>&1 || true
+    kubectl config unset "users.${LK3S_CLUSTER_NAME}" >/dev/null 2>&1 || true
+    lk3s_ok "Removed kubeconfig context ${LK3S_CLUSTER_NAME}"
+}

@@ -46,6 +46,10 @@ spec:
               value: {{ .Values.minio.accessKey | quote }}
             - name: AWS_SECRET_ACCESS_KEY
               value: {{ .Values.minio.secretKey | quote }}
+            {{- if .Values.mimir.enabled }}
+            - name: SHARED_MIMIR_BUCKET
+              value: {{ .Values.mimir.blocksBucket | quote }}
+            {{- end }}
           volumeMounts:
             - name: init-script
               mountPath: /scripts

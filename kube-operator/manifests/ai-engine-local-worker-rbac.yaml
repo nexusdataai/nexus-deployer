@@ -1,0 +1,32 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-engine-local-worker-manager
+  namespace: ai-engine-local
+rules:
+  - apiGroups: ["nexus.ai"]
+    resources: ["nexuscapabilities"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-engine-local-worker-manager
+  namespace: ai-engine-local
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ai-engine-local-worker-manager
+subjects:
+  - kind: ServiceAccount
+    name: ai-engine-local-app-role-sa
+    namespace: ai-engine-local

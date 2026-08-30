@@ -1,0 +1,79 @@
+# Nexus Ontology — K3s dev dependencies (host-run backend/frontend)
+#
+# Shared infra (MinIO, MiniStack, Scylla, Redis, Mimir, Postgres) is deployed
+# once in nexus-local via deploy-local-aws-stack.sh — NOT per capability.
+#
+# Prerequisites:
+#   ./local-k3s/create-local-k3s-cluster.sh
+#   ./kube-operator/operator.sh deploy
+#   ../local-k3s/deploy-local-aws-stack.sh --kube-context local-cluster
+#
+# Deploy (wires localEmulation only — no duplicate Mimir/Postgres):
+#   source ../../aws-login/.active-env
+#   kubectl --context local-cluster apply -f examples/nexus-ontology-local-dev-deps.yaml
+#
+# Host dev:
+#   cd ../../nexus-ontology && ./scripts/port-forward-k3s-dev.sh
+#   cp backend/.env.local.k3s.example backend/.env.local
+
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: ontology-local-dev-deps
+  namespace: ontology-local
+  labels:
+    app.kubernetes.io/name: nexus-ontology
+    nexus.ai/capability: ontology
+    nexus.ai/environment: local
+spec:
+  capabilityName: ontology
+  version: "0.1.0"
+  environment: local
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
+
+  localEmulation:
+    enabled: true
+    namespace: nexus-local
+    skipCognito: true
+    skipIam: true
+    skipSsmSecrets: true
+
+  dataServices:
+    dynamodb:
+      enabled: false
+    s3:
+      enabled: false
+    glue:
+      enabled: false
+
+  backend:
+    enabled: false
+
+  frontend:
+    enabled: false
+
+  bssmagic:
+    enabled: false
+
+  postgres:
+    enabled: false
+
+  mimir:
+    enabled: false
+
+  redis:
+    enabled: false
+
+  ingress:
+    enabled: false
+
+  internalIngress:
+    enabled: false
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: false

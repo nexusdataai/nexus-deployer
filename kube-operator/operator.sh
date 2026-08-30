@@ -76,7 +76,7 @@ Options:
 Prerequisites (managed by separate scripts):
   Cluster setup:    aws-eks/create-hardened-eks-cluster.sh  (EKS prod)
                     local-k3s/create-local-k3s-cluster.sh   (local K3s dev)
-  Local AWS stack:  ./deploy-local-aws-stack.sh
+  Local AWS stack:  ../local-k3s/deploy-local-aws-stack.sh
   Cluster checks:   ./cluster-access.sh check
   Cluster fix:      ./cluster-access.sh fix
   Cluster delete:   deploy/eks/delete-eks-cluster.sh
@@ -102,12 +102,14 @@ show_header() {
     local action=$1
     echo ""
     echo "=============================================="
-    echo "  $action Operator - nexus-dev Cluster"
+    echo "  $action Operator - ${CLUSTER_NAME} Cluster"
     echo "=============================================="
     echo ""
     echo "Cluster:     ${CLUSTER_NAME}"
-    echo "Region:      ${REGION}"
-    echo "AWS Profile: ${AWS_PROFILE}"
+    if [ "${CLUSTER_NAME}" != "local-cluster" ]; then
+        echo "Region:      ${REGION}"
+        echo "AWS Profile: ${AWS_PROFILE}"
+    fi
     echo ""
 }
 
@@ -155,6 +157,68 @@ check_dependencies() {
     echo ""
 }
 
+deploy_operator_local() {
+    local force_flag="${1:-}"
+    local operator_image="nexus/nexus-operator:latest"
+    local manifests="${SCRIPT_DIR}/manifests"
+
+    show_header "Deploy (local K3s)"
+    check_dependencies
+
+    kubectl config use-context "${CLUSTER_NAME}" >/dev/null 2>&1 \
+        || { echo -e "${RED}Context ${CLUSTER_NAME} not in kubeconfig — run local-k3s/create-local-k3s-cluster.sh${NC}"; exit 1; }
+
+    if kubectl get deployment nexus-operator -n nexus-system >/dev/null 2>&1 && [ -z "${force_flag}" ]; then
+        echo -e "${YELLOW}Operator already installed. Use --force to redeploy.${NC}"
+        exit 1
+    fi
+
+    echo "Building operator image (${operator_image}) ..."
+    docker build -t "${operator_image}" "${SCRIPT_DIR}"
+
+    echo "Importing image into K3s ..."
+    if ! command -v k3s >/dev/null 2>&1; then
+        echo -e "${RED}k3s CLI not found — cannot import local operator image${NC}"
+        exit 1
+    fi
+    docker save "${operator_image}" | k3s ctr -n k8s.io images import - >/dev/null
+
+    echo "Applying operator manifests ..."
+    kubectl apply -f "${manifests}/crd.yaml"
+    kubectl apply -f "${manifests}/network-config-crd.yaml"
+
+    kubectl create namespace nexus-system --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-operator
+  namespace: nexus-system
+  labels:
+    app.kubernetes.io/name: nexus-operator
+    app.kubernetes.io/component: operator
+EOF
+    awk 'NR>=21' "${manifests}/rbac.yaml" | kubectl apply -f -
+
+    sed \
+        -e 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|' \
+        -e "s|value: \"\"  # REQUIRED: Set to your EKS cluster name for IRSA|value: \"${CLUSTER_NAME}\"|" \
+        "${manifests}/deployment.yaml" | kubectl apply -f -
+
+    echo "Waiting for operator rollout ..."
+    kubectl rollout status deployment/nexus-operator -n nexus-system --timeout=120s
+
+    echo ""
+    echo -e "${GREEN}=============================================="
+    echo "  ✓ Local operator deployment complete!"
+    echo -e "===============================================${NC}"
+    echo ""
+    echo "Verify:"
+    echo "  kubectl -n nexus-system get pods"
+    echo "  kubectl -n nexus-system logs -f deployment/nexus-operator"
+    echo ""
+}
+
 deploy_operator() {
     local force_flag=""
     local skip_irsa_fix=""
@@ -175,6 +239,11 @@ deploy_operator() {
                 ;;
         esac
     done
+
+    if [ "${CLUSTER_NAME}" = "local-cluster" ]; then
+        deploy_operator_local "${force_flag}"
+        return $?
+    fi
     
     show_header "Deploy"
     check_dependencies

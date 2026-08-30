@@ -177,18 +177,39 @@ def _local_emulation_config(spec: dict) -> Dict[str, Any]:
     """Resolved endpoints and credentials for localEmulation mode."""
     le = spec.get("localEmulation") or {}
     ns = le.get("namespace", "nexus-local")
+    ministack_host = le.get("ministackService", f"ministack-svc.{ns}.svc.cluster.local")
     return {
         "namespace": ns,
-        "ministack_host": le.get("ministackService", f"ministack-svc.{ns}.svc.cluster.local"),
+        "ministack_host": ministack_host,
+        "ministack_url": le.get(
+            "ministackEndpoint",
+            f"http://{ministack_host}:4566",
+        ),
         "minio_url": le.get("minioService", f"http://minio-svc.{ns}.svc.cluster.local:9000"),
         "scylla_url": le.get("scyllaService", f"http://scylla-svc.{ns}.svc.cluster.local:8000"),
         "redis_host": le.get("redisService", f"redis-svc.{ns}.svc.cluster.local"),
+        "mimir_host": le.get("mimirService", f"mimir-svc.{ns}.svc.cluster.local"),
+        "mimir_url": le.get(
+            "mimirEndpoint",
+            f"http://mimir-svc.{ns}.svc.cluster.local:8080",
+        ),
+        "postgres_host": le.get("postgresService", f"pgvector-svc.{ns}.svc.cluster.local"),
+        "postgres_database": le.get("postgresDatabase", "ontology_cp"),
+        "postgres_user": le.get("postgresUser", "nexus"),
+        "postgres_password": le.get("postgresPassword", "nexus"),
         "minio_access_key": le.get("minioAccessKey", "minioadmin"),
         "minio_secret_key": le.get("minioSecretKey", "minioadmin"),
         "skip_cognito": le.get("skipCognito", True),
         "skip_iam": le.get("skipIam", True),
-        "skip_ssm_secrets": le.get("skipSsmSecrets", True),
+        "skip_ssm_secrets": le.get("skipSsmSecrets", False),
     }
+
+
+def _ssm_endpoint_url(spec: dict) -> Optional[str]:
+    """MiniStack SSM gateway URL when local emulation provisions parameters."""
+    if not _is_local_emulation(spec):
+        return None
+    return _local_emulation_config(spec).get("ministack_url")
 
 
 def _needs_data_services_reconcile(spec: dict, status: Optional[dict]) -> bool:
@@ -315,6 +336,8 @@ async def _provision_ssm_parameters(
     steps: List[Dict],
     patch: kopf.Patch,
     logger_: logging.Logger,
+    ssm_endpoint_url: Optional[str] = None,
+    local_emulation: bool = False,
 ) -> None:
     """Write SSM parameters that reference provisioned AWS resource names."""
     from .resources import SSMProvisioner
@@ -325,7 +348,12 @@ async def _provision_ssm_parameters(
     patch.status["steps"] = list(steps)
 
     logger_.info("Provisioning SSM parameters...")
-    ssm = SSMProvisioner(naming, region)
+    ssm = SSMProvisioner(
+        naming,
+        region,
+        endpoint_url=ssm_endpoint_url,
+        local_emulation=local_emulation,
+    )
     ssm_results = await ssm.provision_all(resources)
     resources["ssmParameters"] = [r["name"] for r in ssm_results if r["status"] in ["created", "exists"]]
 
@@ -718,14 +746,19 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             patch.status["steps"] = list(steps)
         
         # ── Step 5: SSM Parameters ──
-        if local_mode and local_cfg.get("skip_ssm_secrets", True):
+        if local_mode and local_cfg.get("skip_ssm_secrets", False):
             _update_step(steps, "SSM", "skipped", resources=["localEmulation"])
             patch.status["steps"] = list(steps)
         else:
-            await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+            ministack_ssm = local_cfg.get("ministack_url") if local_mode else None
+            await _provision_ssm_parameters(
+                naming, region, resources, steps, patch, logger,
+                ssm_endpoint_url=ministack_ssm,
+                local_emulation=local_mode,
+            )
         
         # ── Step 6: Secrets ──
-        if local_mode and local_cfg.get("skip_ssm_secrets", True):
+        if local_mode and local_cfg.get("skip_ssm_secrets", False):
             _update_step(steps, "Secrets", "skipped", resources=["localEmulation"])
             patch.status["steps"] = list(steps)
         else:
@@ -735,7 +768,8 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             patch.status["steps"] = list(steps)
             
             logger.info("Provisioning Secrets Manager secrets...")
-            secrets = SecretsProvisioner(naming, region)
+            ministack_sm = local_cfg.get("ministack_url") if local_mode else None
+            secrets = SecretsProvisioner(naming, region, endpoint_url=ministack_sm)
             secrets_results = await secrets.provision_all()
             resources["secrets"] = [r["name"] for r in secrets_results if r["status"] in ["created", "exists"]]
             
@@ -877,6 +911,10 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 logger.warning(f"Mimir provisioning failed (non-fatal, dashboards still work without TSDB): {me}")
                 _update_step(steps, "Mimir", "done", resources=[f"error: {str(me)[:80]}"])
             patch.status["steps"] = list(steps)
+        elif local_mode and local_cfg.get("mimir_host"):
+            _update_step(steps, "Mimir", "done", resources=[local_cfg["mimir_host"]])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Mimir using shared nexus-local: {local_cfg['mimir_url']}")
         else:
             _update_step(steps, "Mimir", "skipped")
             patch.status["steps"] = list(steps)
@@ -902,9 +940,9 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
         # Pre-compute pgvector Postgres service (semantic_rag embeddings)
         postgres_spec = spec.get("postgres", {})
         postgres_svc_for_backend = None
-        postgres_database = postgres_spec.get("database", "ontology_cp")
-        postgres_user = postgres_spec.get("user", "nexus")
-        postgres_password = postgres_spec.get("password", "nexus")
+        postgres_database = postgres_spec.get("database", local_cfg.get("postgres_database", "ontology_cp") if local_mode else "ontology_cp")
+        postgres_user = postgres_spec.get("user", local_cfg.get("postgres_user", "nexus") if local_mode else "nexus")
+        postgres_password = postgres_spec.get("password", local_cfg.get("postgres_password", "nexus") if local_mode else "nexus")
         if (
             postgres_spec.get("enabled", False)
             and postgres_spec.get("image")
@@ -928,6 +966,16 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             _update_step(steps, "Postgres", "done", resources=["pgvector", "pgvector-svc"])
             patch.status["steps"] = list(steps)
             logger.info(f"Postgres done: {postgres_svc_for_backend}")
+        elif (
+            local_mode
+            and local_cfg.get("postgres_host")
+            and naming.capability_name != "ai-engine"
+            and not bssmagic_svc_for_backend
+        ):
+            postgres_svc_for_backend = local_cfg["postgres_host"]
+            _update_step(steps, "Postgres", "done", resources=[postgres_svc_for_backend])
+            patch.status["steps"] = list(steps)
+            logger.info(f"Postgres using shared nexus-local: {postgres_svc_for_backend}")
         else:
             _update_step(steps, "Postgres", "skipped")
             patch.status["steps"] = list(steps)
@@ -938,6 +986,13 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             _update_step(steps, "Backend", "in_progress")
             patch.status["steps"] = list(steps)
             
+            job_worker_spec = spec.get("jobWorker", {})
+            job_worker_enabled = (
+                naming.capability_name == "ai-engine"
+                and job_worker_spec.get("enabled", False)
+                and bool(redis_service_name)
+            )
+
             logger.info("Deploying backend...")
             backend_url = await k8s.deploy_backend(
                 naming=naming,
@@ -956,6 +1011,7 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
                 redis_service=redis_service_name,
                 aws_access_mode=aws_access_mode,
                 local_emulation=local_cfg if local_mode else None,
+                queue_mode=job_worker_enabled,
             )
             
             _update_step(steps, "Backend", "done", resources=[
@@ -964,6 +1020,42 @@ async def create_capability(spec: dict, name: str, namespace: str, logger: loggi
             ])
             patch.status["steps"] = list(steps)
             logger.info(f"Backend done: {backend_url}")
+
+            if job_worker_enabled:
+                patch.status["phase"] = "DeployingJobWorker"
+                patch.status["message"] = "Deploying Redis Streams job worker..."
+                _update_step(steps, "JobWorker", "in_progress")
+                patch.status["steps"] = list(steps)
+                logger.info("Deploying job worker...")
+                await k8s.deploy_job_worker(
+                    naming=naming,
+                    image=backend_image,
+                    replicas=job_worker_spec.get("replicas", 1),
+                    resources=job_worker_spec.get("resources"),
+                    environment=environment,
+                    region=region,
+                    redis_service=redis_service_name,
+                    aws_access_mode=aws_access_mode,
+                    local_emulation=local_cfg if local_mode else None,
+                )
+                from .resources.keda import KedaReconciler
+
+                try:
+                    KedaReconciler(namespace).reconcile(
+                        naming,
+                        job_worker_spec,
+                        redis_service=redis_service_name,
+                    )
+                except Exception as keda_exc:
+                    logger.warning("KEDA ScaledObject reconcile failed: %s", keda_exc)
+                _update_step(steps, "JobWorker", "done", resources=[
+                    naming.kubernetes_deployment("job-worker"),
+                ])
+                patch.status["steps"] = list(steps)
+                logger.info("Job worker deployment complete")
+            else:
+                _update_step(steps, "JobWorker", "skipped")
+                patch.status["steps"] = list(steps)
         else:
             backend_url = ""
             _update_step(steps, "Backend", "skipped")
@@ -1122,7 +1214,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     Requirements: 4.10
     """
     from .utils.naming import ResourceNaming
-    from .resources import KubernetesResourceCreator
+    from .resources import KubernetesResourceCreator, MimirProvisioner
     
     logger.info(f"Updating NexusCapability: {name} in namespace {namespace}")
     
@@ -1132,8 +1224,13 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
 
     aws_access_mode = _resolve_aws_access_mode()
 
-    sts_client = vpc_boto3_client("sts", region_name=region)
-    account_id = sts_client.get_caller_identity()["Account"]
+    local_mode = _is_local_emulation(spec)
+    local_cfg = _local_emulation_config(spec) if local_mode else {}
+    if local_mode:
+        account_id = os.getenv("LOCAL_AWS_ACCOUNT_ID", "000000000000")
+    else:
+        sts_client = vpc_boto3_client("sts", region_name=region)
+        account_id = sts_client.get_caller_identity()["Account"]
     naming = ResourceNaming(capability_name, environment, account_id=account_id)
     k8s = KubernetesResourceCreator(namespace)
     
@@ -1158,8 +1255,23 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
     resources.setdefault("iamRoles", resources.get("iamRoles") or [])
 
     data_services_changed = any("dataServices" in str(f) for f in changed_fields)
+    local_emulation_changed = any("localEmulation" in str(f) for f in changed_fields)
     needs_data_reconcile = _needs_data_services_reconcile(spec, status)
     data_services_updated = False
+
+    if local_emulation_changed and local_mode and not local_cfg.get("skip_ssm_secrets", False):
+        logger.info("Local emulation changed — provisioning SSM + Secrets via MiniStack...")
+        await _provision_ssm_parameters(
+            naming, region, resources, steps, patch, logger,
+            ssm_endpoint_url=_ssm_endpoint_url(spec),
+            local_emulation=local_mode,
+        )
+        from .resources import SecretsProvisioner
+        secrets = SecretsProvisioner(naming, region, endpoint_url=local_cfg.get("ministack_url"))
+        secrets_results = await secrets.provision_all()
+        resources["secrets"] = [r["name"] for r in secrets_results if r["status"] in ["created", "exists"]]
+        patch.status["steps"] = list(steps)
+        patch.status["resources"] = resources
     
     # Pre-compute BSS Magic service name for FDW env var injection
     bssmagic_spec = spec.get("bssmagic", {})
@@ -1193,7 +1305,12 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                 spec, naming, region, resources, steps, patch, logger,
             )
             if data_services_updated or needs_data_reconcile:
-                await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+                if not (local_mode and local_cfg.get("skip_ssm_secrets", False)):
+                    await _provision_ssm_parameters(
+                        naming, region, resources, steps, patch, logger,
+                        ssm_endpoint_url=_ssm_endpoint_url(spec),
+                        local_emulation=local_mode,
+                    )
                 _restart_deployments(k8s, naming, namespace, ["backend"], logger)
                 _update_step(steps, "DataServicesRestart", "done", resources=["backend restarted after data plane update"])
                 patch.status["steps"] = list(steps)
@@ -1223,11 +1340,46 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     password=postgres_password,
                 )
 
-        # If backend config changed, update backend deployment
-        if any("backend" in str(f) for f in changed_fields):
+        # If mimir config changed (or was never provisioned), deploy/update Mimir
+        mimir_spec = spec.get("mimir", {})
+        mimir_step = next((s for s in steps if s.get("name") == "Mimir"), None)
+        mimir_failed = bool(mimir_step and any(
+            str(r).startswith("failed:") or str(r).startswith("error:")
+            for r in (mimir_step.get("resources") or [])
+        ))
+        if any("mimir" in str(f) for f in changed_fields) or mimir_failed:
+            if mimir_spec.get("enabled", True):
+                local_mode = _is_local_emulation(spec)
+                local_cfg = _local_emulation_config(spec) if local_mode else {}
+                logger.info("Updating Grafana Mimir deployment...")
+                mimir = MimirProvisioner(namespace=namespace, naming=naming, region=region)
+                mimir_result = await mimir.provision(
+                    retention_days=mimir_spec.get("retentionDays", 90),
+                    storage_size=mimir_spec.get("storageSize", "5Gi"),
+                    storage_class=mimir_spec.get("storageClass") or ("local-path" if local_mode else None),
+                    service_account=naming.kubernetes_service_account(),
+                    local_s3_endpoint=local_cfg.get("minio_url") if local_mode else None,
+                    local_s3_access_key=local_cfg.get("minio_access_key") if local_mode else None,
+                    local_s3_secret_key=local_cfg.get("minio_secret_key") if local_mode else None,
+                )
+                if mimir_result.get("status") == "failed":
+                    logger.warning(f"Mimir update failed: {mimir_result.get('error')}")
+                    _update_step(steps, "Mimir", "done", resources=[f"failed: {mimir_result.get('error', '')[:80]}"])
+                else:
+                    _update_step(steps, "Mimir", "done", resources=[c.get("name") for c in mimir_result.get("components", [])])
+                    patch.status["steps"] = list(steps)
+
+        # If backend or local emulation config changed, update backend deployment
+        if any("backend" in str(f) for f in changed_fields) or local_emulation_changed:
             backend_spec = spec.get("backend", {})
             backend_image = backend_spec.get("image", "")
-            if backend_image:
+            job_worker_spec = spec.get("jobWorker", {})
+            job_worker_enabled = (
+                naming.capability_name == "ai-engine"
+                and job_worker_spec.get("enabled", False)
+                and bool(redis_svc)
+            )
+            if backend_image and backend_spec.get("enabled", False):
                 logger.info("Updating backend deployment...")
                 await k8s.deploy_backend(
                     naming=naming,
@@ -1237,6 +1389,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     environment=environment,
                     region=region,
                     use_clusterip=use_ingress,
+                    use_nodeport=local_mode and not use_ingress,
                     bssmagic_service=bssmagic_svc,
                     postgres_service=postgres_svc,
                     postgres_database=postgres_database,
@@ -1244,7 +1397,68 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                     postgres_password=postgres_password,
                     redis_service=redis_svc,
                     aws_access_mode=aws_access_mode,
+                    local_emulation=local_cfg if local_mode else None,
+                    queue_mode=job_worker_enabled,
                 )
+                if job_worker_enabled:
+                    logger.info("Updating job worker deployment...")
+                    await k8s.deploy_job_worker(
+                        naming=naming,
+                        image=backend_image,
+                        replicas=job_worker_spec.get("replicas", 1),
+                        resources=job_worker_spec.get("resources"),
+                        environment=environment,
+                        region=region,
+                        redis_service=redis_svc,
+                        aws_access_mode=aws_access_mode,
+                        local_emulation=local_cfg if local_mode else None,
+                    )
+                elif naming.capability_name == "ai-engine":
+                    await k8s.delete_job_worker_deployment(naming)
+
+        if any("jobWorker" in str(f) for f in changed_fields) and not any(
+            "backend" in str(f) for f in changed_fields
+        ):
+            backend_spec = spec.get("backend", {})
+            backend_image = backend_spec.get("image", "")
+            job_worker_spec = spec.get("jobWorker", {})
+            job_worker_enabled = (
+                naming.capability_name == "ai-engine"
+                and job_worker_spec.get("enabled", False)
+                and bool(redis_svc)
+            )
+            if naming.capability_name == "ai-engine" and backend_image:
+                if job_worker_enabled:
+                    logger.info("Updating job worker deployment (jobWorker spec changed)...")
+                    await k8s.deploy_job_worker(
+                        naming=naming,
+                        image=backend_image,
+                        replicas=job_worker_spec.get("replicas", 1),
+                        resources=job_worker_spec.get("resources"),
+                        environment=environment,
+                        region=region,
+                        redis_service=redis_svc,
+                        aws_access_mode=aws_access_mode,
+                        local_emulation=local_cfg if local_mode else None,
+                    )
+                else:
+                    await k8s.delete_job_worker_deployment(naming)
+
+        if naming.capability_name == "ai-engine" and redis_svc:
+            from .resources.keda import KedaReconciler
+
+            job_worker_spec = spec.get("jobWorker", {})
+            if any("jobWorker" in str(f) for f in changed_fields) or any(
+                "backend" in str(f) for f in changed_fields
+            ):
+                try:
+                    KedaReconciler(namespace).reconcile(
+                        naming,
+                        job_worker_spec,
+                        redis_service=redis_svc,
+                    )
+                except Exception as keda_exc:
+                    logger.warning("KEDA ScaledObject reconcile failed: %s", keda_exc)
 
         # If bssmagic config changed, update bssmagic deployment
         if any("bssmagic" in str(f) for f in changed_fields):
@@ -1352,7 +1566,14 @@ async def reconcile_capability_data_services(
             spec, naming, region, resources, steps, patch, logger,
         )
         if updated:
-            await _provision_ssm_parameters(naming, region, resources, steps, patch, logger)
+            local_mode = _is_local_emulation(spec)
+            local_cfg = _local_emulation_config(spec) if local_mode else {}
+            if not (local_mode and local_cfg.get("skip_ssm_secrets", False)):
+                await _provision_ssm_parameters(
+                    naming, region, resources, steps, patch, logger,
+                    ssm_endpoint_url=_ssm_endpoint_url(spec),
+                    local_emulation=local_mode,
+                )
             _restart_deployments(k8s, naming, namespace, ["backend"], logger)
             _update_step(steps, "DataServicesReconcile", "done", resources=["data plane reconciled"])
             patch.status["steps"] = list(steps)

@@ -46,10 +46,7 @@ spec:
     enabled: false
 
   mimir:
-    enabled: true
-    retentionDays: 30
-    storageSize: 5Gi
-    storageClass: local-path
+    enabled: false
 
   redis:
     enabled: false

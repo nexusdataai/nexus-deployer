@@ -44,6 +44,7 @@ spec:
             - --memory=400M
             - --overprovisioned=1
             - --alternator-port=8000
+            - --alternator-address=0.0.0.0
             - --alternator-write-isolation=always
           ports:
             - containerPort: 8000

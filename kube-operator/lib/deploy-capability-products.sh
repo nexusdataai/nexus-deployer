@@ -15,12 +15,14 @@ dcap_normalize_product() {
         simulator|nexus-simulator) echo "simulator" ;;
         local-ontology|local_ontology) echo "local-ontology" ;;
         local-nexus-ai|local_nexus_ai|local-ai) echo "local-nexus-ai" ;;
+        local-ai-engine|local_ai_engine) echo "local-ai-engine" ;;
+
         *)                        echo "$1" ;;
     esac
 }
 
 dcap_list_products() {
-    echo "nexus-ai ontology ai-engine sre simulator local-ontology local-nexus-ai"
+    echo "nexus-ai ontology ai-engine sre simulator local-ontology local-nexus-ai local-ai-engine"
 }
 
 dcap_load_product() {
@@ -122,6 +124,21 @@ dcap_load_product() {
             DCP_ECR_MODE="callsense"
             DCP_ECR_SCRIPT=(create-ecr-images.sh)
             DCP_ECR_ARGS=()
+            DCP_SKIP_CREDS_DEFAULT=true
+            DCP_SKIP_SSM_FIX_DEFAULT=true
+            DCP_SKIP_IAM_DEFAULT=true
+            DCP_WAIT_ALB=false
+            CLUSTER_NAME="${CLUSTER_NAME:-local-cluster}"
+            ;;
+        local-ai-engine)
+            DCP_LABEL="Nexus AI Engine (local K3s — host-run dev; nexus-local AWS stack)"
+            DCP_MODE="cr-lite"
+            DCP_CAPABILITY_NAME="ai-engine"
+            DCP_NAMESPACE="ai-engine-${DEPLOY_ENV}"
+            DCP_CAPABILITY_FILE="${SCRIPT_DIR}/examples/nexus-ai-engine-local-dev-deps.yaml"
+            DCP_ECR_MODE="script"
+            DCP_ECR_SCRIPT=(create-ecr-images.sh)
+            DCP_ECR_ARGS=(--only-ai-engine-images)
             DCP_SKIP_CREDS_DEFAULT=true
             DCP_SKIP_SSM_FIX_DEFAULT=true
             DCP_SKIP_IAM_DEFAULT=true

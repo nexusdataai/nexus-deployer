@@ -5,8 +5,9 @@ Feature: pure-eks-deployment
 Requirements: 4.6
 """
 import logging
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 
+import boto3
 from botocore.exceptions import ClientError
 
 from ..utils.aws_vpc_endpoints import vpc_boto3_client
@@ -18,10 +19,26 @@ logger = logging.getLogger(__name__)
 class SSMProvisioner:
     """Provisions SSM Parameter Store parameters."""
     
-    def __init__(self, naming: ResourceNaming, region: str):
+    def __init__(
+        self,
+        naming: ResourceNaming,
+        region: str,
+        endpoint_url: Optional[str] = None,
+        local_emulation: bool = False,
+    ):
         self.naming = naming
         self.region = region
-        self.client = vpc_boto3_client("ssm", region_name=region)
+        self.local_emulation = local_emulation
+        if endpoint_url:
+            self.client = boto3.client(
+                "ssm",
+                region_name=region,
+                endpoint_url=endpoint_url,
+                aws_access_key_id="minioadmin",
+                aws_secret_access_key="minioadmin",
+            )
+        else:
+            self.client = vpc_boto3_client("ssm", region_name=region)
     
     def get_all_parameters(self, resources: Dict[str, Any] = None) -> Dict[str, Tuple[str, str]]:
         """
@@ -33,6 +50,9 @@ class SSMProvisioner:
         Returns:
             Dict mapping parameter paths to (value, description) tuples
         """
+        if self.naming.capability_name == "ai-engine":
+            return self._get_ai_engine_parameters()
+
         params = {}
         
         # AWS parameters
@@ -65,6 +85,12 @@ class SSMProvisioner:
         )
         params[self.naming.ssm_parameter("dynamodb", "rbac-table")] = (
             self.naming.dynamodb_table("rbac"), "RBAC table"
+        )
+        params[self.naming.ssm_parameter("dynamodb", "diagnostics-table")] = (
+            self.naming.dynamodb_table("diagnostics"), "Diagnostics history table"
+        )
+        params[self.naming.ssm_parameter("dynamodb", "health-table")] = (
+            self.naming.dynamodb_table("health"), "AI Health snapshots table"
         )
         
         # S3 parameters
@@ -194,6 +220,62 @@ class SSMProvisioner:
             logger.info(f"Added {len([k for k in params if '/cognito/' in k])} Cognito parameters to SSM")
         
         return params
+
+    def _get_ai_engine_parameters(self) -> Dict[str, Tuple[str, str]]:
+        """Flat SSM keys matching nexus-ai-engine serve --ssm-prefix contract."""
+        n = self.naming
+        env = n.environment
+        if self.local_emulation:
+            return {
+                n.ai_engine_ssm_parameter("dynamodb_transformation_table"): (
+                    n.dynamodb_table("journeys"),
+                    "Journeys DynamoDB table",
+                ),
+                n.ai_engine_ssm_parameter("dynamodb_executions_table"): (
+                    n.dynamodb_table("executions"),
+                    "Executions DynamoDB table",
+                ),
+                n.ai_engine_ssm_parameter("dynamodb_prompts_table"): (
+                    n.dynamodb_table("prompts"),
+                    "Prompts DynamoDB table",
+                ),
+                n.ai_engine_ssm_parameter("s3_journey_logs_bucket"): (
+                    n.journey_logs_bucket(),
+                    "Journey logs S3 bucket",
+                ),
+                n.ai_engine_ssm_parameter("s3_journey_reports_bucket"): (
+                    n.journey_reports_bucket(),
+                    "Journey reports S3 bucket",
+                ),
+                n.ai_engine_ssm_parameter("environment"): (env, "Deployment environment"),
+                n.ai_engine_ssm_parameter("capability_name"): ("ai-engine", "Capability name"),
+                n.ai_engine_ssm_parameter("max_concurrent_jobs"): ("10", "Max concurrent jobs"),
+            }
+        return {
+            n.ai_engine_ssm_parameter("dynamodb_transformation_table"): (
+                n.ai_engine_journeys_table(),
+                "Journeys DynamoDB table",
+            ),
+            n.ai_engine_ssm_parameter("dynamodb_executions_table"): (
+                n.ai_engine_executions_table(),
+                "Executions DynamoDB table",
+            ),
+            n.ai_engine_ssm_parameter("dynamodb_prompts_table"): (
+                n.ai_engine_prompts_table(),
+                "Prompts DynamoDB table",
+            ),
+            n.ai_engine_ssm_parameter("s3_journey_logs_bucket"): (
+                n.ai_engine_journey_logs_bucket(),
+                "Journey logs S3 bucket",
+            ),
+            n.ai_engine_ssm_parameter("s3_journey_reports_bucket"): (
+                n.ai_engine_journey_reports_bucket(),
+                "Journey reports S3 bucket",
+            ),
+            n.ai_engine_ssm_parameter("environment"): (env, "Deployment environment"),
+            n.ai_engine_ssm_parameter("capability_name"): ("ai-engine", "Capability name"),
+            n.ai_engine_ssm_parameter("max_concurrent_jobs"): ("10", "Max concurrent jobs"),
+        }
     
     async def provision_all(self, resources: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """

@@ -37,6 +37,12 @@ class LocalNaming:
     def mimir_blocks_bucket(self) -> str:
         return self.s3_bucket("mimir-blocks")
 
+    def ai_engine_ssm_parameter(self, key: str) -> str:
+        return f"/{self.capability_name}/{self.environment}/{key}"
+
+    def secret_name(self, secret_type: str) -> str:
+        return f"{self.capability_name}/{self.environment}/{secret_type}"
+
 
 # Minimal schemas aligned with operator DynamoDBProvisioner (PK/SK tables).
 TABLE_SCHEMAS: Dict[str, Dict[str, Any]] = {
@@ -92,7 +98,17 @@ TABLE_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "AttributeDefinitions": [
             {"AttributeName": "PK", "AttributeType": "S"},
             {"AttributeName": "SK", "AttributeType": "S"},
+            {"AttributeName": "GSI1PK", "AttributeType": "S"},
+            {"AttributeName": "GSI1SK", "AttributeType": "S"},
         ],
+        "GlobalSecondaryIndexes": [{
+            "IndexName": "GSI1",
+            "KeySchema": [
+                {"AttributeName": "GSI1PK", "KeyType": "HASH"},
+                {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
+            ],
+            "Projection": {"ProjectionType": "ALL"},
+        }],
     },
     "control-plane-audit": {
         "KeySchema": [
@@ -109,14 +125,164 @@ TABLE_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "AttributeDefinitions": [{"AttributeName": "PK", "AttributeType": "S"}],
     },
     "diagnostics": {
-        "KeySchema": [{"AttributeName": "PK", "KeyType": "HASH"}],
-        "AttributeDefinitions": [{"AttributeName": "PK", "AttributeType": "S"}],
+        "KeySchema": [
+            {"AttributeName": "scope", "KeyType": "HASH"},
+            {"AttributeName": "run_id", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "scope", "AttributeType": "S"},
+            {"AttributeName": "run_id", "AttributeType": "S"},
+        ],
     },
     "health": {
-        "KeySchema": [{"AttributeName": "PK", "KeyType": "HASH"}],
-        "AttributeDefinitions": [{"AttributeName": "PK", "AttributeType": "S"}],
+        "KeySchema": [
+            {"AttributeName": "scope", "KeyType": "HASH"},
+            {"AttributeName": "iso_ts", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "scope", "AttributeType": "S"},
+            {"AttributeName": "iso_ts", "AttributeType": "S"},
+        ],
+    },
+    # ai-engine tables — source: nexus-ai-engine/adapters/dynamodb/table_definitions.py
+    "journeys": {
+        "KeySchema": [
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+            {"AttributeName": "GSI1PK", "AttributeType": "S"},
+            {"AttributeName": "GSI1SK", "AttributeType": "S"},
+        ],
+        "GlobalSecondaryIndexes": [
+            {
+                "IndexName": "GSI1",
+                "KeySchema": [
+                    {"AttributeName": "GSI1PK", "KeyType": "HASH"},
+                    {"AttributeName": "GSI1SK", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+        ],
+    },
+    "executions": {
+        "KeySchema": [
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+            {"AttributeName": "journey_id", "AttributeType": "S"},
+            {"AttributeName": "started_at", "AttributeType": "S"},
+            {"AttributeName": "tenant_id", "AttributeType": "S"},
+            {"AttributeName": "status", "AttributeType": "S"},
+        ],
+        "GlobalSecondaryIndexes": [
+            {
+                "IndexName": "GSI1",
+                "KeySchema": [
+                    {"AttributeName": "journey_id", "KeyType": "HASH"},
+                    {"AttributeName": "started_at", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+            {
+                "IndexName": "GSI2",
+                "KeySchema": [
+                    {"AttributeName": "tenant_id", "KeyType": "HASH"},
+                    {"AttributeName": "status", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+        ],
+    },
+    "prompts": {
+        "KeySchema": [
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
     },
 }
+
+_ONTOLOGY_TABLES = [
+    "transformation-system",
+    "license",
+    "sessions",
+    "audit-log",
+    "foundry-workspace",
+    "control-plane-audit",
+    "rbac",
+    "diagnostics",
+    "health",
+]
+
+CAPABILITY_TABLES: Dict[str, List[str]] = {
+    "ontology": _ONTOLOGY_TABLES,
+    "nexus-ai": _ONTOLOGY_TABLES,
+    "ai-engine": ["journeys", "executions", "prompts"],
+}
+
+CAPABILITY_BUCKETS: Dict[str, List[str]] = {
+    "ontology": [
+        "solution-results",
+        "journey-logs",
+        "journey-reports",
+        "external-simulator",
+        "wxcc-simulator",
+        "sfdc-simulator",
+        "oracle-erp-simulator",
+        "sap-simulator",
+        "mimir-blocks",
+        "athena-results",
+        "warehouse",
+    ],
+    "nexus-ai": [
+        "solution-results",
+        "journey-logs",
+        "journey-reports",
+        "external-simulator",
+        "wxcc-simulator",
+        "sfdc-simulator",
+        "oracle-erp-simulator",
+        "sap-simulator",
+        "mimir-blocks",
+        "athena-results",
+        "warehouse",
+    ],
+    "ai-engine": ["journey-logs", "journey-reports"],
+}
+
+
+def _capability_tables(capability: str) -> List[str]:
+    cap = _sanitize(capability)
+    if cap in CAPABILITY_TABLES:
+        return CAPABILITY_TABLES[cap]
+    return _ONTOLOGY_TABLES
+
+
+def _capability_buckets(capability: str, naming: LocalNaming) -> List[str]:
+    cap = _sanitize(capability)
+    purposes = CAPABILITY_BUCKETS.get(cap, CAPABILITY_BUCKETS["ontology"])
+    names: List[str] = []
+    for purpose in purposes:
+        if purpose in ("warehouse", "athena-results"):
+            names.append(purpose)
+            continue
+        if purpose == "athena-results" and cap != "ai-engine":
+            names.append(f"{naming.capability_name}-{naming.environment}-athena-results")
+            continue
+        if purpose == "warehouse" and cap != "ai-engine":
+            names.append(f"{naming.capability_name}-{naming.environment}-warehouse")
+            continue
+        names.append(naming.s3_bucket(purpose))
+    return sorted(set(names))
 
 
 def _client(service: str, endpoint: str, region: str):
@@ -138,21 +304,75 @@ def _ensure_bucket(s3, name: str) -> None:
         print(f"  bucket created: {name}")
 
 
+def _schema_fingerprint(schema: Dict[str, Any]) -> tuple:
+    keys = tuple((k["AttributeName"], k["KeyType"]) for k in schema["KeySchema"])
+    attrs = tuple(sorted(a["AttributeName"] for a in schema["AttributeDefinitions"]))
+    gsis = tuple(
+        (
+            g["IndexName"],
+            tuple((k["AttributeName"], k["KeyType"]) for k in g["KeySchema"]),
+        )
+        for g in schema.get("GlobalSecondaryIndexes", []) or []
+    )
+    return (keys, attrs, gsis)
+
+
+def _table_fingerprint(table_desc: Dict[str, Any]) -> tuple:
+    table = table_desc["Table"]
+    keys = tuple((k["AttributeName"], k["KeyType"]) for k in table["KeySchema"])
+    attrs = tuple(sorted(a["AttributeName"] for a in table["AttributeDefinitions"]))
+    gsis = tuple(
+        (
+            g["IndexName"],
+            tuple((k["AttributeName"], k["KeyType"]) for k in g["KeySchema"]),
+        )
+        for g in table.get("GlobalSecondaryIndexes", []) or []
+    )
+    return (keys, attrs, gsis)
+
+
+def _wait_table_active(ddb, table_name: str) -> None:
+    for _ in range(30):
+        if ddb.describe_table(TableName=table_name)["Table"]["TableStatus"] == "ACTIVE":
+            return
+        time.sleep(2)
+    raise RuntimeError(f"Timed out waiting for table {table_name} to become ACTIVE")
+
+
+def _delete_dynamodb_table(ddb, table_name: str) -> None:
+    try:
+        ddb.delete_table(TableName=table_name)
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise
+        return
+    for _ in range(30):
+        try:
+            ddb.describe_table(TableName=table_name)
+            time.sleep(2)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                return
+            raise
+    raise RuntimeError(f"Timed out waiting for table {table_name} deletion")
+
+
 def _ensure_dynamodb_table(ddb, table_name: str, schema: Dict[str, Any]) -> None:
     api = dict(schema)
     api["BillingMode"] = "PAY_PER_REQUEST"
+    expected = _schema_fingerprint(schema)
     try:
-        ddb.describe_table(TableName=table_name)
-        print(f"  ddb table exists: {table_name}")
-        return
+        desc = ddb.describe_table(TableName=table_name)
+        if _table_fingerprint(desc) == expected:
+            print(f"  ddb table exists: {table_name}")
+            return
+        print(f"  ddb table schema mismatch — recreating: {table_name}")
+        _delete_dynamodb_table(ddb, table_name)
     except ClientError as e:
         if e.response["Error"]["Code"] != "ResourceNotFoundException":
             raise
     ddb.create_table(TableName=table_name, **api)
-    for _ in range(30):
-        if ddb.describe_table(TableName=table_name)["Table"]["TableStatus"] == "ACTIVE":
-            break
-        time.sleep(2)
+    _wait_table_active(ddb, table_name)
     print(f"  ddb table created: {table_name}")
 
 
@@ -167,22 +387,45 @@ def _ensure_glue_database(glue, db_name: str) -> None:
         print(f"  glue database created: {db_name}")
 
 
-def bucket_names(naming: LocalNaming) -> List[str]:
-    return sorted(set([
-        naming.s3_bucket("solution-results"),
-        naming.s3_bucket("journey-logs"),
-        naming.s3_bucket("journey-reports"),
-        naming.s3_bucket("external-simulator"),
-        naming.s3_bucket("wxcc-simulator"),
-        naming.s3_bucket("sfdc-simulator"),
-        naming.s3_bucket("oracle-erp-simulator"),
-        naming.s3_bucket("sap-simulator"),
-        naming.mimir_blocks_bucket(),
-        f"{naming.capability_name}-{naming.environment}-athena-results",
-        f"{naming.capability_name}-{naming.environment}-warehouse",
-        "warehouse",
-        "athena-results",
-    ]))
+def _ai_engine_ssm_parameters(naming: LocalNaming) -> Dict[str, str]:
+    """Flat SSM keys matching nexus-ai-engine serve --ssm-prefix contract."""
+    env = naming.environment
+    return {
+        naming.ai_engine_ssm_parameter("dynamodb_transformation_table"): naming.dynamodb_table("journeys"),
+        naming.ai_engine_ssm_parameter("dynamodb_executions_table"): naming.dynamodb_table("executions"),
+        naming.ai_engine_ssm_parameter("dynamodb_prompts_table"): naming.dynamodb_table("prompts"),
+        naming.ai_engine_ssm_parameter("s3_journey_logs_bucket"): naming.s3_bucket("journey-logs"),
+        naming.ai_engine_ssm_parameter("s3_journey_reports_bucket"): naming.s3_bucket("journey-reports"),
+        naming.ai_engine_ssm_parameter("environment"): env,
+        naming.ai_engine_ssm_parameter("capability_name"): "ai-engine",
+        naming.ai_engine_ssm_parameter("max_concurrent_jobs"): "10",
+    }
+
+
+def _ensure_ssm_parameters(ssm, params: Dict[str, str]) -> None:
+    for name, value in sorted(params.items()):
+        ssm.put_parameter(Name=name, Value=value, Type="String", Overwrite=True)
+        print(f"  ssm parameter: {name}")
+
+
+_AI_ENGINE_SECRET_TYPES = ["api-keys", "openai", "anthropic", "github", "license"]
+
+
+def _ensure_secrets(sm, naming: LocalNaming) -> None:
+    for secret_type in _AI_ENGINE_SECRET_TYPES:
+        name = naming.secret_name(secret_type)
+        try:
+            sm.describe_secret(SecretId=name)
+            print(f"  secret exists: {name}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                raise
+            sm.create_secret(
+                Name=name,
+                SecretString=json.dumps({"placeholder": "update-me"}),
+                Description=f"Nexus local dev secret ({secret_type})",
+            )
+            print(f"  secret created: {name}")
 
 
 def provision_capability(
@@ -197,13 +440,20 @@ def provision_capability(
     print(f"Provisioning local resources for {capability}/{environment}")
     naming = LocalNaming(capability, environment, account_id=account_id)
     s3 = _client("s3", minio_endpoint, region)
-    for b in bucket_names(naming):
+    for b in _capability_buckets(capability, naming):
         _ensure_bucket(s3, b)
     ddb = _client("dynamodb", scylla_endpoint, region)
-    for purpose, schema in TABLE_SCHEMAS.items():
+    for purpose in _capability_tables(capability):
+        schema = TABLE_SCHEMAS[purpose]
         _ensure_dynamodb_table(ddb, naming.dynamodb_table(purpose), schema)
-    glue = _client("glue", ministack_endpoint, region)
-    _ensure_glue_database(glue, naming.glue_database())
+    if _sanitize(capability) != "ai-engine":
+        glue = _client("glue", ministack_endpoint, region)
+        _ensure_glue_database(glue, naming.glue_database())
+    else:
+        ssm = _client("ssm", ministack_endpoint, region)
+        _ensure_ssm_parameters(ssm, _ai_engine_ssm_parameters(naming))
+        sm = _client("secretsmanager", ministack_endpoint, region)
+        _ensure_secrets(sm, naming)
 
 
 def main() -> int:
@@ -222,6 +472,11 @@ def main() -> int:
             cap, args.environment, args.account_id, args.region,
             args.minio_endpoint, args.scylla_endpoint, args.ministack_endpoint,
         )
+    shared_mimir = os.getenv("SHARED_MIMIR_BUCKET", "").strip()
+    if shared_mimir:
+        s3 = _client("s3", args.minio_endpoint, args.region)
+        _ensure_bucket(s3, shared_mimir)
+        print(f"  shared mimir blocks bucket: {shared_mimir}")
     print(json.dumps({"capabilities": caps, "environment": args.environment}, indent=2))
     return 0
 

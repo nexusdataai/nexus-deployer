@@ -112,6 +112,85 @@ class KubernetesResourceCreator:
             logger.error(f"Failed to create ServiceAccount {sa_name}: {e}")
             return {"name": sa_name, "status": "failed", "error": str(e), "type": "ServiceAccount"}
 
+    async def ensure_worker_management_rbac(self, naming: ResourceNaming) -> Dict[str, Any]:
+        """Grant backend SA permission to patch NexusCapability and read worker pods."""
+        from kubernetes import client as k8s_client
+
+        rbac_api = k8s_client.RbacAuthorizationV1Api(api_client=self.core_api.api_client)
+        sa_name = naming.kubernetes_service_account()
+        role_name = f"{naming.capability_name}-{naming.environment}-worker-manager"
+        binding_name = role_name
+
+        role = k8s_client.V1Role(
+            metadata=k8s_client.V1ObjectMeta(name=role_name, namespace=self.namespace),
+            rules=[
+                k8s_client.V1PolicyRule(
+                    api_groups=["nexus.ai"],
+                    resources=["nexuscapabilities"],
+                    verbs=["get", "list", "patch"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=["apps"],
+                    resources=["deployments"],
+                    verbs=["get", "list", "patch"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["pods"],
+                    verbs=["get", "list"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=["keda.sh"],
+                    resources=["scaledobjects"],
+                    verbs=["get", "list", "create", "patch", "delete"],
+                ),
+            ],
+        )
+        binding = k8s_client.V1RoleBinding(
+            metadata=k8s_client.V1ObjectMeta(name=binding_name, namespace=self.namespace),
+            role_ref=k8s_client.V1RoleRef(
+                api_group="rbac.authorization.k8s.io",
+                kind="Role",
+                name=role_name,
+            ),
+            subjects=[
+                k8s_client.V1Subject(
+                    kind="ServiceAccount",
+                    name=sa_name,
+                    namespace=self.namespace,
+                )
+            ],
+        )
+
+        try:
+            rbac_api.create_namespaced_role(namespace=self.namespace, body=role)
+        except ApiException as exc:
+            if exc.status != 409:
+                raise
+            rbac_api.replace_namespaced_role(name=role_name, namespace=self.namespace, body=role)
+
+        try:
+            rbac_api.create_namespaced_role_binding(namespace=self.namespace, body=binding)
+        except ApiException as exc:
+            if exc.status != 409:
+                raise
+            rbac_api.replace_namespaced_role_binding(
+                name=binding_name, namespace=self.namespace, body=binding
+            )
+
+        return {"role": role_name, "binding": binding_name, "status": "ready"}
+
+    async def delete_job_worker_deployment(self, naming: ResourceNaming) -> Dict[str, Any]:
+        dep_name = naming.kubernetes_deployment("job-worker")
+        try:
+            self.apps_api.delete_namespaced_deployment(name=dep_name, namespace=self.namespace)
+            logger.info("Deleted job worker deployment %s", dep_name)
+            return {"name": dep_name, "status": "deleted"}
+        except ApiException as exc:
+            if exc.status == 404:
+                return {"name": dep_name, "status": "not_found"}
+            raise
+
     async def deploy_backend(
         self,
         naming: ResourceNaming,
@@ -130,6 +209,8 @@ class KubernetesResourceCreator:
         redis_service: Optional[str] = None,
         aws_access_mode: str = "higher-cost",
         local_emulation: Optional[Dict[str, str]] = None,
+        queue_mode: bool = False,
+        component: str = "backend",
     ) -> str:
         """
         Deploy backend Deployment and Service.
@@ -148,9 +229,10 @@ class KubernetesResourceCreator:
         
         Returns the backend service URL.
         """
-        deployment_name = naming.kubernetes_deployment("backend")
+        deployment_name = naming.kubernetes_deployment(component)
         service_name = naming.kubernetes_service("backend")
         sa_name = naming.kubernetes_service_account()
+        is_worker = component == "job-worker"
         
         resources = resources or {}
         cpu_request = resources.get("cpu", "250m")
@@ -162,39 +244,143 @@ class KubernetesResourceCreator:
         import secrets as secrets_module
         api_key = secrets_module.token_urlsafe(24)
 
+        skip_ssm = bool(local_emulation and local_emulation.get("skip_ssm_secrets", False))
 
-        # Environment variables for SSM/Secrets access
-        env_vars = [
-            client.V1EnvVar(name="ENVIRONMENT", value=environment),
-            client.V1EnvVar(name="AWS_REGION", value=region),
-            client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
-            client.V1EnvVar(
-                name="AWS_CA_BUNDLE",
-                value="/etc/ssl/certs/ca-certificates.crt",
-            ),
-            client.V1EnvVar(name="CAPABILITY_NAME", value=naming.capability_name),
-            client.V1EnvVar(name="SSM_PARAMETER_PREFIX", value=naming.ssm_parameter_prefix()),
-            client.V1EnvVar(name="SECRETS_PREFIX", value=naming.secret_name_prefix()),
-            client.V1EnvVar(name="API_KEY", value=api_key),
-            client.V1EnvVar(
-                name="DYNAMODB_FOUNDRY_WORKSPACE_TABLE",
-                value=naming.dynamodb_table("foundry-workspace"),
-            ),
-            client.V1EnvVar(
-                name="CONTROL_PLANE_AUDIT_TABLE",
-                value=naming.dynamodb_table("control-plane-audit"),
-            ),
-            client.V1EnvVar(
-                name="RBAC_TABLE",
-                value=naming.dynamodb_table("rbac"),
-            ),
-            # WXCC Simulator - base URL points to self (backend serves simulator API)
-            client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
-            client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
-            # SFDC Simulator
-            client.V1EnvVar(name="SFDC_SIMULATOR_ENABLED", value="true"),
-            client.V1EnvVar(name="SFDC_SIMULATOR_BUCKET", value=naming.sfdc_simulator_bucket()),
-        ]
+        if naming.capability_name == "ai-engine":
+            # Remote EKS uses legacy CloudFormation names (ai-engine-{purpose}-{env}).
+            # Local K3s init uses {capability}-{environment}-{purpose} (same as ontology).
+            if local_emulation:
+                journeys_table = naming.dynamodb_table("journeys")
+                executions_table = naming.dynamodb_table("executions")
+                prompts_table = naming.dynamodb_table("prompts")
+                logs_bucket = naming.journey_logs_bucket()
+                reports_bucket = naming.journey_reports_bucket()
+            else:
+                journeys_table = naming.ai_engine_journeys_table()
+                executions_table = naming.ai_engine_executions_table()
+                prompts_table = naming.ai_engine_prompts_table()
+                logs_bucket = naming.ai_engine_journey_logs_bucket()
+                reports_bucket = naming.ai_engine_journey_reports_bucket()
+
+            # Same bootstrap contract as remote EKS: SSM prefix (+ Secrets prefix for tool creds).
+            env_vars = [
+                client.V1EnvVar(name="ENVIRONMENT", value=environment),
+                client.V1EnvVar(name="AWS_REGION", value=region),
+                client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
+                client.V1EnvVar(
+                    name="AWS_CA_BUNDLE",
+                    value="/etc/ssl/certs/ca-certificates.crt",
+                ),
+                client.V1EnvVar(name="CAPABILITY_NAME", value=naming.capability_name),
+                client.V1EnvVar(
+                    name="SSM_PARAMETER_PREFIX",
+                    value=naming.ssm_parameter_prefix(),
+                ),
+                client.V1EnvVar(
+                    name="SECRETS_PREFIX",
+                    value=naming.secret_name_prefix(),
+                ),
+                client.V1EnvVar(name="API_PORT", value="8000"),
+                client.V1EnvVar(name="REGISTER_DEMO_STAGES", value="true"),
+                client.V1EnvVar(
+                    name="DYNAMODB_TRANSFORMATION_TABLE",
+                    value=journeys_table,
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_EXECUTIONS_TABLE",
+                    value=executions_table,
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_PROMPTS_TABLE",
+                    value=prompts_table,
+                ),
+                client.V1EnvVar(
+                    name="S3_JOURNEY_LOGS_BUCKET",
+                    value=logs_bucket,
+                ),
+                client.V1EnvVar(
+                    name="S3_JOURNEY_REPORTS_BUCKET",
+                    value=reports_bucket,
+                ),
+            ]
+        else:
+            # Environment variables for SSM/Secrets access (ontology / nexus-ai)
+            env_vars = [
+                client.V1EnvVar(name="ENVIRONMENT", value=environment),
+                client.V1EnvVar(name="AWS_REGION", value=region),
+                client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
+                client.V1EnvVar(
+                    name="AWS_CA_BUNDLE",
+                    value="/etc/ssl/certs/ca-certificates.crt",
+                ),
+                client.V1EnvVar(name="CAPABILITY_NAME", value=naming.capability_name),
+                client.V1EnvVar(name="SECRETS_PREFIX", value=naming.secret_name_prefix()),
+                client.V1EnvVar(name="API_KEY", value=api_key),
+                client.V1EnvVar(
+                    name="DYNAMODB_TABLE",
+                    value=naming.dynamodb_table("transformation-system"),
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_TRANSFORMATION_TABLE",
+                    value=naming.dynamodb_table("transformation-system"),
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_LICENSE_TABLE",
+                    value=naming.dynamodb_table("license"),
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_FOUNDRY_WORKSPACE_TABLE",
+                    value=naming.dynamodb_table("foundry-workspace"),
+                ),
+                client.V1EnvVar(
+                    name="FOUNDRY_WORKSPACE_TABLE",
+                    value=naming.dynamodb_table("foundry-workspace"),
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_DIAGNOSTICS_TABLE",
+                    value=naming.dynamodb_table("diagnostics"),
+                ),
+                client.V1EnvVar(
+                    name="DIAGNOSTICS_TABLE",
+                    value=naming.dynamodb_table("diagnostics"),
+                ),
+                client.V1EnvVar(
+                    name="DYNAMODB_HEALTH_TABLE",
+                    value=naming.dynamodb_table("health"),
+                ),
+                client.V1EnvVar(
+                    name="HEALTH_TABLE",
+                    value=naming.dynamodb_table("health"),
+                ),
+                client.V1EnvVar(
+                    name="CONTROL_PLANE_AUDIT_TABLE",
+                    value=naming.dynamodb_table("control-plane-audit"),
+                ),
+                client.V1EnvVar(
+                    name="RBAC_TABLE",
+                    value=naming.dynamodb_table("rbac"),
+                ),
+                client.V1EnvVar(
+                    name="GLUE_DATABASE",
+                    value=naming.glue_database(),
+                ),
+                client.V1EnvVar(
+                    name="GLUE_DATABASE_NAME",
+                    value=naming.glue_database(),
+                ),
+                client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
+                client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
+                client.V1EnvVar(name="SFDC_SIMULATOR_ENABLED", value="true"),
+                client.V1EnvVar(name="SFDC_SIMULATOR_BUCKET", value=naming.sfdc_simulator_bucket()),
+            ]
+            if not skip_ssm:
+                env_vars.insert(
+                    6,
+                    client.V1EnvVar(
+                        name="SSM_PARAMETER_PREFIX",
+                        value=naming.ssm_parameter_prefix(),
+                    ),
+                )
 
         # AWS access mode — drives whether boto3 picks an explicit interface
         # endpoint URL (higher-cost) or relies on default public hostnames
@@ -244,15 +430,36 @@ class KubernetesResourceCreator:
             env_vars.append(client.V1EnvVar(name="REDIS_URL", value=f"redis://{redis_service}:6379/0"))
             logger.info(f"Redis cache enabled: {redis_service}:6379")
 
+        if queue_mode and redis_service:
+            env_vars.extend([
+                client.V1EnvVar(name="JOB_EXECUTION_MODE", value="queue"),
+                client.V1EnvVar(name="SSE_REDIS_ENABLED", value="true"),
+            ])
+            logger.info("Queue execution mode enabled (Redis Streams job pipeline)")
+
         if local_emulation:
             env_vars.extend([
                 client.V1EnvVar(name="USE_LOCALSTACK", value="true"),
                 client.V1EnvVar(name="LOCALSTACK_HOST", value=local_emulation["ministack_host"]),
                 client.V1EnvVar(name="LOCALSTACK_PORT", value="4566"),
-                client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value="test"),
-                client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value="test"),
+                client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value=local_emulation.get("minio_access_key", "minioadmin")),
+                client.V1EnvVar(name="AWS_SECRET_ACCESS_KEY", value=local_emulation.get("minio_secret_key", "minioadmin")),
                 client.V1EnvVar(name="AWS_ENDPOINT_URL_DYNAMODB", value=local_emulation["scylla_url"]),
                 client.V1EnvVar(name="AWS_ENDPOINT_URL_S3", value=local_emulation["minio_url"]),
+                client.V1EnvVar(
+                    name="AWS_ENDPOINT_URL_SSM",
+                    value=local_emulation.get(
+                        "ministack_url",
+                        f"http://{local_emulation['ministack_host']}:4566",
+                    ),
+                ),
+                client.V1EnvVar(
+                    name="AWS_ENDPOINT_URL_SECRETSMANAGER",
+                    value=local_emulation.get(
+                        "ministack_url",
+                        f"http://{local_emulation['ministack_host']}:4566",
+                    ),
+                ),
                 client.V1EnvVar(name="AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS", value="false"),
             ])
             logger.info(
@@ -262,27 +469,107 @@ class KubernetesResourceCreator:
                 local_emulation["minio_url"],
             )
 
-        # Grafana Mimir - time-series storage for solution four-views KPI history.
-        # The cluster service is deployed by MimirProvisioner alongside this backend.
-        env_vars.extend([
-            client.V1EnvVar(name="MIMIR_ENABLED", value="true"),
-            client.V1EnvVar(
-                name="MIMIR_URL",
-                value=f"http://mimir-svc.{self.namespace}.svc.cluster.local:8080",
-            ),
-            client.V1EnvVar(name="MIMIR_TENANT_ID", value="nexus-default"),
-            # External simulator + solution-results buckets (used by ResultSink for
-            # write_rows -> S3 partitioned JSON).
-            client.V1EnvVar(name="EXTERNAL_SIMULATOR_BUCKET", value=naming.external_simulator_bucket()),
-            client.V1EnvVar(name="SOLUTION_RESULTS_BUCKET", value=naming.solution_results_bucket()),
-        ])
+        # Grafana Mimir - ontology / nexus-ai only (not used by ai-engine core)
+        if naming.capability_name != "ai-engine":
+            mimir_url = (
+                local_emulation.get("mimir_url")
+                if local_emulation and local_emulation.get("mimir_url")
+                else f"http://mimir-svc.{self.namespace}.svc.cluster.local:8080"
+            )
+            env_vars.extend([
+                client.V1EnvVar(name="MIMIR_ENABLED", value="true"),
+                client.V1EnvVar(name="MIMIR_URL", value=mimir_url),
+                client.V1EnvVar(name="MIMIR_TENANT_ID", value="nexus-default"),
+                client.V1EnvVar(name="EXTERNAL_SIMULATOR_BUCKET", value=naming.external_simulator_bucket()),
+                client.V1EnvVar(name="SOLUTION_RESULTS_BUCKET", value=naming.solution_results_bucket()),
+            ])
         
+        # Backend health probes: ontology cold-start vs ai-engine / local fast path
+        if is_worker:
+            worker_port = 8081
+            backend_startup_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/live", port=worker_port),
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=12,
+            )
+            backend_liveness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/live", port=worker_port),
+                initial_delay_seconds=15,
+                period_seconds=10,
+                timeout_seconds=5,
+                failure_threshold=3,
+            )
+            backend_readiness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/ready", port=worker_port),
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=3,
+            )
+        elif local_emulation or naming.capability_name == "ai-engine":
+            backend_startup_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=12,
+            )
+            backend_liveness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=15,
+                period_seconds=10,
+                timeout_seconds=5,
+                failure_threshold=3,
+            )
+            backend_readiness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=3,
+            )
+        else:
+            backend_startup_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=30,
+                period_seconds=10,
+                timeout_seconds=5,
+                failure_threshold=60,
+            )
+            backend_liveness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=240,
+                period_seconds=15,
+                timeout_seconds=5,
+                failure_threshold=5,
+            )
+            backend_readiness_probe = client.V1Probe(
+                http_get=client.V1HTTPGetAction(path="/health", port=8000),
+                initial_delay_seconds=60,
+                period_seconds=10,
+                timeout_seconds=5,
+                failure_threshold=5,
+            )
+
+        worker_container_kwargs: Dict[str, Any] = {}
+        if is_worker:
+            worker_container_kwargs = {
+                "command": ["nexus-ai-engine", "worker"],
+                "ports": [client.V1ContainerPort(container_port=8081, name="health")],
+            }
+        else:
+            worker_container_kwargs = {
+                "ports": [client.V1ContainerPort(container_port=8000)],
+            }
+
         # Create Deployment
         deployment = client.V1Deployment(
             metadata=client.V1ObjectMeta(
                 name=deployment_name,
                 namespace=self.namespace,
-                labels=self._common_labels(naming, "backend"),
+                labels=self._common_labels(naming, component),
             ),
             spec=client.V1DeploymentSpec(
                 replicas=replicas,
@@ -303,50 +590,23 @@ class KubernetesResourceCreator:
                 ),
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(
-                        labels={"app": deployment_name, **self._common_labels(naming, "backend")}
+                        labels={"app": deployment_name, **self._common_labels(naming, component)}
                     ),
                     spec=client.V1PodSpec(
                         service_account_name=sa_name,
                         containers=[
                             client.V1Container(
-                                name="backend",
+                                name=component,
                                 image=image,
-                                ports=[client.V1ContainerPort(container_port=8000)],
                                 env=env_vars,
                                 resources=client.V1ResourceRequirements(
                                     requests={"cpu": cpu_request, "memory": memory_request},
                                     limits={"cpu": cpu_limit, "memory": memory_limit},
                                 ),
-                                # Cold start can take 4-6 minutes on this pod:
-                                # S3 dumps for 4 simulators (~3 min) + automation
-                                # indexer embeddings + Four-Views entity catalogue.
-                                # A dedicated startup_probe gives that work a
-                                # generous window (60 * 10s = 10 min) while
-                                # suppressing liveness/readiness; once it
-                                # succeeds, liveness/readiness take over with
-                                # tight, steady-state values so genuine hangs
-                                # are still caught quickly.
-                                startup_probe=client.V1Probe(
-                                    http_get=client.V1HTTPGetAction(path="/health", port=8000),
-                                    initial_delay_seconds=30,
-                                    period_seconds=10,
-                                    timeout_seconds=5,
-                                    failure_threshold=60,
-                                ),
-                                liveness_probe=client.V1Probe(
-                                    http_get=client.V1HTTPGetAction(path="/health", port=8000),
-                                    initial_delay_seconds=240,
-                                    period_seconds=15,
-                                    timeout_seconds=5,
-                                    failure_threshold=5,
-                                ),
-                                readiness_probe=client.V1Probe(
-                                    http_get=client.V1HTTPGetAction(path="/health", port=8000),
-                                    initial_delay_seconds=60,
-                                    period_seconds=10,
-                                    timeout_seconds=5,
-                                    failure_threshold=5,
-                                ),
+                                startup_probe=backend_startup_probe,
+                                liveness_probe=backend_liveness_probe,
+                                readiness_probe=backend_readiness_probe,
+                                **worker_container_kwargs,
                             )
                         ],
                     ),
@@ -355,6 +615,16 @@ class KubernetesResourceCreator:
         )
         
         await self._apply_deployment(deployment_name, deployment)
+
+        if queue_mode and not is_worker:
+            try:
+                await self.ensure_worker_management_rbac(naming)
+            except Exception as exc:
+                logger.warning("Worker management RBAC setup failed: %s", exc)
+
+        if is_worker:
+            logger.info(f"Deployed job worker: {deployment_name} ({replicas} replicas)")
+            return deployment_name
         
         # Determine service type: ClusterIP for ALB Ingress, NodePort for local K3s, LoadBalancer otherwise
         if use_clusterip:
@@ -405,6 +675,40 @@ class KubernetesResourceCreator:
         logger.info(f"Created internal backend service: {internal_service_name}")
         
         return svc_result.get("url", f"{service_name}.{self.namespace}.svc.cluster.local:8000")
+
+    async def deploy_job_worker(
+        self,
+        naming: ResourceNaming,
+        image: str,
+        replicas: int = 1,
+        resources: Optional[Dict[str, str]] = None,
+        environment: str = "dev",
+        region: str = "us-east-1",
+        redis_service: Optional[str] = None,
+        aws_access_mode: str = "higher-cost",
+        local_emulation: Optional[Dict[str, str]] = None,
+    ) -> str:
+        """Deploy Redis Streams job worker (ai-engine only, same image as backend)."""
+        worker_resources = resources or {
+            "cpu": "500m",
+            "memory": "1Gi",
+            "cpuLimit": "2",
+            "memoryLimit": "4Gi",
+        }
+        return await self.deploy_backend(
+            naming=naming,
+            image=image,
+            replicas=replicas,
+            resources=worker_resources,
+            environment=environment,
+            region=region,
+            use_clusterip=True,
+            redis_service=redis_service,
+            aws_access_mode=aws_access_mode,
+            local_emulation=local_emulation,
+            queue_mode=True,
+            component="job-worker",
+        )
 
     async def deploy_bssmagic(
         self,
@@ -1203,6 +1507,14 @@ http {{
             alias /usr/share/nginx/docs/;
             index index.html;
             try_files $uri $uri/ =404;
+        }}
+
+        location = /ui {{
+            return 302 /journeys;
+        }}
+
+        location ^~ /ui/ {{
+            return 302 /journeys;
         }}
 
         location /api/ {{

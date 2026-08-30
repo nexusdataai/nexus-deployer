@@ -15,3 +15,7 @@ trino:
     resources:
       limits:
         memory: 4Gi
+
+postgres:
+  image: nexus-sre-postgres:latest
+  imagePullPolicy: IfNotPresent
