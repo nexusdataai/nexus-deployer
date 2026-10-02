@@ -4,6 +4,7 @@ Kubernetes Resource Creator for deploying application components.
 Feature: pure-eks-deployment
 Requirements: 4.5, 4.8, 5.5
 """
+import json
 import logging
 from typing import Dict, Any, Optional
 
@@ -178,7 +179,56 @@ class KubernetesResourceCreator:
                 name=binding_name, namespace=self.namespace, body=binding
             )
 
-        return {"role": role_name, "binding": binding_name, "status": "ready"}
+        cluster_role_name = f"{naming.capability_name}-{naming.environment}-resource-reader"
+        cluster_role = k8s_client.V1ClusterRole(
+            metadata=k8s_client.V1ObjectMeta(name=cluster_role_name),
+            rules=[
+                k8s_client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["nodes"],
+                    verbs=["get", "list"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["nodes/proxy"],
+                    verbs=["get"],
+                ),
+                k8s_client.V1PolicyRule(
+                    api_groups=["metrics.k8s.io"],
+                    resources=["nodes", "pods"],
+                    verbs=["get", "list"],
+                ),
+            ],
+        )
+        cluster_binding = k8s_client.V1ClusterRoleBinding(
+            metadata=k8s_client.V1ObjectMeta(name=cluster_role_name),
+            role_ref=k8s_client.V1RoleRef(
+                api_group="rbac.authorization.k8s.io",
+                kind="ClusterRole",
+                name=cluster_role_name,
+            ),
+            subjects=[
+                k8s_client.V1Subject(
+                    kind="ServiceAccount",
+                    name=sa_name,
+                    namespace=self.namespace,
+                )
+            ],
+        )
+        try:
+            rbac_api.create_cluster_role(body=cluster_role)
+        except ApiException as exc:
+            if exc.status != 409:
+                raise
+            rbac_api.replace_cluster_role(name=cluster_role_name, body=cluster_role)
+        try:
+            rbac_api.create_cluster_role_binding(body=cluster_binding)
+        except ApiException as exc:
+            if exc.status != 409:
+                raise
+            rbac_api.replace_cluster_role_binding(name=cluster_role_name, body=cluster_binding)
+
+        return {"role": role_name, "binding": binding_name, "cluster_role": cluster_role_name, "status": "ready"}
 
     async def delete_job_worker_deployment(self, naming: ResourceNaming) -> Dict[str, Any]:
         dep_name = naming.kubernetes_deployment("job-worker")
@@ -295,12 +345,20 @@ class KubernetesResourceCreator:
                     value=prompts_table,
                 ),
                 client.V1EnvVar(
+                    name="DYNAMODB_DLQ_TABLE",
+                    value=naming.dynamodb_table("dlq"),
+                ),
+                client.V1EnvVar(
                     name="S3_JOURNEY_LOGS_BUCKET",
                     value=logs_bucket,
                 ),
                 client.V1EnvVar(
                     name="S3_JOURNEY_REPORTS_BUCKET",
                     value=reports_bucket,
+                ),
+                client.V1EnvVar(
+                    name="GLUE_DATABASE_NAME",
+                    value=naming.glue_database(),
                 ),
             ]
         else:
@@ -370,8 +428,6 @@ class KubernetesResourceCreator:
                 ),
                 client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
                 client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
-                client.V1EnvVar(name="SFDC_SIMULATOR_ENABLED", value="true"),
-                client.V1EnvVar(name="SFDC_SIMULATOR_BUCKET", value=naming.sfdc_simulator_bucket()),
             ]
             if not skip_ssm:
                 env_vars.insert(
@@ -434,6 +490,8 @@ class KubernetesResourceCreator:
             env_vars.extend([
                 client.V1EnvVar(name="JOB_EXECUTION_MODE", value="queue"),
                 client.V1EnvVar(name="SSE_REDIS_ENABLED", value="true"),
+                client.V1EnvVar(name="MAX_GLOBAL_JOBS", value="50"),
+                client.V1EnvVar(name="MAX_CONCURRENT_JOBS", value="50"),
             ])
             logger.info("Queue execution mode enabled (Redis Streams job pipeline)")
 
@@ -480,8 +538,23 @@ class KubernetesResourceCreator:
                 client.V1EnvVar(name="MIMIR_ENABLED", value="true"),
                 client.V1EnvVar(name="MIMIR_URL", value=mimir_url),
                 client.V1EnvVar(name="MIMIR_TENANT_ID", value="nexus-default"),
-                client.V1EnvVar(name="EXTERNAL_SIMULATOR_BUCKET", value=naming.external_simulator_bucket()),
                 client.V1EnvVar(name="SOLUTION_RESULTS_BUCKET", value=naming.solution_results_bucket()),
+            ])
+
+        if naming.capability_name == "ontology":
+            sim_ns = f"simulator-{naming.environment}"
+            sim_ui = (
+                "http://localhost:8082"
+                if naming.environment == "local"
+                else f"http://simulator-{naming.environment}-frontend-svc.{sim_ns}.svc.cluster.local:8080"
+            )
+            env_vars.extend([
+                client.V1EnvVar(name="SIMULATOR_ENABLED", value="true"),
+                client.V1EnvVar(
+                    name="SIMULATOR_BASE_URL",
+                    value=f"http://simulator-{naming.environment}-backend-svc-internal.{sim_ns}.svc.cluster.local:8000",
+                ),
+                client.V1EnvVar(name="SIMULATOR_UI_URL", value=sim_ui),
             ])
         
         # Backend health probes: ontology cold-start vs ai-engine / local fast path
@@ -508,7 +581,7 @@ class KubernetesResourceCreator:
                 timeout_seconds=3,
                 failure_threshold=3,
             )
-        elif local_emulation or naming.capability_name == "ai-engine":
+        elif naming.capability_name == "ai-engine":
             backend_startup_probe = client.V1Probe(
                 http_get=client.V1HTTPGetAction(path="/health", port=8000),
                 initial_delay_seconds=5,
@@ -636,7 +709,7 @@ class KubernetesResourceCreator:
 
         service_ports = [client.V1ServicePort(port=8000, target_port=8000, protocol="TCP", name="http")]
         if use_nodeport:
-            service_ports[0].node_port = 30800
+            service_ports[0].node_port = self._nodeport_for_capability(naming, "backend")
 
         service = client.V1Service(
             metadata=client.V1ObjectMeta(
@@ -1262,13 +1335,39 @@ class KubernetesResourceCreator:
         nginx_conf = self._generate_nginx_conf(backend_internal_svc)
 
         configmap_name = f"{deployment_name}-config"
+        configmap_data: Dict[str, str] = {"nginx.conf": nginx_conf}
+        volume_mounts = [
+            client.V1VolumeMount(
+                name="config-volume",
+                mount_path="/etc/nginx/nginx.conf",
+                sub_path="nginx.conf",
+            ),
+        ]
+        if use_nodeport:
+            # Local K3s skips Cognito — serve runtime config so the SPA bypasses auth.
+            configmap_data["config.json"] = json.dumps({
+                "deploymentMode": "eks",
+                "bypassAuth": True,
+                "environment": naming.environment,
+                "api": {"baseUrl": "", "timeout": 30000},
+                "dataSource": "api",
+                "enableFallback": True,
+            })
+            volume_mounts.append(
+                client.V1VolumeMount(
+                    name="config-volume",
+                    mount_path="/usr/share/nginx/html/config.json",
+                    sub_path="config.json",
+                )
+            )
+
         configmap = client.V1ConfigMap(
             metadata=client.V1ObjectMeta(
                 name=configmap_name,
                 namespace=self.namespace,
                 labels=self._common_labels(naming, "frontend"),
             ),
-            data={"nginx.conf": nginx_conf}
+            data=configmap_data,
         )
         try:
             self.core_api.create_namespaced_config_map(self.namespace, configmap)
@@ -1315,13 +1414,7 @@ class KubernetesResourceCreator:
                                 name="frontend",
                                 image=image,
                                 ports=[client.V1ContainerPort(container_port=8080)],
-                                volume_mounts=[
-                                    client.V1VolumeMount(
-                                        name="config-volume",
-                                        mount_path="/etc/nginx/nginx.conf",
-                                        sub_path="nginx.conf"
-                                    ),
-                                ],
+                                volume_mounts=volume_mounts,
                                 resources=client.V1ResourceRequirements(
                                     requests={"cpu": cpu_request, "memory": memory_request},
                                     limits={"cpu": cpu_limit, "memory": memory_limit},
@@ -1361,7 +1454,7 @@ class KubernetesResourceCreator:
 
         frontend_ports = [client.V1ServicePort(port=8080, target_port=8080, protocol="TCP", name="http")]
         if use_nodeport:
-            frontend_ports[0].node_port = 30808
+            frontend_ports[0].node_port = self._nodeport_for_capability(naming, "frontend")
         
         # Create Service
         service = client.V1Service(
@@ -1503,6 +1596,15 @@ http {{
             proxy_read_timeout 30s;
         }}
 
+        location = /version {{
+            proxy_pass http://{backend_svc}:8000/version;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_http_version 1.1;
+            proxy_connect_timeout 10s;
+            proxy_read_timeout 30s;
+        }}
+
         location ^~ /docs/ {{
             alias /usr/share/nginx/docs/;
             index index.html;
@@ -1515,6 +1617,30 @@ http {{
 
         location ^~ /ui/ {{
             return 302 /journeys;
+        }}
+
+        location /services/ {{
+            proxy_pass http://{backend_svc}:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_http_version 1.1;
+            proxy_read_timeout 60s;
+        }}
+
+        location /fscmRestApi/ {{
+            proxy_pass http://{backend_svc}:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_http_version 1.1;
+            proxy_read_timeout 60s;
+        }}
+
+        location /sap/ {{
+            proxy_pass http://{backend_svc}:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_http_version 1.1;
+            proxy_read_timeout 60s;
         }}
 
         location /api/ {{
@@ -1563,6 +1689,19 @@ http {{
     }}
 }}
 """
+
+    def _nodeport_for_capability(self, naming: ResourceNaming, component: str) -> int:
+        """Return a stable NodePort per capability to avoid collisions on local K3s."""
+        ports_by_capability = {
+            "ai-engine": {"backend": 30800, "frontend": 30808},
+            "ontology": {"backend": 30801, "frontend": 30809},
+            "simulator": {"backend": 30802, "frontend": 30810},
+        }
+        capability_ports = ports_by_capability.get(naming.capability_name, {})
+        if component in capability_ports:
+            return capability_ports[component]
+        base = 30810 + (hash(naming.capability_name) % 80)
+        return base if component == "backend" else base + 1
 
     def _common_labels(self, naming: ResourceNaming, component: str) -> Dict[str, str]:
         """Generate common labels for resources."""

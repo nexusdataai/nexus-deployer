@@ -239,6 +239,10 @@ class SSMProvisioner:
                     n.dynamodb_table("prompts"),
                     "Prompts DynamoDB table",
                 ),
+                n.ai_engine_ssm_parameter("dynamodb_dlq_table"): (
+                    n.dynamodb_table("dlq"),
+                    "Dead letter queue DynamoDB table",
+                ),
                 n.ai_engine_ssm_parameter("s3_journey_logs_bucket"): (
                     n.journey_logs_bucket(),
                     "Journey logs S3 bucket",
@@ -249,6 +253,7 @@ class SSMProvisioner:
                 ),
                 n.ai_engine_ssm_parameter("environment"): (env, "Deployment environment"),
                 n.ai_engine_ssm_parameter("capability_name"): ("ai-engine", "Capability name"),
+                n.ai_engine_ssm_parameter("glue_database"): (n.glue_database(), "Glue database"),
                 n.ai_engine_ssm_parameter("max_concurrent_jobs"): ("10", "Max concurrent jobs"),
             }
         return {
@@ -264,6 +269,10 @@ class SSMProvisioner:
                 n.ai_engine_prompts_table(),
                 "Prompts DynamoDB table",
             ),
+            n.ai_engine_ssm_parameter("dynamodb_dlq_table"): (
+                n.dynamodb_table("dlq"),
+                "Dead letter queue DynamoDB table",
+            ),
             n.ai_engine_ssm_parameter("s3_journey_logs_bucket"): (
                 n.ai_engine_journey_logs_bucket(),
                 "Journey logs S3 bucket",
@@ -274,6 +283,7 @@ class SSMProvisioner:
             ),
             n.ai_engine_ssm_parameter("environment"): (env, "Deployment environment"),
             n.ai_engine_ssm_parameter("capability_name"): ("ai-engine", "Capability name"),
+            n.ai_engine_ssm_parameter("glue_database"): (n.glue_database(), "Glue database"),
             n.ai_engine_ssm_parameter("max_concurrent_jobs"): ("10", "Max concurrent jobs"),
         }
     

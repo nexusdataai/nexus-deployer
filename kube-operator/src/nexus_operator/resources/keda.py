@@ -56,7 +56,7 @@ class KedaReconciler:
 
         min_replicas = int(autoscaling.get("minReplicas", spec.get("replicas", 1)))
         max_replicas = int(autoscaling.get("maxReplicas", 10))
-        lag_threshold = int(autoscaling.get("lagThreshold", 5))
+        lag_threshold = int(autoscaling.get("lagThreshold", 6))
         if max_replicas < min_replicas:
             raise ValueError(
                 f"jobWorker.autoscaling.maxReplicas ({max_replicas}) must be >= minReplicas ({min_replicas})"
@@ -76,6 +76,22 @@ class KedaReconciler:
                 "maxReplicaCount": max_replicas,
                 "pollingInterval": 15,
                 "cooldownPeriod": 60,
+                "advanced": {
+                    "horizontalPodAutoscalerConfig": {
+                        "behavior": {
+                            "scaleUp": {
+                                "stabilizationWindowSeconds": 30,
+                                "selectPolicy": "Max",
+                                "policies": [{"type": "Pods", "value": 2, "periodSeconds": 30}],
+                            },
+                            "scaleDown": {
+                                "stabilizationWindowSeconds": 180,
+                                "selectPolicy": "Min",
+                                "policies": [{"type": "Pods", "value": 1, "periodSeconds": 60}],
+                            },
+                        }
+                    }
+                },
                 "triggers": [
                     {
                         "type": "redis-streams",

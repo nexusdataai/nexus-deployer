@@ -30,3 +30,31 @@ subjects:
   - kind: ServiceAccount
     name: ai-engine-local-app-role-sa
     namespace: ai-engine-local
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-engine-local-resource-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-engine-local-resource-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-engine-local-resource-reader
+subjects:
+  - kind: ServiceAccount
+    name: ai-engine-local-app-role-sa
+    namespace: ai-engine-local

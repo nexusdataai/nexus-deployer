@@ -1,4 +1,4 @@
-# Nexus Ontology — local K3s deployment (shared nexus-local AWS stack)
+# Nexus Ontology — local K3s in-cluster (API + UI pods, shared nexus-local AWS stack)
 #
 # Prerequisites:
 #   ./local-k3s/create-local-k3s-cluster.sh
@@ -6,8 +6,18 @@
 #   ../local-k3s/deploy-local-aws-stack.sh --kube-context local-cluster
 #
 # Deploy:
-#   ./deploy-capability.sh --product local-ontology --env local --skip-images
+#   ./deploy-capability.sh --product local-ontology --env local --skip-images --skip-iam
+# Or auto-applied by: ./deploy-app-changes.sh ontology --env local --all
 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ontology-local
+  labels:
+    app.kubernetes.io/name: nexus-ontology
+    nexus.ai/capability: ontology
+    nexus.ai/environment: local
+---
 apiVersion: nexus.ai/v1
 kind: NexusCapability
 metadata:
@@ -43,18 +53,23 @@ spec:
   backend:
     enabled: true
     replicas: 1
-    image: "__ECR_REGISTRY__/nexus-ontology-api:latest"
+    image: "__API_IMAGE__"
 
   frontend:
     enabled: true
     replicas: 1
-    image: "__ECR_REGISTRY__/nexus-ontology-ui:latest"
+    image: "__UI_IMAGE__"
 
   bssmagic:
     enabled: false
 
   postgres:
-    enabled: false
+    enabled: true
+    image: "pgvector/pgvector:pg16"
+    storageSize: 2Gi
+    database: ontology_cp
+    user: nexus
+    password: nexus
 
   mimir:
     enabled: false

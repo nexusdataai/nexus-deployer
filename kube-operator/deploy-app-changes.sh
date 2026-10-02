@@ -10,7 +10,7 @@
 #   ai-engine     nexus-ai-engine API + UI
 #   sre           nexus-sre backend + UI (+ --postgres for postgres image)
 #   ontology      nexus-ontology API + UI
-#   simulator     nexus-simulator reference server
+#   simulator     nexus-simulator API + UI
 #
 # Usage:
 #   ./deploy-app-changes.sh ai-engine --env dev
@@ -191,6 +191,18 @@ if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ai-engine" ] && [ "$DEPLOY_
     dac_load_product "$PRODUCT" || exit 1
 fi
 
+if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ontology" ] && [ "$DEPLOY_ENV" != "local" ]; then
+    dac_log_warn "local-cluster uses ontology-local — remapping --env ${DEPLOY_ENV} → local"
+    DEPLOY_ENV=local
+    dac_load_product "$PRODUCT" || exit 1
+fi
+
+if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "simulator" ] && [ "$DEPLOY_ENV" != "local" ]; then
+    dac_log_warn "local-cluster uses simulator-local — remapping --env ${DEPLOY_ENV} → local"
+    DEPLOY_ENV=local
+    dac_load_product "$PRODUCT" || exit 1
+fi
+
 if [ "$LOCAL_K3S_IMAGES" = true ]; then
     ECR_REGISTRY="local-k3s"
 else
@@ -338,6 +350,12 @@ fi
 if [ "$SKIP_ROLLOUT" = false ]; then
     if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ai-engine" ]; then
         dac_ensure_local_ai_engine_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
+    fi
+    if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "ontology" ]; then
+        dac_ensure_local_ontology_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
+    fi
+    if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "simulator" ]; then
+        dac_ensure_local_simulator_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
     fi
     dac_log_step "Phase 3: Kubernetes rollout (no diagnostics)"
     _rollout_jobs=()

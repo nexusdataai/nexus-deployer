@@ -93,18 +93,22 @@ dac_load_product() {
             local _od="${ONTOLOGY_DIR:-${NEXUS_ROOT}/nexus-ontology}"
             DAC_COMPONENTS=(
                 "api|${_od}/backend|VERSION|nexus-ontology-api|nexus-ontology-api|ontology-api|--ontology-api-version|ontology-${DEPLOY_ENV}-backend|deployment||ONTOLOGY_API_TAG|ONTOLOGY_API_VERSION"
-                "ui|${_od}/frontend|VERSION|nexus-ontology-ui|nexus-ontology-ui|ontology-ui|--ontology-ui-version|ontology-${DEPLOY_ENV}-frontend|deployment||ONTOLOGY_UI_TAG|ONTOLOGY_UI_VERSION"
+                "ui|${_od}/frontend|VERSION|nexus-ontology-ui|nexus-ontology-ui|ontology-ui|--ontology-ui-version|ontology-${DEPLOY_ENV}-frontend|deployment|docs|ONTOLOGY_UI_TAG|ONTOLOGY_UI_VERSION"
             )
             ;;
         simulator)
-            DAC_PRODUCT_LABEL="Nexus Simulator (reference server)"
+            DAC_PRODUCT_LABEL="Nexus Simulator (API + UI)"
             DAC_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-simulator"
             DAC_DESCRIPTOR="${SCRIPT_DIR}/examples/nexus-simulator-complete.yaml"
-            DAC_ROLLOUT_ARGS=(--namespace nexus-simulator --capability simulator)
-            DAC_NAMESPACE="nexus-simulator"
+            DAC_ROLLOUT_ARGS=(--capability simulator)
+            case "$DEPLOY_ENV" in
+                prod)  DAC_NAMESPACE="simulator-prod" ;;
+                *)     DAC_NAMESPACE="simulator-${DEPLOY_ENV}" ;;
+            esac
             local _sim="${SIMULATOR_DIR:-${NEXUS_ROOT}/nexus-simulator}"
             DAC_COMPONENTS=(
-                "server|${_sim}|VERSION|nexus-simulator|nexus-simulator|simulator|--simulator-version|nexus-simulator|deployment||SIMULATOR_TAG|SIMULATOR_VERSION"
+                "api|${_sim}|backend/VERSION|nexus-simulator-api|nexus-simulator-api|simulator-api|--simulator-api-version|simulator-${DEPLOY_ENV}-backend|deployment||SIMULATOR_API_TAG|SIMULATOR_API_VERSION|Dockerfile"
+                "ui|${_sim}/frontend|VERSION|nexus-simulator-ui|nexus-simulator-ui|simulator-ui|--simulator-ui-version|simulator-${DEPLOY_ENV}-frontend|deployment||SIMULATOR_UI_TAG|SIMULATOR_UI_VERSION"
             )
             ;;
         *)

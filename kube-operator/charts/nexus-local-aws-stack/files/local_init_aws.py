@@ -209,6 +209,16 @@ TABLE_SCHEMAS: Dict[str, Dict[str, Any]] = {
             {"AttributeName": "SK", "AttributeType": "S"},
         ],
     },
+    "dlq": {
+        "KeySchema": [
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+    },
 }
 
 _ONTOLOGY_TABLES = [
@@ -226,7 +236,7 @@ _ONTOLOGY_TABLES = [
 CAPABILITY_TABLES: Dict[str, List[str]] = {
     "ontology": _ONTOLOGY_TABLES,
     "nexus-ai": _ONTOLOGY_TABLES,
-    "ai-engine": ["journeys", "executions", "prompts"],
+    "ai-engine": ["journeys", "executions", "prompts", "dlq"],
 }
 
 CAPABILITY_BUCKETS: Dict[str, List[str]] = {
@@ -394,10 +404,12 @@ def _ai_engine_ssm_parameters(naming: LocalNaming) -> Dict[str, str]:
         naming.ai_engine_ssm_parameter("dynamodb_transformation_table"): naming.dynamodb_table("journeys"),
         naming.ai_engine_ssm_parameter("dynamodb_executions_table"): naming.dynamodb_table("executions"),
         naming.ai_engine_ssm_parameter("dynamodb_prompts_table"): naming.dynamodb_table("prompts"),
+        naming.ai_engine_ssm_parameter("dynamodb_dlq_table"): naming.dynamodb_table("dlq"),
         naming.ai_engine_ssm_parameter("s3_journey_logs_bucket"): naming.s3_bucket("journey-logs"),
         naming.ai_engine_ssm_parameter("s3_journey_reports_bucket"): naming.s3_bucket("journey-reports"),
         naming.ai_engine_ssm_parameter("environment"): env,
         naming.ai_engine_ssm_parameter("capability_name"): "ai-engine",
+        naming.ai_engine_ssm_parameter("glue_database"): naming.glue_database(),
         naming.ai_engine_ssm_parameter("max_concurrent_jobs"): "10",
     }
 
@@ -446,10 +458,9 @@ def provision_capability(
     for purpose in _capability_tables(capability):
         schema = TABLE_SCHEMAS[purpose]
         _ensure_dynamodb_table(ddb, naming.dynamodb_table(purpose), schema)
-    if _sanitize(capability) != "ai-engine":
-        glue = _client("glue", ministack_endpoint, region)
-        _ensure_glue_database(glue, naming.glue_database())
-    else:
+    glue = _client("glue", ministack_endpoint, region)
+    _ensure_glue_database(glue, naming.glue_database())
+    if _sanitize(capability) == "ai-engine":
         ssm = _client("ssm", ministack_endpoint, region)
         _ensure_ssm_parameters(ssm, _ai_engine_ssm_parameters(naming))
         sm = _client("secretsmanager", ministack_endpoint, region)

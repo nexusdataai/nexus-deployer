@@ -99,6 +99,8 @@ while [ $# -gt 0 ]; do
         --ontology-api-version) ONTOLOGY_API_VERSION="$2"; shift 2 ;;
         --ontology-ui-version)  ONTOLOGY_UI_VERSION="$2"; shift 2 ;;
         --simulator-version)    SIMULATOR_VERSION="$2"; shift 2 ;;
+        --simulator-api-version) SIMULATOR_API_VERSION="$2"; shift 2 ;;
+        --simulator-ui-version)  SIMULATOR_UI_VERSION="$2"; shift 2 ;;
         --rollback)         ROLLBACK_MODE=1; shift ;;
         --rollback-to)      ROLLBACK_MODE=1; ROLLBACK_TO_VERSION="$2"; shift 2 ;;
         --list-versions)    LIST_VERSIONS=1; shift ;;
@@ -163,7 +165,7 @@ Ordering (when rolling out multiple):
 EOF
             exit 0
             ;;
-        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-worker|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|simulator)
+        frontend|backend|bssmagic|all|sre-backend|sre-ui|sre-postgres|sre-all|ai-engine-api|ai-engine-worker|ai-engine-ui|ai-engine-all|ontology-api|ontology-ui|ontology-all|simulator|simulator-api|simulator-ui|simulator-all)
             COMPONENTS="${COMPONENTS} $1"; shift ;;
         *)
             echo "Unknown option: $1"; exit 1 ;;
@@ -212,7 +214,9 @@ if [ -f "$_ONTOLOGY_VERSIONS" ]; then
 fi
 _SIMULATOR_VERSIONS="${SCRIPT_DIR}/images/nexus-simulator/versions.env"
 if [ -f "$_SIMULATOR_VERSIONS" ]; then
-    PACKAGED_SIMULATOR_TAG=$(. "$_SIMULATOR_VERSIONS" >/dev/null 2>&1; echo "${SIMULATOR_TAG:-}")
+    PACKAGED_SIMULATOR_TAG=$(. "$_SIMULATOR_VERSIONS" >/dev/null 2>&1; echo "${SIMULATOR_API_TAG:-${SIMULATOR_TAG:-}}")
+    PACKAGED_SIMULATOR_API_TAG=$(. "$_SIMULATOR_VERSIONS" >/dev/null 2>&1; echo "${SIMULATOR_API_TAG:-${SIMULATOR_TAG:-}}")
+    PACKAGED_SIMULATOR_UI_TAG=$(. "$_SIMULATOR_VERSIONS" >/dev/null 2>&1; echo "${SIMULATOR_UI_TAG:-}")
 fi
 unset _NEXUS_VERSIONS _BSS_VERSIONS _AI_ENGINE_VERSIONS _SRE_VERSIONS _ONTOLOGY_VERSIONS _SIMULATOR_VERSIONS
 
@@ -227,6 +231,7 @@ case "$COMPONENTS" in
     *sre-all*)        COMPONENTS="sre-postgres sre-backend sre-ui" ;;
     *ai-engine-all*)  COMPONENTS="ai-engine-api ai-engine-worker ai-engine-ui" ;;
     *ontology-all*)  COMPONENTS="ontology-api ontology-ui" ;;
+    *simulator-all*) COMPONENTS="simulator-api simulator-ui" ;;
     *all*)            COMPONENTS="bssmagic backend frontend" ;;
 esac
 
@@ -245,7 +250,8 @@ resource_name() {
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
         ontology-api)    echo "${CAPABILITY}-${ENV}-backend" ;;
         ontology-ui)     echo "${CAPABILITY}-${ENV}-frontend" ;;
-        simulator)       echo "nexus-simulator" ;;
+        simulator|simulator-api) echo "${CAPABILITY}-${ENV}-backend" ;;
+        simulator-ui)    echo "${CAPABILITY}-${ENV}-frontend" ;;
         *)               echo "${CAPABILITY}-${ENV}-${1}" ;;
     esac
 }
@@ -270,7 +276,8 @@ ecr_repo() {
         ai-engine-ui)    echo "nexus-ai-engine-ui" ;;
         ontology-api)    echo "nexus-ontology-api" ;;
         ontology-ui)     echo "nexus-ontology-ui" ;;
-        simulator)       echo "nexus-simulator" ;;
+        simulator|simulator-api) echo "nexus-simulator-api" ;;
+        simulator-ui)    echo "nexus-simulator-ui" ;;
     esac
 }
 
@@ -287,7 +294,8 @@ container_name() {
         ai-engine-ui)    echo "ui" ;;
         ontology-api)    echo "backend" ;;
         ontology-ui)     echo "frontend" ;;
-        simulator)       echo "server" ;;
+        simulator|simulator-api) echo "backend" ;;
+        simulator-ui)    echo "frontend" ;;
     esac
 }
 
@@ -304,7 +312,8 @@ health_check_cmd() {
         ai-engine-ui)    echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
         ontology-api)    echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
         ontology-ui)     echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
-        simulator)       echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
+        simulator|simulator-api) echo "curl -sf --max-time 5 http://127.0.0.1:8000/health" ;;
+        simulator-ui)    echo "wget -qO- --timeout=5 http://127.0.0.1:8080/ >/dev/null 2>&1" ;;
     esac
 }
 
@@ -321,7 +330,8 @@ target_version_for() {
         ai-engine-ui)    _tv="${AI_ENGINE_UI_VERSION:-${TARGET_VERSION}}" ;;
         ontology-api)    _tv="${ONTOLOGY_API_VERSION:-${TARGET_VERSION}}" ;;
         ontology-ui)     _tv="${ONTOLOGY_UI_VERSION:-${TARGET_VERSION}}" ;;
-        simulator)       _tv="${SIMULATOR_VERSION:-${TARGET_VERSION}}" ;;
+        simulator|simulator-api) _tv="${SIMULATOR_API_VERSION:-${SIMULATOR_VERSION:-${TARGET_VERSION}}}" ;;
+        simulator-ui)    _tv="${SIMULATOR_UI_VERSION:-${TARGET_VERSION}}" ;;
         *)               _tv="" ;;
     esac
     if [ -n "$_tv" ]; then
@@ -347,7 +357,11 @@ target_version_for() {
         sre-postgres)   [ -n "$PACKAGED_SRE_POSTGRES_TAG" ]   && { echo "$PACKAGED_SRE_POSTGRES_TAG";   return; } ;;
         ontology-api)   [ -n "$PACKAGED_ONTOLOGY_API_TAG" ]   && { echo "$PACKAGED_ONTOLOGY_API_TAG";   return; } ;;
         ontology-ui)    [ -n "$PACKAGED_ONTOLOGY_UI_TAG" ]    && { echo "$PACKAGED_ONTOLOGY_UI_TAG";    return; } ;;
-        simulator)      [ -n "$PACKAGED_SIMULATOR_TAG" ]      && { echo "$PACKAGED_SIMULATOR_TAG";      return; } ;;
+        simulator|simulator-api)
+            [ -n "$PACKAGED_SIMULATOR_API_TAG" ] && { echo "$PACKAGED_SIMULATOR_API_TAG"; return; }
+            [ -n "$PACKAGED_SIMULATOR_TAG" ] && { echo "$PACKAGED_SIMULATOR_TAG"; return; }
+            ;;
+        simulator-ui)   [ -n "$PACKAGED_SIMULATOR_UI_TAG" ] && { echo "$PACKAGED_SIMULATOR_UI_TAG"; return; } ;;
     esac
     latest_versioned_ecr_tag "$1"
 }

@@ -335,6 +335,128 @@ dac_ensure_local_ai_engine_workloads() {
     return "$ok"
 }
 
+dac_ensure_local_ontology_workloads() {
+    local api_tag="$1" ui_tag="$2"
+    local env_suffix="${DEPLOY_ENV}"
+    local ns="${DAC_NAMESPACE}"
+    if [ "${LOCAL_K3S_IMAGES:-false}" = true ]; then
+        env_suffix="local"
+        ns="ontology-local"
+    fi
+    local backend_dep="ontology-${env_suffix}-backend"
+    local frontend_dep="ontology-${env_suffix}-frontend"
+    local cap_file="${SCRIPT_DIR}/examples/nexus-ontology-local.yaml"
+    local patched="/tmp/nexus-ontology-local-$$.yaml"
+    local cap_name api_image ui_image patch_json
+
+    api_image="nexus-ontology-api:${api_tag}"
+    ui_image="nexus-ontology-ui:${ui_tag}"
+
+    if kubectl get "deployment/${backend_dep}" -n "$ns" >/dev/null 2>&1 \
+        && kubectl get "deployment/${frontend_dep}" -n "$ns" >/dev/null 2>&1; then
+        dac_log_info "Local workloads already present (${backend_dep}, ${frontend_dep})"
+        return 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        dac_log_info "[dry-run] would ensure local ontology capability + wait for ${backend_dep}, ${frontend_dep}"
+        return 0
+    fi
+
+    dac_log_step "Bootstrap local ontology workloads (operator CR)"
+    cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[?(@.spec.backend.enabled==true)].metadata.name}' 2>/dev/null || true)
+    if [ -z "$cap_name" ]; then
+        cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    fi
+
+    if [ -n "$cap_name" ]; then
+        dac_log_info "Patching NexusCapability/${cap_name} to enable in-cluster API + UI"
+        patch_json=$(printf '{"spec":{"backend":{"enabled":true,"replicas":1,"image":"%s"},"frontend":{"enabled":true,"replicas":1,"image":"%s"}}}' "$api_image" "$ui_image")
+        kubectl patch nexuscapability "$cap_name" -n "$ns" --type=merge -p "$patch_json"
+    elif [ -f "$cap_file" ]; then
+        dac_log_info "Applying $(basename "$cap_file")"
+        sed -e "s|__API_IMAGE__|${api_image}|g" \
+            -e "s|__UI_IMAGE__|${ui_image}|g" \
+            "$cap_file" > "$patched"
+        kubectl apply -f "$patched"
+        rm -f "$patched"
+    else
+        dac_log_fail "Missing ${cap_file} and no NexusCapability in ${ns}"
+        return 1
+    fi
+
+    local dep ok=0
+    local saved_ns="${DAC_NAMESPACE}"
+    DAC_NAMESPACE="$ns"
+    for dep in "$backend_dep" "$frontend_dep"; do
+        dac_log_info "Waiting for deployment/${dep} ..."
+        dac_wait_deployment_available "$dep" 600 || ok=1
+    done
+    DAC_NAMESPACE="$saved_ns"
+    return "$ok"
+}
+
+dac_ensure_local_simulator_workloads() {
+    local api_tag="$1" ui_tag="$2"
+    local env_suffix="${DEPLOY_ENV}"
+    local ns="${DAC_NAMESPACE}"
+    if [ "${LOCAL_K3S_IMAGES:-false}" = true ]; then
+        env_suffix="local"
+        ns="simulator-local"
+    fi
+    local backend_dep="simulator-${env_suffix}-backend"
+    local frontend_dep="simulator-${env_suffix}-frontend"
+    local cap_file="${SCRIPT_DIR}/examples/nexus-simulator-local.yaml"
+    local patched="/tmp/nexus-simulator-local-$$.yaml"
+    local cap_name api_image ui_image patch_json
+
+    api_image="nexus-simulator-api:${api_tag}"
+    ui_image="nexus-simulator-ui:${ui_tag}"
+
+    if kubectl get "deployment/${backend_dep}" -n "$ns" >/dev/null 2>&1 \
+        && kubectl get "deployment/${frontend_dep}" -n "$ns" >/dev/null 2>&1; then
+        dac_log_info "Local workloads already present (${backend_dep}, ${frontend_dep})"
+        return 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        dac_log_info "[dry-run] would ensure local simulator capability + wait for ${backend_dep}, ${frontend_dep}"
+        return 0
+    fi
+
+    dac_log_step "Bootstrap local simulator workloads (operator CR)"
+    cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[?(@.spec.backend.enabled==true)].metadata.name}' 2>/dev/null || true)
+    if [ -z "$cap_name" ]; then
+        cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    fi
+
+    if [ -n "$cap_name" ]; then
+        dac_log_info "Patching NexusCapability/${cap_name} to enable in-cluster API + UI"
+        patch_json=$(printf '{"spec":{"backend":{"enabled":true,"replicas":1,"image":"%s"},"frontend":{"enabled":true,"replicas":1,"image":"%s"}}}' "$api_image" "$ui_image")
+        kubectl patch nexuscapability "$cap_name" -n "$ns" --type=merge -p "$patch_json"
+    elif [ -f "$cap_file" ]; then
+        dac_log_info "Applying $(basename "$cap_file")"
+        sed -e "s|__API_IMAGE__|${api_image}|g" \
+            -e "s|__UI_IMAGE__|${ui_image}|g" \
+            "$cap_file" > "$patched"
+        kubectl apply -f "$patched"
+        rm -f "$patched"
+    else
+        dac_log_fail "Missing ${cap_file} and no NexusCapability in ${ns}"
+        return 1
+    fi
+
+    local dep ok=0
+    local saved_ns="${DAC_NAMESPACE}"
+    DAC_NAMESPACE="$ns"
+    for dep in "$backend_dep" "$frontend_dep"; do
+        dac_log_info "Waiting for deployment/${dep} ..."
+        dac_wait_deployment_available "$dep" 600 || ok=1
+    done
+    DAC_NAMESPACE="$saved_ns"
+    return "$ok"
+}
+
 dac_build_and_push() {
     local local_image="$1" ecr_repo="$2" tag="$3" sha="$4" build_flags="$5" dir="$6" pre_build="$7" dockerfile="${8:-Dockerfile}"
     dac_build_component "$local_image" "$tag" "$sha" "$build_flags" "$dir" "$pre_build" "$dockerfile"
