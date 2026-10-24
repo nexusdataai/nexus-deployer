@@ -65,6 +65,22 @@ IAM_ACCOUNT_1_SECRET_ACCESS_KEY=
 
 # Default profile to activate after login (must match an IAM_ACCOUNT_*_PROFILE above)
 DEFAULT_PROFILE=promode-official
+
+# Generate AWS Console signin URL after login (true/false, default: false)
+# When enabled, uses the IAM user's keys to call sts get-federation-token and
+# exchanges the temporary credentials for a console signin URL. The IAM user
+# must be allowed to call sts:GetFederationToken.
+# PRINT_CONSOLE_URL=false
+
+# Console session duration in seconds for the federation token
+# (default: 3600 = 1 hour, min: 900, max: 129600 = 36 hours)
+# CONSOLE_SESSION_DURATION=3600
+
+# Console destination (where the signin URL lands after login)
+# If left unset, it is built automatically from the active account's region
+# (IAM_ACCOUNT_*_REGION) so the console opens in that region. Only set this to
+# override with a specific landing page.
+# CONSOLE_DESTINATION=https://us-east-1.console.aws.amazon.com/console/home?region=us-east-1
 EOF
     chmod 600 .env.iam.local 2>/dev/null || true
     echo "✅ Created template .env.iam.local file"
@@ -73,15 +89,30 @@ EOF
     exit 0
 fi
 
-# Permission warning - this file holds long-term IAM user credentials
-PERMS=$(stat -c '%a' .env.iam.local 2>/dev/null || echo "")
-if [[ -n "$PERMS" && "$PERMS" != "600" && "$PERMS" != "400" ]]; then
-    echo "⚠️  .env.iam.local permissions are $PERMS; expected 600. Run: chmod 600 $SCRIPT_DIR/.env.iam.local"
+# Permission warning - this file holds long-term IAM user credentials.
+# Skip on Windows/Git Bash: the drive is typically mounted "noacl", so POSIX
+# stat bits are meaningless (always report 644) and `chmod` is a no-op there.
+# On Windows, file access is governed by NTFS ACLs instead (manage with icacls).
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) PERM_CHECK_SUPPORTED=false ;;
+    *) PERM_CHECK_SUPPORTED=true ;;
+esac
+if [ "$PERM_CHECK_SUPPORTED" = "true" ]; then
+    PERMS=$(stat -c '%a' .env.iam.local 2>/dev/null || echo "")
+    if [[ -n "$PERMS" && "$PERMS" != "600" && "$PERMS" != "400" ]]; then
+        echo "⚠️  .env.iam.local permissions are $PERMS; expected 600. Run: chmod 600 $SCRIPT_DIR/.env.iam.local"
+    fi
 fi
 
 # Set defaults for optional variables
 : "${DEFAULT_PROFILE:=}"
 : "${PRINT_CONSOLE_URL:=false}"
+: "${CONSOLE_SESSION_DURATION:=3600}"
+# CONSOLE_DESTINATION intentionally defaults to empty. When unset, the console
+# destination is built from the active account's region (ACC_REGION, sourced
+# from IAM_ACCOUNT_*_REGION in .env.iam.local) so the console opens in the
+# right region instead of a stale/global default.
+: "${CONSOLE_DESTINATION:=}"
 
 # Collect all defined accounts into arrays (matching aws-sso-login.sh pattern)
 ACCOUNT_NAMES=()
@@ -142,6 +173,7 @@ while [[ "$#" -gt 0 ]]; do
         --profile) ACTIVE_PROFILE="$2"; shift ;;
         --list)    SHOW_LIST=true ;;
         --status)  SHOW_STATUS=true ;;
+        --console-url) PRINT_CONSOLE_URL=true ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -151,6 +183,8 @@ while [[ "$#" -gt 0 ]]; do
             echo "  --profile PROFILE   Activate a specific profile (default: $DEFAULT_PROFILE)"
             echo "  --list              List all configured IAM profiles"
             echo "  --status            Verify each profile by calling sts get-caller-identity"
+            echo "  --console-url       Print an AWS Console signin URL after login"
+            echo "                      (uses sts get-federation-token on the IAM user's keys)"
             echo "  --help              Show this help message"
             echo ""
             echo "Configured accounts:"
@@ -340,6 +374,102 @@ fi
 
 echo "   ✅ Verified: account $VERIFIED_ACCOUNT, arn=$VERIFIED_ARN"
 echo ""
+
+# ── Optionally generate an AWS Console signin URL ───────────────────
+# IAM users have no SAML assertion (unlike the ADFS flow), so the console
+# URL is built via AWS federation:
+#   1. sts get-federation-token  -> temporary creds for a federated session
+#   2. GET signin.aws.amazon.com/federation?Action=getSigninToken
+#   3. build Action=login URL with Issuer + Destination + the signin token
+CONSOLE_URL=""
+if [ "$PRINT_CONSOLE_URL" = "true" ]; then
+    echo "🌐 Generating AWS Console signin URL..."
+
+    # Clamp the federation duration to the STS-allowed range (900–129600s).
+    FED_DURATION="$CONSOLE_SESSION_DURATION"
+    if ! [[ "$FED_DURATION" =~ ^[0-9]+$ ]] || [ "$FED_DURATION" -lt 900 ]; then
+        FED_DURATION=900
+    elif [ "$FED_DURATION" -gt 129600 ]; then
+        FED_DURATION=129600
+    fi
+
+    # Name must match [\w+=,.@-]{2,32}; derive a safe one from the profile.
+    FED_NAME=$(echo "$ACC_PROFILE" | tr -c 'A-Za-z0-9+=,.@_-' '-' | cut -c1-32)
+    [ ${#FED_NAME} -lt 2 ] && FED_NAME="console-session"
+
+    # Resolve the console destination. If CONSOLE_DESTINATION isn't explicitly
+    # set in .env.iam.local, build a region-specific URL from ACC_REGION so the
+    # console opens in the account's configured region.
+    CONSOLE_DEST="$CONSOLE_DESTINATION"
+    if [ -z "$CONSOLE_DEST" ]; then
+        if [ -n "$ACC_REGION" ]; then
+            CONSOLE_DEST="https://${ACC_REGION}.console.aws.amazon.com/console/home?region=${ACC_REGION}"
+        else
+            CONSOLE_DEST="https://console.aws.amazon.com/"
+        fi
+    fi
+    echo "   Region:      $ACC_REGION"
+    echo "   Destination: $CONSOLE_DEST"
+
+    FED_JSON=$(AWS_PAGER="" aws --profile "$ACC_PROFILE" --region "$ACC_REGION" \
+        --no-cli-pager sts get-federation-token \
+        --name "$FED_NAME" \
+        --duration-seconds "$FED_DURATION" \
+        --policy '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}' \
+        --output json 2>/dev/null || echo "")
+
+    if [ -z "$FED_JSON" ]; then
+        echo "⚠️  Could not obtain a federation token (sts get-federation-token failed)."
+        echo "   The IAM user '$ACC_PROFILE' likely lacks the sts:GetFederationToken permission,"
+        echo "   or the keys are for a role/root user (federation tokens require an IAM user)."
+        echo "   Console URL generation skipped."
+        echo ""
+    else
+        CONSOLE_URL=$(FED_JSON="$FED_JSON" \
+            CONSOLE_DESTINATION="$CONSOLE_DEST" \
+            ACC_NAME="$ACC_NAME" \
+            python3 <<'PYEOF' 2>/dev/null || echo ""
+import json, os, sys
+try:
+    import urllib.parse, urllib.request
+    creds = json.loads(os.environ["FED_JSON"])["Credentials"]
+    session = {
+        "sessionId": creds["AccessKeyId"],
+        "sessionKey": creds["SecretAccessKey"],
+        "sessionToken": creds["SessionToken"],
+    }
+    base = "https://signin.aws.amazon.com/federation"
+    token_url = base + "?" + urllib.parse.urlencode({
+        "Action": "getSigninToken",
+        "SessionDuration": "43200",
+        "Session": json.dumps(session),
+    })
+    with urllib.request.urlopen(token_url, timeout=20) as resp:
+        signin_token = json.loads(resp.read().decode())["SigninToken"]
+    issuer = "aws-iam-login/" + os.environ.get("ACC_NAME", "iam")
+    login_url = base + "?" + urllib.parse.urlencode({
+        "Action": "login",
+        "Issuer": issuer,
+        "Destination": os.environ.get("CONSOLE_DESTINATION", "https://console.aws.amazon.com/"),
+        "SigninToken": signin_token,
+    })
+    print(login_url)
+except Exception as e:
+    sys.stderr.write(str(e) + "\n")
+    sys.exit(1)
+PYEOF
+)
+
+        if [ -n "$CONSOLE_URL" ]; then
+            echo "   ✅ Console URL generated"
+        else
+            echo "⚠️  Federation token obtained but building the signin URL failed."
+            echo "   (Network issue reaching signin.aws.amazon.com, or python3 unavailable.)"
+        fi
+        echo ""
+    fi
+fi
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🎉 Login complete"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -347,6 +477,24 @@ echo "   Profile:  $ACC_PROFILE"
 echo "   Account:  $VERIFIED_ACCOUNT ($ACC_NAME)"
 echo "   Region:   $ACC_REGION"
 echo ""
+
+if [ -n "$CONSOLE_URL" ]; then
+    echo "🌐 AWS Management Console Sign-in URL:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$CONSOLE_URL"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "💡 TIP: Copy and paste this URL into your browser to open the AWS Console"
+    echo "⏱️  This URL is valid for the federation session ($FED_DURATION seconds)"
+    echo ""
+    echo "⚠️  BROWSER SESSION NOTE:"
+    echo "   If the console shows a different account than expected:"
+    echo "   1. Sign out from AWS Console first (top-right menu → Sign Out)"
+    echo "   2. Use an Incognito/Private browser window, OR"
+    echo "   3. Clear your browser's AWS cookies before using the URL"
+    echo ""
+fi
+
 echo "Use with any AWS tool:"
 echo "   AWS_PROFILE=$ACC_PROFILE <command>"
 echo "   aws --profile $ACC_PROFILE <command>"
