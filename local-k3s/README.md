@@ -83,3 +83,10 @@ kubectl port-forward -n nexus-local svc/minio-svc 9000:9000 &
 - **Capability namespaces** (`ontology-local`, …): backend + frontend only — shared infra via `localEmulation`
 
 See [docs/K3S-LOCAL-STACK.md](docs/K3S-LOCAL-STACK.md) for full details.
+
+## External access (Cloudflare Tunnel)
+
+To reach local UIs from the internet (TLS at Cloudflare, no inbound firewall ports), deploy in-cluster `cloudflared`:
+
+- [cloudflare-tunnel/README.md](cloudflare-tunnel/README.md) — hostnames `ontology.yourbrain.tech`, `simulator.yourbrain.tech`, `ai-engine.yourbrain.tech`
+- Requires `kubectl config use-context local-cluster` (not EKS)

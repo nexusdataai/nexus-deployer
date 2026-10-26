@@ -1559,6 +1559,15 @@ http {{
         '' close;
     }}
 
+    map $http_x_forwarded_proto $forwarded_proto_from_client {{
+        default $http_x_forwarded_proto;
+        ''      $scheme;
+    }}
+    map $http_cf_connecting_ip $proxy_forwarded_proto {{
+        ""      $forwarded_proto_from_client;
+        default https;
+    }}
+
     server {{
         listen 8080;
         listen [::]:8080;
@@ -1648,9 +1657,10 @@ http {{
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $proxy_forwarded_proto;
             proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Forwarded-Port $server_port;
+            proxy_redirect http:// https://;
             proxy_connect_timeout 10s;
             proxy_send_timeout 60s;
             proxy_read_timeout 60s;
