@@ -15,7 +15,8 @@ redis:
   image: redis:7-alpine
   persistence:
     size: 2Gi
-  maxmemory: 2gb
+  # Must stay below the StatefulSet memory limit (see templates/redis.yaml).
+  maxmemory: 384mb
 
 ministack:
   image: ministackorg/ministack:latest

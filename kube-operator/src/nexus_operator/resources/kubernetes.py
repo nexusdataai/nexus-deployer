@@ -1628,6 +1628,22 @@ http {{
             return 302 /journeys;
         }}
 
+        location ~ ^/api/v1/(queue/stream|executions/[^/]+/stream|journeys/[^/]+/jobs/[^/]+/stream)$ {{
+            proxy_pass http://{backend_svc}:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $proxy_forwarded_proto;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            gzip off;
+            chunked_transfer_encoding on;
+        }}
+
         location /services/ {{
             proxy_pass http://{backend_svc}:8000;
             proxy_set_header Host $host;
@@ -1662,8 +1678,8 @@ http {{
             proxy_set_header X-Forwarded-Port $server_port;
             proxy_redirect http:// https://;
             proxy_connect_timeout 10s;
-            proxy_send_timeout 60s;
-            proxy_read_timeout 60s;
+            proxy_send_timeout 300s;
+            proxy_read_timeout 300s;
             proxy_buffering off;
             proxy_request_buffering off;
             proxy_http_version 1.1;
