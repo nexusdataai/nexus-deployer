@@ -9,6 +9,7 @@ Exposes product UIs on **local-cluster** via in-cluster `cloudflared`. TLS and D
 | `https://ontology.yourbrain.tech` | `http://ontology-local-frontend-svc.ontology-local.svc.cluster.local:8080` |
 | `https://simulator.yourbrain.tech` | `http://simulator-local-frontend-svc.simulator-local.svc.cluster.local:8080` |
 | `https://ai-engine.yourbrain.tech` | `http://ai-engine-local-frontend-svc.ai-engine-local.svc.cluster.local:8080` |
+| `https://sre.yourbrain.tech` | `http://nexus-sre-ui.nexus-sre.svc.cluster.local:80` (Helm: `local-k3s/nexus-sre-values-local.yaml`) |
 
 Configure these as **Public Hostnames** on your tunnel in Cloudflare Zero Trust (HTTP to origin, no TLS verify needed for internal HTTP).
 

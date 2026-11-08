@@ -516,38 +516,46 @@ dac_patch_local_backend_probes() {
     if ! kubectl get "${kind}/${k8s_name}" -n "$DAC_NAMESPACE" >/dev/null 2>&1; then
         return 0
     fi
-    kubectl patch "${kind}/${k8s_name}" -n "$DAC_NAMESPACE" --type=strategic -p '{
-        "spec": {
-            "template": {
-                "spec": {
-                    "containers": [{
-                        "name": "backend",
-                        "startupProbe": {
-                            "httpGet": {"path": "/health", "port": 8000},
-                            "initialDelaySeconds": 5,
-                            "periodSeconds": 5,
-                            "timeoutSeconds": 3,
-                            "failureThreshold": 12
+    local health_path="/health"
+    local ready_path="/health"
+    case "$k8s_name" in
+        nexus-sre-backend)
+            health_path="/healthz"
+            ready_path="/readyz"
+            ;;
+    esac
+    kubectl patch "${kind}/${k8s_name}" -n "$DAC_NAMESPACE" --type=strategic -p "{
+        \"spec\": {
+            \"template\": {
+                \"spec\": {
+                    \"containers\": [{
+                        \"name\": \"backend\",
+                        \"startupProbe\": {
+                            \"httpGet\": {\"path\": \"${health_path}\", \"port\": 8000},
+                            \"initialDelaySeconds\": 5,
+                            \"periodSeconds\": 5,
+                            \"timeoutSeconds\": 3,
+                            \"failureThreshold\": 12
                         },
-                        "livenessProbe": {
-                            "httpGet": {"path": "/health", "port": 8000},
-                            "initialDelaySeconds": 15,
-                            "periodSeconds": 10,
-                            "timeoutSeconds": 5,
-                            "failureThreshold": 3
+                        \"livenessProbe\": {
+                            \"httpGet\": {\"path\": \"${health_path}\", \"port\": 8000},
+                            \"initialDelaySeconds\": 15,
+                            \"periodSeconds\": 10,
+                            \"timeoutSeconds\": 5,
+                            \"failureThreshold\": 3
                         },
-                        "readinessProbe": {
-                            "httpGet": {"path": "/health", "port": 8000},
-                            "initialDelaySeconds": 5,
-                            "periodSeconds": 5,
-                            "timeoutSeconds": 3,
-                            "failureThreshold": 3
+                        \"readinessProbe\": {
+                            \"httpGet\": {\"path\": \"${ready_path}\", \"port\": 8000},
+                            \"initialDelaySeconds\": 5,
+                            \"periodSeconds\": 5,
+                            \"timeoutSeconds\": 3,
+                            \"failureThreshold\": 3
                         }
                     }]
                 }
             }
         }
-    }' >/dev/null 2>&1 && dac_log_ok "${k8s_name}: local fast probes applied" || true
+    }" >/dev/null 2>&1 && dac_log_ok "${k8s_name}: local fast probes applied" || true
 }
 
 dac_rollout_component() {
