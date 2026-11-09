@@ -422,9 +422,18 @@ def _ensure_ssm_parameters(ssm, params: Dict[str, str]) -> None:
 
 _AI_ENGINE_SECRET_TYPES = ["api-keys", "openai", "anthropic", "github", "license"]
 
+_ONTOLOGY_SECRET_TYPES = [
+    "api-keys",
+    "openai",
+    "license",
+    "wxcc",
+    "anthropic",
+    "github",
+]
 
-def _ensure_secrets(sm, naming: LocalNaming) -> None:
-    for secret_type in _AI_ENGINE_SECRET_TYPES:
+
+def _ensure_secrets(sm, naming: LocalNaming, secret_types: List[str]) -> None:
+    for secret_type in secret_types:
         name = naming.secret_name(secret_type)
         try:
             sm.describe_secret(SecretId=name)
@@ -460,11 +469,15 @@ def provision_capability(
         _ensure_dynamodb_table(ddb, naming.dynamodb_table(purpose), schema)
     glue = _client("glue", ministack_endpoint, region)
     _ensure_glue_database(glue, naming.glue_database())
-    if _sanitize(capability) == "ai-engine":
+    cap_key = _sanitize(capability)
+    if cap_key == "ai-engine":
         ssm = _client("ssm", ministack_endpoint, region)
         _ensure_ssm_parameters(ssm, _ai_engine_ssm_parameters(naming))
         sm = _client("secretsmanager", ministack_endpoint, region)
-        _ensure_secrets(sm, naming)
+        _ensure_secrets(sm, naming, _AI_ENGINE_SECRET_TYPES)
+    elif cap_key in ("ontology", "nexus-ai"):
+        sm = _client("secretsmanager", ministack_endpoint, region)
+        _ensure_secrets(sm, naming, _ONTOLOGY_SECRET_TYPES)
 
 
 def main() -> int:

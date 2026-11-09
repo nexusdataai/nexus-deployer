@@ -426,6 +426,14 @@ class KubernetesResourceCreator:
                     name="GLUE_DATABASE_NAME",
                     value=naming.glue_database(),
                 ),
+                client.V1EnvVar(
+                    name="S3_JOURNEY_LOGS_BUCKET",
+                    value=naming.journey_logs_bucket(),
+                ),
+                client.V1EnvVar(
+                    name="S3_JOURNEY_REPORTS_BUCKET",
+                    value=naming.journey_reports_bucket(),
+                ),
                 client.V1EnvVar(name="WXCC_SIMULATOR_BASE_URL", value="http://localhost:8000/api/v1/simulator"),
                 client.V1EnvVar(name="WXCC_SIMULATOR_ENABLED", value="true"),
             ]
@@ -498,6 +506,11 @@ class KubernetesResourceCreator:
         if local_emulation:
             env_vars.extend([
                 client.V1EnvVar(name="USE_LOCALSTACK", value="true"),
+                client.V1EnvVar(name="ENABLE_COGNITO", value="false"),
+                client.V1EnvVar(
+                    name="LOCAL_AWS_ACCOUNT_ID",
+                    value=local_emulation.get("account_id", "000000000000"),
+                ),
                 client.V1EnvVar(name="LOCALSTACK_HOST", value=local_emulation["ministack_host"]),
                 client.V1EnvVar(name="LOCALSTACK_PORT", value="4566"),
                 client.V1EnvVar(name="AWS_ACCESS_KEY_ID", value=local_emulation.get("minio_access_key", "minioadmin")),
