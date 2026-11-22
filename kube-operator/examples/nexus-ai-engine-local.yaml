@@ -72,7 +72,7 @@ spec:
     enabled: false
 
   redis:
-    enabled: true
+    enabled: false
 
   jobWorker:
     enabled: true

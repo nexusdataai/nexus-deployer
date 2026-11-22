@@ -1281,9 +1281,14 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
         else None
     )
     
-    # Pre-compute Redis service name
+    # Pre-compute Redis service name (shared nexus-local when disabled in local emulation)
     redis_spec = spec.get("redis", {})
-    redis_svc = "redis-svc" if redis_spec.get("enabled", True) else None
+    if redis_spec.get("enabled", True):
+        redis_svc = "redis-svc"
+    elif local_mode:
+        redis_svc = local_cfg.get("redis_host")
+    else:
+        redis_svc = None
 
     postgres_spec = spec.get("postgres", {})
     postgres_svc = (
@@ -1315,7 +1320,7 @@ async def update_capability(spec: dict, name: str, namespace: str, status: dict,
                 _update_step(steps, "DataServicesRestart", "done", resources=["backend restarted after data plane update"])
                 patch.status["steps"] = list(steps)
 
-        # If redis config changed, update Redis deployment
+        # If redis config changed, update Redis deployment or shared local endpoint
         if any("redis" in str(f) for f in changed_fields):
             if redis_spec.get("enabled", True):
                 logger.info("Updating Redis deployment...")

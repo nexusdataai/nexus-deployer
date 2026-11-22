@@ -455,7 +455,13 @@ class KubernetesResourceCreator:
             env_vars.append(client.V1EnvVar(
                 name="AWS_DISABLE_EXPLICIT_SERVICE_ENDPOINTS", value="true",
             ))
-        
+        if naming.capability_name == "ontology" and (
+            local_emulation or str(environment).lower() == "local"
+        ):
+            env_vars.append(
+                client.V1EnvVar(name="NEXUS_FLOW_RUNTIME_EXECUTION", value="true")
+            )
+
         # FDW + BSSMagic integration env vars (enables Ontos page and CRM service)
         if bssmagic_service:
             # The upstream BSS-Magic Postgres image still exposes its SFDC
