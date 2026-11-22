@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: training-local
+  labels:
+    nexus.ai/capability: training
+    nexus.ai/environment: local
+---
+apiVersion: nexus.ai/v1
+kind: NexusCapability
+metadata:
+  name: training-local
+  namespace: training-local
+spec:
+  capabilityName: training
+  version: "0.1.0"
+  environment: local
+  region: us-east-1
+  enableCognito: false
+  deletionPolicy: Retain
+  localEmulation:
+    enabled: true
+    namespace: nexus-local
+    skipCognito: true
+    skipIam: true
+    skipSsmSecrets: false
+  backend:
+    enabled: true
+    replicas: 1
+    image: "__API_IMAGE__"
+  frontend:
+    enabled: true
+    replicas: 1
+    image: "__UI_IMAGE__"
+  postgres:
+    enabled: true
+  redis:
+    enabled: false

@@ -41,6 +41,8 @@ spec:
     skipCognito: true
     skipIam: true
     skipSsmSecrets: true
+    # Match hosted env (yourbrain.live): enable registry probes / Flow Studio preview on K3s.
+    flowRuntimeExecution: true
 
   dataServices:
     dynamodb:

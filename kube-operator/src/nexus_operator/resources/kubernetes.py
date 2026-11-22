@@ -514,6 +514,10 @@ class KubernetesResourceCreator:
                 client.V1EnvVar(name="USE_LOCALSTACK", value="true"),
                 client.V1EnvVar(name="ENABLE_COGNITO", value="false"),
                 client.V1EnvVar(
+                    name="NEXUS_FLOW_RUNTIME_EXECUTION",
+                    value="true" if local_emulation.get("flow_runtime_execution") else "false",
+                ),
+                client.V1EnvVar(
                     name="LOCAL_AWS_ACCOUNT_ID",
                     value=local_emulation.get("account_id", "000000000000"),
                 ),

@@ -23,12 +23,13 @@ dac_normalize_product() {
         sre|nexus-sre)                 echo "sre" ;;
         ontology|nexus-ontology)       echo "ontology" ;;
         simulator|nexus-simulator)       echo "simulator" ;;
+        training|nexus-training|fde-training) echo "training" ;;
         *)                             echo "$1" ;;
     esac
 }
 
 dac_list_products() {
-    echo "nexus-ai ai-engine sre ontology simulator"
+    echo "nexus-ai ai-engine sre ontology simulator training"
 }
 
 dac_load_product() {
@@ -94,6 +95,21 @@ dac_load_product() {
             DAC_COMPONENTS=(
                 "api|${_od}/backend|VERSION|nexus-ontology-api|nexus-ontology-api|ontology-api|--ontology-api-version|ontology-${DEPLOY_ENV}-backend|deployment||ONTOLOGY_API_TAG|ONTOLOGY_API_VERSION"
                 "ui|${_od}/frontend|VERSION|nexus-ontology-ui|nexus-ontology-ui|ontology-ui|--ontology-ui-version|ontology-${DEPLOY_ENV}-frontend|deployment|docs|ONTOLOGY_UI_TAG|ONTOLOGY_UI_VERSION"
+            )
+            ;;
+        training)
+            DAC_PRODUCT_LABEL="Nexus Training (FDE Path API + UI)"
+            DAC_IMAGES_DIR="${SCRIPT_DIR}/images/nexus-training"
+            DAC_DESCRIPTOR="${SCRIPT_DIR}/examples/nexus-training-local.yaml"
+            DAC_ROLLOUT_ARGS=(--capability training)
+            case "$DEPLOY_ENV" in
+                prod)  DAC_NAMESPACE="training-prod" ;;
+                *)     DAC_NAMESPACE="training-${DEPLOY_ENV}" ;;
+            esac
+            local _tr="${TRAINING_DIR:-${NEXUS_ROOT}/nexus-training}"
+            DAC_COMPONENTS=(
+                "api|${_tr}|backend/VERSION|nexus-training-api|nexus-training-api|training-api|--training-api-version|training-${DEPLOY_ENV}-backend|deployment||TRAINING_API_TAG|TRAINING_API_VERSION|backend/Dockerfile"
+                "ui|${_tr}/frontend|VERSION|nexus-training-ui|nexus-training-ui|training-ui|--training-ui-version|training-${DEPLOY_ENV}-frontend|deployment||TRAINING_UI_TAG|TRAINING_UI_VERSION|Dockerfile"
             )
             ;;
         simulator)

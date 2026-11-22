@@ -126,7 +126,7 @@ while [ $# -gt 0 ]; do
         --conservative-rollout) FAST_ROLLOUT=false; shift ;;
         --dry-run)         DRY_RUN=true; shift ;;
         --help|-h)         show_help; exit 0 ;;
-        nexus-ai|ai-engine|nexus-ai-engine|sre|nexus-sre|ontology|nexus-ontology|simulator|nexus-simulator)
+        nexus-ai|ai-engine|nexus-ai-engine|sre|nexus-sre|ontology|nexus-ontology|simulator|nexus-simulator|training|nexus-training|fde-training)
             PRODUCT="$1"; shift ;;
         *)
             dac_log_fail "Unknown option: $1"
@@ -199,6 +199,12 @@ fi
 
 if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "simulator" ] && [ "$DEPLOY_ENV" != "local" ]; then
     dac_log_warn "local-cluster uses simulator-local — remapping --env ${DEPLOY_ENV} → local"
+    DEPLOY_ENV=local
+    dac_load_product "$PRODUCT" || exit 1
+fi
+
+if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "training" ] && [ "$DEPLOY_ENV" != "local" ]; then
+    dac_log_warn "local-cluster uses training-local — remapping --env ${DEPLOY_ENV} → local"
     DEPLOY_ENV=local
     dac_load_product "$PRODUCT" || exit 1
 fi
@@ -356,6 +362,9 @@ if [ "$SKIP_ROLLOUT" = false ]; then
     fi
     if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "simulator" ]; then
         dac_ensure_local_simulator_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
+    fi
+    if [ "$LOCAL_K3S_IMAGES" = true ] && [ "$PRODUCT" = "training" ]; then
+        dac_ensure_local_training_workloads "${COMP_TAG[api]:-}" "${COMP_TAG[ui]:-}" || exit 1
     fi
     dac_log_step "Phase 3: Kubernetes rollout (no diagnostics)"
     _rollout_jobs=()

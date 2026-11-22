@@ -335,6 +335,62 @@ dac_ensure_local_ai_engine_workloads() {
     return "$ok"
 }
 
+dac_ensure_local_training_workloads() {
+    local api_tag="$1" ui_tag="$2"
+    local env_suffix="${DEPLOY_ENV}"
+    local ns="${DAC_NAMESPACE}"
+    if [ "${LOCAL_K3S_IMAGES:-false}" = true ]; then
+        env_suffix="local"
+        ns="training-local"
+    fi
+    local backend_dep="training-${env_suffix}-backend"
+    local frontend_dep="training-${env_suffix}-frontend"
+    local cap_file="${SCRIPT_DIR}/examples/nexus-training-local.yaml"
+    local patched="/tmp/nexus-training-local-$$.yaml"
+    local cap_name api_image ui_image patch_json
+
+    api_image="nexus-training-api:${api_tag}"
+    ui_image="nexus-training-ui:${ui_tag}"
+
+    if kubectl get "deployment/${backend_dep}" -n "$ns" >/dev/null 2>&1 \
+        && kubectl get "deployment/${frontend_dep}" -n "$ns" >/dev/null 2>&1; then
+        dac_log_info "Local workloads already present (${backend_dep}, ${frontend_dep})"
+        return 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        dac_log_info "[dry-run] would ensure local training capability + wait for ${backend_dep}, ${frontend_dep}"
+        return 0
+    fi
+
+    dac_log_step "Bootstrap local training workloads (operator CR)"
+    cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[?(@.spec.backend.enabled==true)].metadata.name}' 2>/dev/null || true)
+    if [ -z "$cap_name" ]; then
+        cap_name=$(kubectl get nexuscapability -n "$ns" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    fi
+
+    if [ -n "$cap_name" ]; then
+        patch_json=$(printf '{"spec":{"backend":{"enabled":true,"replicas":1,"image":"%s"},"frontend":{"enabled":true,"replicas":1,"image":"%s"}}}' "$api_image" "$ui_image")
+        kubectl patch nexuscapability "$cap_name" -n "$ns" --type=merge -p "$patch_json"
+    elif [ -f "$cap_file" ]; then
+        sed -e "s|__API_IMAGE__|${api_image}|g" -e "s|__UI_IMAGE__|${ui_image}|g" "$cap_file" > "$patched"
+        kubectl apply -f "$patched"
+        rm -f "$patched"
+    else
+        dac_log_fail "Missing ${cap_file} and no NexusCapability in ${ns}"
+        return 1
+    fi
+
+    local dep ok=0
+    local saved_ns="${DAC_NAMESPACE}"
+    DAC_NAMESPACE="$ns"
+    for dep in "$backend_dep" "$frontend_dep"; do
+        dac_wait_deployment_available "$dep" 300 || ok=1
+    done
+    DAC_NAMESPACE="$saved_ns"
+    return "$ok"
+}
+
 dac_ensure_local_ontology_workloads() {
     local api_tag="$1" ui_tag="$2"
     local env_suffix="${DEPLOY_ENV}"

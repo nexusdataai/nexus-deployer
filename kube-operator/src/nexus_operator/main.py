@@ -202,6 +202,7 @@ def _local_emulation_config(spec: dict) -> Dict[str, Any]:
         "skip_cognito": le.get("skipCognito", True),
         "skip_iam": le.get("skipIam", True),
         "skip_ssm_secrets": le.get("skipSsmSecrets", False),
+        "flow_runtime_execution": bool(le.get("flowRuntimeExecution", False)),
     }
 
 
